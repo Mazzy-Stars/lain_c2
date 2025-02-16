@@ -1,6 +1,6 @@
 ### lain
 
-Starting today, this framework is open source and can be used by anyone or organization. Currently, it supports platforms such as Windows linux、macos、Android。 The currently supported communication protocols are https \ http
+this framework is open source and can be used by anyone or organization. Currently, it supports platforms such as Windows linux、macos、Android。 The currently supported communication protocols are https \ http，any suggestions from anyone are welcome
 
 ### Features
 
