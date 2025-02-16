@@ -28,7 +28,7 @@ web-ui
     ]
 }
 ```
-go to http://localhost/login
+go to http://localhost/login，
 Change the password field to md5 encryption and remove the last 8 digits
 
 go run .\lain_server.go -h
