@@ -551,11 +551,11 @@ func get_encry_f(inputFile io.Reader, outputFile *os.File) error {
 	return nil
 }
 func get_encry_s(input *string) string {
-    keyLength := len(key)
-	splitChar := (key)[keyLength-4]
-	firstChar := (key)[keyLength-3]
-	secondChar := (key)[keyLength-2] 
-	thirdChar := (key)[keyLength-1] 
+    Length := len(uid)
+	splitChar := (uid)[Length-4]
+	firstChar := (uid)[Length-3] // F
+	secondChar := (uid)[Length-2] // a
+	thirdChar := (uid)[Length-1] // .
     encryptedBytes := encryptDecrypt([]byte(*input))
     var segments []string
     for _, b := range encryptedBytes {
@@ -576,11 +576,11 @@ func get_encry_s(input *string) string {
 	return strings.Join(segments, string(splitChar))
 }
 func get_decry_s(input *string) string {
-    keyLength := len(key)
-	splitChar := (key)[keyLength-4]
-	firstChar := (key)[keyLength-3]
-	secondChar := (key)[keyLength-2]
-	thirdChar := (key)[keyLength-1]
+    Length := len(uid)
+	splitChar := (uid)[Length-4]
+	firstChar := (uid)[Length-3] // F
+	secondChar := (uid)[Length-2] // a
+	thirdChar := (uid)[Length-1] // .
     segments := strings.Split(*input, string(splitChar))
     var encryptedBytes []byte
     for _, segment := range segments {

