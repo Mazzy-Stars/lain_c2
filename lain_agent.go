@@ -482,12 +482,28 @@ func generateUUID() string {
 	}
 	uuid[6] = (uuid[6] & 0x0f) | 0x40
 	uuid[8] = (uuid[8] & 0x3f) | 0x80
+	lastFour := make([]byte, 4)
+	usedChars := make(map[byte]bool)
+	for i := 0; i < 4; i++ {
+		var uniqueChar byte
+		for {
+			randomByte := byte(rand.Intn(256))
+			if !usedChars[randomByte] {
+				usedChars[randomByte] = true
+				uniqueChar = randomByte
+				break
+			}
+		}
+		lastFour[i] = uniqueChar
+	}
+	copy(uuid[12:], lastFour)
 	return byteSliceToHex(uuid[0:4]) + "-" +
 		byteSliceToHex(uuid[4:6]) + "-" +
 		byteSliceToHex(uuid[6:8]) + "-" +
 		byteSliceToHex(uuid[8:10]) + "-" +
 		byteSliceToHex(uuid[10:])
 }
+
 func byteSliceToHex(bytes []byte) string {
 	hexChars := "0123456789abcdef"
 	result := make([]byte, len(bytes)*2)

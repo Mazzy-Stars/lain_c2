@@ -517,22 +517,6 @@ func insert_key(uid, username, shellname string, w http.ResponseWriter) {
 		randomIndex := rand.Intn(len(charset))
 		keyBuilder.WriteByte(charset[randomIndex])
 	}
-	// 确保密钥最后四个字符全部不同
-	lastFour := make([]byte, 4)
-	usedChars := make(map[byte]bool) // 记录已经使用的字符
-	for i := 0; i < 4; i++ {
-		var uniqueChar byte
-		for {
-			randomIndex := rand.Intn(len(charset))
-			uniqueChar = charset[randomIndex]
-			if !usedChars[uniqueChar] {
-				usedChars[uniqueChar] = true
-				break
-			}
-		}
-		lastFour[i] = uniqueChar
-	}
-	keyBuilder.Write(lastFour) // 添加最后四个唯一字符
 	// 完成密钥生成
 	key := keyBuilder.String()
 	// 更新对应的连接信息
