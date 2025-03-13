@@ -44,7 +44,7 @@ web-ui
 Change the password field to md5 encryption and remove the last 8 digits
 
 ```cmd
-Usage of C:\Users\ADMINI~1\AppData\Local\Temp\go-build2586051263\b001\exe\lain_server.exe:
+./lain_server.exe:
   -DefaultCert
         Use default public and private keys
   -cert string
