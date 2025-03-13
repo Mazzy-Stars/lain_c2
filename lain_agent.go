@@ -33,7 +33,7 @@ var(
 	waitTime int = 3
 	onece bool = true
 	user string = "******"
-	master string = "127.0.0.1:6643"
+	master string = "192.168.10.102:6643"
 	key string = "null"
 	get_headers map[string]string= map[string]string{"Accept":"q=0.7;text/html,application/xhtml+xml","Accept-Encoding":"gzip, deflate","Accept-Language":"zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6","Upgrade-Insecure-Requests": "1","User-Agent":"Mozilla/5.0 (Android 10; Mobile; rv:91.0) Gecko/91.0 Firefox/91.0","Connection":"keep-alive",}
 	post_headers map[string]string= map[string]string{"Content-Type":"application/json","Accept-Encoding":"gzip, deflate","Accept-Language":"zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6","Cache-Control":"max-age=0","Upgrade-Insecure-Requests": "1","User-Agent":"Mozilla/5.0 (Android 10; Mobile; rv:91.0) Gecko/91.0 Firefox/91.0","Connection":"keep-alive",}
@@ -265,8 +265,8 @@ func Command(cmd string) string {
 		return ""
 	}
 	return string(result)
-}
-*/
+}*/
+
 func listDir(cmd, file_url string) {
 	var fileNames string
 	files,_ := ioutil.ReadDir(cmd)
