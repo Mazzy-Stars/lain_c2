@@ -2065,7 +2065,7 @@ func lain() http.HandlerFunc {
                 💬 Agents
 			</a>
 			<a href="#" data-target="net">
-                🪢 intranet
+                🔗 intranet
 			</a>
 			<a href="#" data-target="file">
 				📂 Files
@@ -2951,13 +2951,21 @@ html := `class index{
                                         userDiv.id = key['uid'] + "info";
                                         container.appendChild(userDiv);
                                     }
+                                    let osEmoji = "💻";
+                                    if (key['os'].toLowerCase().includes("linux")) {
+                                        osEmoji = "🐧";
+                                    } else if (key['os'].toLowerCase().includes("macos")) {
+                                        osEmoji = "🍏";
+                                    } else if (key['os'].toLowerCase().includes("android")) {
+                                        osEmoji = "🤖";
+                                    }
                                     let userHTML = '<div class="conn-container">' +
                                                         '<span class="shell-address">' + key['external_ip'] + '/</span>' +
                                                         '<span class="ip-address">' + key['host'] + '/</span>' +
                                                         '<span class="ip-address">' + key['uid'] + '/</span>' +
                                                         '<div class="os-container">' +
                                                             '<div class="ip-address" id="' + key['uid'] + '-img" style="background-color: #8B4513; width: 106px; height: 1px; display: inline-block; vertical-align: middle; position: relative;"><div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; box-shadow: inset 0 0 0 106px #8B4513;"></div></div>'+
-                                                            '<span class="ip-address">/ 💻' + key['os'] + '</span>' +
+                                                            '<span class="ip-address">'+osEmoji + '/'+ key['os'] + '</span>' +
                                                         '</div>' +
                                                     '</div>' +
                                                     '<div class="button-container">' +
