@@ -395,13 +395,7 @@ func User_index()http.HandlerFunc {
                             return
                         }
                         // 调用处理文件的函数
-                        filedata, err := UserUploadFile(uid,filename,splitSize,fileContent)
-                        if err != nil {
-                            http.Error(w, err.Error(), http.StatusInternalServerError)
-                            return
-                        }
-                        // 返回处理后的文件内容
-                        fmt.Fprint(w, filedata)          
+                        UserUploadFile(uid,filename,splitSize,fileContent)          
                     case "change":
                         var requestData struct {
                             UID      string `json:"uid"`
@@ -1327,10 +1321,10 @@ func Get_loots(username string, w http.ResponseWriter, r *http.Request) {
 }
 
 //前端上传文件
-func UserUploadFile(uid, filename, splitSize string, fileContent []byte) (string, error) {
+func UserUploadFile(uid, filename, splitSize string, fileContent []byte) {
     key, exists := key_map[uid]
     if !exists {
-        return "", fmt.Errorf("uid does not exist")
+        return
     }
     splitPos,_:=strconv.Atoi(splitSize)
     if splitPos <= 0{
@@ -1339,13 +1333,12 @@ func UserUploadFile(uid, filename, splitSize string, fileContent []byte) (string
     // 调用加密函数对文件加密
     encryptedFileContent, err := Get_decry_f(&fileContent, &key,&uid) // 直接获取加密后的字节流
     if err != nil {
-        return "", fmt.Errorf("encryption error: %v", err)
+        return
     }
     // 将加密后的文件字节流存入全局变量
     file_key := uid + "*" + filename + "*" + splitSize
     DownloadFile_byte_parts[file_key] = encryptedFileContent
-    // 返回加密后的文件内容作为字符串（如果需要的话）
-    return string(encryptedFileContent), nil
+    return
 }
 
 
