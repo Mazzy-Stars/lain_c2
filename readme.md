@@ -67,3 +67,4 @@ Usage of C:\Users\ADMINI~1\AppData\Local\Temp\go-build1730305847\b001\exe\server
 
 sniff [net.range(1,20,45...)or(1-253)] [range(1,20,45...)or(1-65534)] [delay])
 
+my telegram @huchenfeng666,give a straightforward opinion,any opinions are welcome
