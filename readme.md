@@ -42,6 +42,8 @@ Access control whitelist
 
 Customize log language messages
 
+Customize all server path
+
 ### Getting Started
 
 ```json
@@ -57,23 +59,32 @@ Customize log language messages
 ```
 
 ```cmd
-Usage of C:\Users\ADMINI~1\AppData\Local\Temp\go-build3450987718\b001\exe\server.exe:
+PS C:\Users\Administrator\Desktop\lain_c2-main> .\server.exe -h
+Usage of C:\Users\Administrator\Desktop\lain_c2-main\server.exe:
   -DefaultCert
         Use default public and private keys
   -cert string
         Customize public key path
   -css string
         Use default css file
+  -css-route string
+        customize web css (default "lain.css")
   -http
         Use HTTP instead of HTTPS
+  -js-route string
+        customize web js (default "lain.js")
   -key string
         Customize private key path
   -p string
         Port (default "443")
   -resp-error string
-        web error resp (default "error")
+        web error resp (default "404 page not found")
   -title string
         web ui title (default "connect")
+  -ui-route string
+        web ui route (default "server")
+  -web-route string
+        backend communication routing (default "user_index")
 ```
 
 ![image-20250722224250819](https://github.com/Mazzy-Stars/lain_c2/raw/main/html/help.png)
