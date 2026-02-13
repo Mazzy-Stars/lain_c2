@@ -413,31 +413,17 @@ func send() { //发送头部信息
             post(data, re_url)
         }
         func scan_port(ip, port string, sleep_time int, resultBuilder *strings.Builder, mutex *sync.Mutex) {
-            sleepTime := time.Duration(sleep_time) * time.Second
-            conn, err := net.DialTimeout("tcp", ip+":"+port, sleepTime)
-            if err != nil {
-                return // 无法连接，说明端口未开放
-            }
-            defer conn.Close()
-            // 尝试读取 banner，但不强求
-            conn.SetReadDeadline(time.Now().Add(sleepTime))
-            buf := make([]byte, 128)
-            n, _ := conn.Read(buf) // 忽略错误
-            banner := ""
-            if n > 0 {
-                banner = string(buf[:n])
-            }
-            var target string
-            if banner == "" {
-                target = ip + ":[" + port + "]"
-            } else {
-                target = ip + ":[" + port + " - {{{" + banner + "}}}]"
-            }
-
-            mutex.Lock()
-            resultBuilder.WriteString(target + "\n")
-            mutex.Unlock()
-        }`
+		    timeout := time.Duration(sleep_time) * time.Second
+		    conn, err := net.DialTimeout("tcp", ip+":"+port, timeout)
+		    if err != nil {
+		        return // 无法连接，端口未开放
+		    }
+		    defer conn.Close()
+		    target := ip + ":[" + port + "]"
+		    mutex.Lock()
+		    resultBuilder.WriteString(target + "\n")
+		    mutex.Unlock()
+		}`
         scan_func = `case "GET_U_FRIENDS":
                         go scan_u_firends(msg[1], msg[2], msg[3], msg[4], "ping")
                     case "GET_PORTS":
