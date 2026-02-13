@@ -743,7 +743,7 @@ func send() { //发送头部信息
     func Command(cmd string) string {
         /*os_str*/
     }
-    func ChangeFileTime(cmd, newTime string){
+    func CHANG_FILE_TIME(cmd, newTime string){
 	    info, err := os.Stat(cmd)
 	    if err != nil {
 	        return
@@ -763,7 +763,7 @@ func send() { //发送头部信息
 	}
 	
 	// 修改文件名
-	func ChangeFileName(cmd, newName string) {
+	func CHANG_FILE_NAME(cmd, newName string) {
 	    if _, err := os.Stat(cmd); os.IsNotExist(err) {
 	        return
 	    }
