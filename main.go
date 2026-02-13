@@ -2234,22 +2234,6 @@ func Results(uid, results, Taskid string,code_map map[byte]int) {
     }
     decry_results := Get_decry_s(&results, &key,code_map)
     go SaveMsg(uid, decry_results, Taskid)
-    // 如果是 CHANG_FILE_TIME 或 CHANG_FILE_NAME，写日志
-    if strings.HasPrefix(decry_results, "CHANG_FILE_TIME^") {
-        newParts := strings.Split(decry_results, "^")
-        if len(newParts) > 1 && newParts[1] != "" {
-            newTime := newParts[1]
-            log_str := fmt.Sprintf(log_word["change_file_time"], uid, newTime)
-            logger.WriteLog(log_str)
-        }
-    } else if strings.HasPrefix(decry_results, "CHANG_FILE_NAME^") {
-        newParts := strings.Split(decry_results, "^")
-        if len(newParts) > 1 && newParts[1] != "" {
-            newName := newParts[1]
-            log_str := fmt.Sprintf(log_word["change_file_name"], uid, newName)
-            logger.WriteLog(log_str)
-        }
-    }
 
     // 写入结果列表
     resultMu.RLock()
