@@ -3007,7 +3007,6 @@ func UploadFileHandler(uid,data,filename string,
         // 如果没有保存该文件的分段，则保存当前分段
         UploadFile_byte_parts[file_key] = fileData
     }
-    upByteMu.Unlock()
     // 判断是否是最后一段，如果是，合并所有分段并解密
     if endPos == filePos {
         // 解密文件
@@ -3018,6 +3017,7 @@ func UploadFileHandler(uid,data,filename string,
         // 解密后清空全局变量中的文件数据
         delete(UploadFile_byte_parts, file_key)
     }
+	upByteMu.Unlock()
     fileLog2 := fmt.Sprintf(log_word["request_file_part_"],
     username, uid, realFilename, splitPos/(1024*1024), startPos/(1024*1024), endPos/(1024*1024))
     logger.WriteLog(fileLog2)
