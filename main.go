@@ -1015,8 +1015,8 @@ func User_index(web_route string)http.HandlerFunc {
                     case "getChatSlice":
                         uploadDir := "./chat_uploads/"
                         files, err := os.ReadDir(uploadDir)
-                        dataChatmu.RLock()
-                        defer dataChatmu.RUnlock()
+                        dataChatmu.Lock()
+                        defer dataChatmu.Unlock()
                         if err == nil {
                             maxChatID := 0
                             for i := range data_chat.Chats {
