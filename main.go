@@ -4122,38 +4122,6 @@ func withCORS(next http.Handler) http.Handler {
     })
 }
 
-// 提取 host（如 127.0.0.1:5173）
-func getHostFromOrigin(origin string) string {
-    u, err := url.Parse(origin)
-    if err != nil {
-        return ""
-    }
-    return u.Host
-}
-
-// 判断 host 是否对应 clientIP（支持 localhost → 127.0.0.1）
-func isHostAllowed(host, clientIP string) bool {
-    if host == "" || clientIP == "" {
-        return false
-    }
-
-    // 1. 直接匹配 IP:port
-    if host == clientIP || strings.HasPrefix(host, clientIP+":") {
-        return true
-    }
-
-    // 2. localhost → 127.0.0.1
-    if strings.HasPrefix(host, "localhost:") || host == "localhost" {
-        return clientIP == "127.0.0.1" || clientIP == "::1"
-    }
-
-    // 3. 127.0.0.1:5173 → 允许
-    if strings.HasPrefix(host, "127.0.0.1:") {
-        return clientIP == "127.0.0.1"
-    }
-
-    return false
-}
 func Read_log_word() {
     filePath := "word.json"
     // 默认内容（英文版）
@@ -4248,24 +4216,6 @@ func readWhitelist() ([]string, error) {
         return nil, err
     }
     return whitelist, nil
-}
-
-func isOriginAllowed(origin string, whitelist []string) bool {
-    if origin == "" {
-        return false
-    }
-    // Extract host from origin URL
-    u, err := url.Parse(origin)
-    if err != nil {
-        return false
-    }
-    host := u.Hostname()
-    for _, allowed := range whitelist {
-        if host == allowed || origin == allowed {
-            return true
-        }
-    }
-    return false
 }
 //登录
 func login(ui_route,web_css string) http.HandlerFunc {
