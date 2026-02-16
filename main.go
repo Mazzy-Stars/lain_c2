@@ -3733,17 +3733,6 @@ func put_innet(uid, target string, shell_innet []string) {
     data_innet.Innets = append(data_innet.Innets, newInnet)
 }
 
-
-// 辅助函数：检查切片中是否包含某个字符串
-func contains(slice []string, item string) bool {
-    for _, v := range slice {
-        if v == item {
-            return true
-        }
-    }
-    return false
-}
-
 //写入链接结构体
 func put_conn(username, host, online_time,uid,shell_ip,host_key string){
     dataConnMu.Lock()
