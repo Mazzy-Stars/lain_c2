@@ -1963,40 +1963,9 @@ func EncryptHostKey(uid, key string) {
         idx := i % sharedLen // 循环索引
         clientKey[i] ^= byte(sharedKeyInts[idx])
     }
-    // 排序
-    sorted := append([]byte(nil), clientKey...)
-    for i := 0; i < len(sorted)-1; i++ {
-        for j := 0; j < len(sorted)-i-1; j++ {
-            if sorted[j] > sorted[j+1] {
-                sorted[j], sorted[j+1] = sorted[j+1], sorted[j]
-            }
-        }
-    }
-    maxVal := sorted[len(sorted)-1]
-    // 再次扰乱
-    obKey := append([]byte(nil), clientKey...)
-    for k := 0; k < int(maxVal); k++ {
-        k6 := tail6(obKey)
-        obKey = ObfuscateBySteps(obKey, k6)
-    }
     keyMu.Lock()
-    key_map[uid] = string(obKey)
+    key_map[uid] = string(clientKey)
     keyMu.Unlock()
-}
-
-func tail6(b []byte) ObfConst {
-	l := len(b)
-	if l < 6 {
-		panic("obKey too short")
-	}
-	return ObfConst{
-		A: b[l-6],
-		B: b[l-5],
-		C: b[l-4],
-		D: b[l-3],
-		E: b[l-2],
-		F: b[l-1],
-	}
 }
 
 //插入密钥
