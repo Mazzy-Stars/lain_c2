@@ -2725,28 +2725,7 @@ func ServerIndex(Count string) ([]Server, error) {
         return nil, fmt.Errorf("no needed")
     }
 }
-func GetWhiteList() ([]string, error) {
-    //读取同目录下的白名单文件
-    filePath := "white.config"
-    data, err := os.ReadFile(filePath)
-    if err != nil {
-        return nil, fmt.Errorf("failed to read white list file: %v", err)
-    }
-    // 将文件内容按行分割
-    lines := strings.Split(string(data), "\n")
-    // 去除空行和注释行
-    var whiteList []string
-    for _, line := range lines {
-        line = strings.TrimSpace(line)
-        if line != "" && !strings.HasPrefix(line, "#") {
-            whiteList = append(whiteList, line)
-        }
-    }
-    if len(whiteList) == 0 {
-        return nil, fmt.Errorf("no valid entries found in white list")
-    }
-    return whiteList, nil
-}
+
 type EnrichedClient struct {
     Username        string              `json:"username"`
     Host            string              `json:"host"`
