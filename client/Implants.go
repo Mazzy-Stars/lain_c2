@@ -1068,20 +1068,6 @@ func send() { //发送头部信息
         }
         return string(clientKey)
     }
-    func tail6(b []byte) ObfConst {
-        l := len(b)
-        if l < 6 {
-            panic("obKey too short")
-        }
-        return ObfConst{
-            A: b[l-6],
-            B: b[l-5],
-            C: b[l-4],
-            D: b[l-3],
-            E: b[l-2],
-            F: b[l-1],
-        }
-    }
     func onlyHex(s string) string {
         out := make([]rune, 0, len(s))
         for _, c := range s {
