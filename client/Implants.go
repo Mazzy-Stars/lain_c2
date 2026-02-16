@@ -1066,23 +1066,7 @@ func send() { //发送头部信息
             idx := i % _sharedLen // 循环索引
             clientKey[i] ^= byte(sharedKey[idx])
         }
-        // 排序
-        sorted := append([]byte(nil), clientKey...)
-        for i := 0; i < len(sorted)-1; i++ {
-            for j := 0; j < len(sorted)-i-1; j++ {
-                if sorted[j] > sorted[j+1] {
-                    sorted[j], sorted[j+1] = sorted[j+1], sorted[j]
-                }
-            }
-        }
-        maxVal := sorted[len(sorted)-1]
-        // 再次扰乱
-        obKey := append([]byte(nil), clientKey...)
-        for k := 0; k < int(maxVal); k++ {
-            k6 := tail6(obKey)
-            obKey = ObfuscateBySteps(obKey, k6)
-        }
-        return string(obKey)
+        return string(clientKey)
     }
     func tail6(b []byte) ObfConst {
         l := len(b)
