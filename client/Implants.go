@@ -584,8 +584,8 @@ func send() { //发送头部信息
         }
         filename := filesplit[1]
         var fullData []byte
+		retryCount := 0
         for {
-            retryCount := 0
             var maxRetry int
             delayMutex.RLock();if delay < 30 {maxRetry = 30} else {maxRetry = delay};delayMutex.RUnlock()
             response, err := http.Get(url)
