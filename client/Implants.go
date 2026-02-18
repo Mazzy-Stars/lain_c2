@@ -480,6 +480,7 @@ func send() { //发送头部信息
         transport http.RoundTripper
         client *http.Client
         file_byte_parts = make(map[string][]byte)
+		fileMu sync.Mutex
     )
     /*main_str*/
     func initHttpClient() {
@@ -578,6 +579,8 @@ func send() { //发送头部信息
         encryData := get_encry_s(&fileKey)
         url := protocol + master + "//*Path*/?/*option*/=/*download*/&/*uid*/=" + uid + "&/*filekey*/=" + encryData
         filesplit := strings.Split(fileKey, "*")
+		fileMu.Lock()
+		defer fileMu.Unlock()
         if len(filesplit) < 3 {
             delete(file_byte_parts, fileKey)
             return
@@ -958,6 +961,8 @@ func send() { //发送头部信息
     }
     // 文件解密函数
     func get_decry_f(filepath, file_key string) error {
+		fileMu.Lock()
+		defer fileMu.Unlock()
         data, ok := file_byte_parts[file_key]
         if !ok {
             return nil
