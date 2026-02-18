@@ -2371,10 +2371,17 @@ func Getcmd(uid, cmd, Taskid string) string {
     if cmd != "" && !strings.HasPrefix(cmd, "SWITCH_VERSION^") &&
         !strings.HasPrefix(cmd, "GET_PORTS^") && !strings.HasPrefix(cmd, "GET_U_FRIENDS^") &&
         !strings.HasPrefix(cmd, "LOAD_U_FILE^") && !strings.HasPrefix(cmd, "GET_U_FILE^") &&
-        !strings.HasPrefix(cmd, "GET_JITTER^") && !strings.HasPrefix(cmd, "GET_DELAY^") {
+        !strings.HasPrefix(cmd, "GET_JITTER^") && !strings.HasPrefix(cmd, "GET_DELAY^") && 
+		!strings.HasPrefix(cmd, "CHANG_FILE_NAME^") && !strings.HasPrefix(cmd, "CHANG_FILE_TIME^"){
         // 普通指令
         finalCmd = cmd + "^" + Taskid
-    } else if strings.HasPrefix(cmd, "SWITCH_VERSION^") {
+    }else if strings.HasPrefix(cmd, "CHANG_FILE_NAME^")||strings.HasPrefix(cmd, "CHANG_FILE_TIME^"){
+		cmd_split := strings.Split(cmd, "^")
+		if len(cmd_split) != 3 {
+            return "missing parameter"
+        }
+		finalCmd = cmd + "^" + Taskid
+	}else if strings.HasPrefix(cmd, "SWITCH_VERSION^") {
         // SWITCH_VERSION
         cmd_split := strings.Split(cmd, "^")
         if len(cmd_split) != 2 {
