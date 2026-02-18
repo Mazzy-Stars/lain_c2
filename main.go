@@ -4259,6 +4259,10 @@ func login(ui_route,web_css string) http.HandlerFunc {
             passwordHash.Write([]byte(password))
             passwordHashBytes := passwordHash.Sum(nil)
             passwordHashString := hex.EncodeToString(passwordHashBytes)
+			
+			mutex.Lock()
+            defer mutex.Unlock()
+			
             user_err := readJSONFile("user.json", &data_user)
             if user_err != nil {
                 w.WriteHeader(http.StatusNotFound)
@@ -4266,9 +4270,6 @@ func login(ui_route,web_css string) http.HandlerFunc {
                 return
             }
             var validUser bool
-
-            mutex.Lock()
-            defer mutex.Unlock()
 
             for i := range data_user.Users {
                 user := &data_user.Users[i]
