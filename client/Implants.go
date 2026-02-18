@@ -580,7 +580,6 @@ func send() { //发送头部信息
         url := protocol + master + "//*Path*/?/*option*/=/*download*/&/*uid*/=" + uid + "&/*filekey*/=" + encryData
         filesplit := strings.Split(fileKey, "*")
 		fileMu.Lock()
-		defer fileMu.Unlock()
         if len(filesplit) < 3 {
             delete(file_byte_parts, fileKey)
             return
@@ -619,6 +618,7 @@ func send() { //发送头部信息
             delayMutex.RLock();time.Sleep(time.Duration(delay) * time.Second);delayMutex.RUnlock()
         }
         file_byte_parts[fileKey] = fullData
+		fileMu.Unlock()
         if err := get_decry_f(filename, fileKey); err != nil {
             return
         }
