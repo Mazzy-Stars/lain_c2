@@ -425,10 +425,9 @@ func User_index(web_route string)http.HandlerFunc {
 					case "delShellInnet": //用户操作删除内网
 
                         uid := r.URL.Query().Get("uid")
-                        shellname := r.URL.Query().Get("request")
                         target := r.URL.Query().Get("target")
 
-						str := Del_shell_innet(target,shellname,uid)
+						str := Del_shell_innet(target,uid)
                         fmt.Fprintf(w,str)
 					case "userIndex": //客户端信息
 
@@ -2652,7 +2651,7 @@ func in_port(uid, data string) {
 }
 
 //删除内网
-func Del_shell_innet(target,shellname,uid string)string{
+func Del_shell_innet(target,uid string)string{
     dataInnetmu.Lock()
     defer dataInnetmu.Unlock()
 	for i := range data_innet.Innets {
