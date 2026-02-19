@@ -17,7 +17,7 @@ func Lain(error_str, web_title, web_js, web_css, web_route string, sessionSlice 
 
         if r.Method == http.MethodGet {
             html := fmt.Sprintf(`
-            <!-- 2026/02/16/周一 20:46:38.75 -->
+            <!-- 2026/02/19/周四 10:28:57.37 -->
             <!DOCTYPE html>
 <html lang="en">
 <head>
