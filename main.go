@@ -2999,6 +2999,7 @@ func UploadFileHandler(uid,data,filename string,
     // 将文件块保存到全局变量
     file_key := uid + "=" + realFilename
     upByteMu.Lock()
+	defer upByteMu.Unlock()
     if existingData, exists := UploadFile_byte_parts[file_key]; exists {
         // 如果存在已经保存的部分，将当前的分段追加到之前的字节流中
         UploadFile_byte_parts[file_key] = append(existingData, fileData...)
@@ -3016,7 +3017,6 @@ func UploadFileHandler(uid,data,filename string,
         // 解密后清空全局变量中的文件数据
         delete(UploadFile_byte_parts, file_key)
     }
-	upByteMu.Unlock()
     fileLog2 := fmt.Sprintf(log_word["request_file_part_"],
     username, uid, realFilename, splitPos/(1024*1024), startPos/(1024*1024), endPos/(1024*1024))
     logger.WriteLog(fileLog2)
