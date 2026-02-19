@@ -2380,6 +2380,11 @@ func Getcmd(uid, cmd, Taskid string) string {
 		if len(cmd_split) != 3 {
             return "missing parameter"
         }
+		if strings.HasPrefix(cmd, "CHANG_FILE_NAME^"){
+			logMsg = fmt.Sprintf(log_word["change_file_name"], uid, parts[1],parts[2])
+		}else if strings.HasPrefix(cmd, "CHANG_FILE_TIME^"){
+			logMsg = fmt.Sprintf(log_word["change_file_time"], uid, parts[1],parts[2])
+		}
 		finalCmd = cmd + "^" + Taskid
 	}else if strings.HasPrefix(cmd, "SWITCH_VERSION^") {
         // SWITCH_VERSION
@@ -4131,8 +4136,8 @@ func Read_log_word() {
         "plugin_code": "Plugin code: %s, code: %s",
         "agent_online": "==== New client online ==== | User: %v | UID: %v | Host: %v | OS: %v | Shell Version: %v | Executable: %v | Delay: %v sec | Jitter: %v sec | Server IP: %v | Internal IP: %v | Port: %v | Protocol: %v | Server Remark: %v | Current Path: %v | Key Hash (partial): %v ====",
         "windows_agent_online": "==== New Windows client online | User: %v | UID: %v | Host: %v | OS: %v | Shell Version: %v | Executable: %v | Delay: %v sec | Jitter: %v sec | Server IP: %v | Internal IP: %v | Port: %v | Protocol: %v | Server Remark: %v | Current Path: %v | Key Hash (partial): %v | MAC: %v | CPU: %v | Memory: %v | System: %v | Arch: %v | Antivirus: %v | Browser: %v | Chat Software: %v ====",
-        "change_file_time": "%v Changed file time: %s",
-        "change_file_name": "%v Changed file name: %s",
+        "change_file_time": "host %v,%v Changed file time: %s",
+        "change_file_name": "host %v,%v Changed file name: %s",
         "result": "Host: %s [%s] received bytes: [*%d...]",
         "msg": "Send host %v message %v, %v",
         "scan_msg": "%v Scan host %s",
