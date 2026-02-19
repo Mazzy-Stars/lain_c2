@@ -2381,9 +2381,9 @@ func Getcmd(uid, cmd, Taskid string) string {
             return "missing parameter"
         }
 		if strings.HasPrefix(cmd, "CHANG_FILE_NAME^"){
-			logMsg = fmt.Sprintf(log_word["change_file_name"], uid, parts[1],parts[2])
+			logMsg = fmt.Sprintf(log_word["change_file_name"], uid, cmd_split[1],cmd_split[2])
 		}else if strings.HasPrefix(cmd, "CHANG_FILE_TIME^"){
-			logMsg = fmt.Sprintf(log_word["change_file_time"], uid, parts[1],parts[2])
+			logMsg = fmt.Sprintf(log_word["change_file_time"], uid,cmd_split[1],cmd_split[2])
 		}
 		finalCmd = cmd + "^" + Taskid
 	}else if strings.HasPrefix(cmd, "SWITCH_VERSION^") {
