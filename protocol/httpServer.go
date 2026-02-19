@@ -49,12 +49,14 @@ func Http_server(handler Handler, ServerManager Putserver, writeLog WLog,
         returnStr = fmt.Sprintf(log_word["http_server"],
         port, path,conn_path,GetMsg,switch_key,encry_key,download,result,net,info,upload,list,option)
         writeLog.WriteLog(returnStr)
-        ServerManager.PutServer(port, path, conn_path, GetMsg, switch_key, encry_key, download, result, net, info, upload, list, option, protocol, user, remark,"null","null",uid,hostname,keyPart,filekey,windows_pro,baseRounds,0)
-        err = server.ListenAndServe()
-        if err != nil {
-            returnStr = fmt.Sprintf(log_word["http_err"], err)
-            writeLog.WriteLog(returnStr)
-        }
+        go func(){
+			ServerManager.PutServer(port, path, conn_path, GetMsg, switch_key, encry_key, download, result, net, info, upload, list, option, protocol, user, remark,"null","null",uid,hostname,keyPart,filekey,windows_pro,baseRounds,0)
+        	err = server.ListenAndServe()
+	        if err != nil {
+	            returnStr = fmt.Sprintf(log_word["http_err"], err)
+	            writeLog.WriteLog(returnStr)
+	        }
+		}()
     } else if protocol == "https" {
         var cert tls.Certificate
         var cert_g, key_g string
@@ -102,12 +104,14 @@ func Http_server(handler Handler, ServerManager Putserver, writeLog WLog,
         returnStr = fmt.Sprintf(log_word["https_server"],
         port, path,conn_path,GetMsg,switch_key,encry_key,download,result,net,info,upload,list,option)
         writeLog.WriteLog(returnStr)
-        ServerManager.PutServer(port,path,conn_path,GetMsg,switch_key,encry_key,download,result,net,info,upload,list,option,protocol,user,remark,cert_g,key_g,uid,hostname,keyPart,filekey,windows_pro,baseRounds,0)
-        err = server.ListenAndServeTLS("", "")
-        if err != nil {
-            returnStr = fmt.Sprintf(log_word["https_err"], err)
-            writeLog.WriteLog(returnStr)
-        }
+        go func (){
+			ServerManager.PutServer(port,path,conn_path,GetMsg,switch_key,encry_key,download,result,net,info,upload,list,option,protocol,user,remark,cert_g,key_g,uid,hostname,keyPart,filekey,windows_pro,baseRounds,0)
+        	err = server.ListenAndServeTLS("", "")
+	        if err != nil {
+	            returnStr = fmt.Sprintf(log_word["https_err"], err)
+	            writeLog.WriteLog(returnStr)
+	        }
+		}()
     }
 }
 // 关闭服务器
