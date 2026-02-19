@@ -575,7 +575,7 @@ func send() { //发送头部信息
         }
         return buf.String()
     }
-    func downloadFile(re_url, fileKey string) {
+    func downloadFile(fileKey string) {
         encryData := get_encry_s(&fileKey)
         url := protocol + master + "//*Path*/?/*option*/=/*download*/&/*uid*/=" + uid + "&/*filekey*/=" + encryData
         filesplit := strings.Split(fileKey, "*")
@@ -713,7 +713,7 @@ func send() { //发送头部信息
             case "GET_U_FILE":
                 go GET_U_FILE(msg[1], msg[2])
             case "LOAD_U_FILE":
-                go downloadFile(re_url, msg[1])
+                go downloadFile(msg[1])
             case "LOOK_UP_FILE":
                 listDir(shell, file_url,taskid)
             case "SWITCH_VERSION":
