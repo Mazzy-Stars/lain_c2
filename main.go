@@ -2410,7 +2410,7 @@ func Getcmd(uid, cmd, Taskid string) string {
             for i := range windows_client_data.Clients {
                 client := &windows_client_data.Clients[i]
                 if uid == client.Uid {
-                    client.version = version
+                    client.Version = version
                     break
                 }
             }
