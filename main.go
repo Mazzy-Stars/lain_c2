@@ -1591,19 +1591,27 @@ func Windows_GetInfo(uid,encry_str,key,clientIP string,code_map map[byte]int){
     DeleteEntry(uid)
 }
 func updateServerClients(port, protocol string, serverChan chan<- string) {
-    serverDataMu.Lock()
-    defer serverDataMu.Unlock()
-
-    var serverRemark string
+    serverRemark := "unknown"
+    found := false
     for i := range server_data.Servers {
         server := &server_data.Servers[i]
-        if port == server.Port && strings.HasPrefix(protocol, server.Protocol) {
+        serverPort := strings.TrimSpace(server.Port)
+        serverProtocol := strings.TrimSpace(strings.ToLower(server.Protocol))
+        if port == serverPort && protocol == serverProtocol {
+            serverDataMu.Lock()
             server.Clients++
+            serverDataMu.Unlock()
             serverRemark = server.Remark
+            found = true
             break
         }
     }
-    serverChan <- serverRemark
+    select {
+    case serverChan <- serverRemark:
+        return
+    case <-time.After(2 * time.Second):
+        return
+    }
 }
 func Change_pro(uid, username, remarks, delay, jitter, Taskid string) string {
     windows_clientMu.Lock()
