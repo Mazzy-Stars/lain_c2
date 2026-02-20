@@ -1592,20 +1592,22 @@ func Windows_GetInfo(uid,encry_str,key,clientIP string,code_map map[byte]int){
 }
 func updateServerClients(port, protocol string, serverChan chan<- string) {
     serverRemark := "unknown"
-    found := false
+    protocol = strings.TrimSpace(strings.ToLower(protocol))
+    port = strings.TrimSpace(port)
     for i := range server_data.Servers {
         server := &server_data.Servers[i]
         serverPort := strings.TrimSpace(server.Port)
         serverProtocol := strings.TrimSpace(strings.ToLower(server.Protocol))
+
         if port == serverPort && protocol == serverProtocol {
             serverDataMu.Lock()
             server.Clients++
             serverDataMu.Unlock()
             serverRemark = server.Remark
-            found = true
             break
         }
     }
+    // channel 写入，超时直接 return
     select {
     case serverChan <- serverRemark:
         return
