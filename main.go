@@ -543,9 +543,11 @@ func User_index(web_route string)http.HandlerFunc {
                             }
                             serverDataMu.Unlock()
                         }
-                        keyMu.Lock()
-                        delete(key_map, uid)
-                        keyMu.Unlock()
+                        go func() {
+						    keyMu.Lock()
+						    delete(key_map, uid)
+						    keyMu.Unlock()
+						}()
                         logStr := fmt.Sprintf(log_word["removed_agent"], uid)
                         logger.WriteLog(logStr)
                         w.Header().Set("Content-Type", "application/json")
