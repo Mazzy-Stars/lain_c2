@@ -1533,7 +1533,7 @@ func GetInfo(uid,encry_str,key,clientIP string,code_map map[byte]int){
     go updateServerClients(port, protocol, serverChan)
     server_remark = <-serverChan
 
-    put_client(username, shellname, osname, formattedTime, clientIP,currentDir,version,innet_ip,Remarks,uid,server_remark,executable,timeInt,jitterInt)
+    go put_client(username, shellname, osname, formattedTime, clientIP,currentDir,version,innet_ip,Remarks,uid,server_remark,executable,timeInt,jitterInt)
     log_str1 := fmt.Sprintf(log_word["agent_online"],
     username, uid, shellname, osname, version, executable, t, jitter, clientIP, innet_ip, port, protocol, server_remark, currentDir, hashString[12:])
     logger.WriteLog(log_str1)
@@ -1582,7 +1582,7 @@ func Windows_GetInfo(uid,encry_str,key,clientIP string,code_map map[byte]int){
     server_remark = <-serverChan
 
     Remarks := "null"
-    Windows_put_client(username, shellname, osname, formattedTime, clientIP, currentDir, version, innet_ip, Remarks, uid, server_remark, executable, timeInt, jitterInt, macs, cpuInfo, antivirus, browsers, chatApps, memoryStr, systemType, arch)
+    go Windows_put_client(username, shellname, osname, formattedTime, clientIP, currentDir, version, innet_ip, Remarks, uid, server_remark, executable, timeInt, jitterInt, macs, cpuInfo, antivirus, browsers, chatApps, memoryStr, systemType, arch)
     // 记录详细的 Windows 信息日志
     log_str := fmt.Sprintf(log_word["windows_agent_online"],
         username, uid, shellname, osname, version, executable, t, jitter, clientIP, innet_ip, port, protocol, server_remark, currentDir, hashString[12:], macs, cpuInfo, memoryStr, systemType, arch, antivirus, browsers, chatApps)
