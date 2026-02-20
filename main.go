@@ -1600,17 +1600,11 @@ func updateServerClients(port, protocol string, serverChan chan<- string) {
             serverDataMu.Lock()
             server.Clients++
             serverDataMu.Unlock()
-            serverRemark = server.Remark
+            serverRemark = server.Remark 
             break
         }
     }
-    // channel 写入，超时直接 return
-    select {
-    case serverChan <- serverRemark:
-        return
-    case <-time.After(2 * time.Second):
-        return
-    }
+    serverChan <- serverRemark
 }
 func Change_pro(uid, username, remarks, delay, jitter, Taskid string) string {
     windows_clientMu.Lock()
