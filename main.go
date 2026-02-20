@@ -2636,24 +2636,19 @@ func Check_comment(check_parts, option string) bool {
 //写入内网资产端口
 func in_port(uid, data string) {
     ipPorts := make(map[string][]string)
-    re := regexp.MustCompile(`(?i)(\[[0-9a-f:]+\]|[a-z0-9.-]+|\d+\.\d+\.\d+\.\d+):\[(\d+)\]`)
+    re := regexp.MustCompile(`(?i)(\[[0-9a-f:%]+\]|[a-z0-9.-]+|\d+\.\d+\.\d+\.\d+):\[(\d+)\]`)
     matches := re.FindAllStringSubmatch(data, -1)
-
     for _, match := range matches {
         if len(match) < 3 {
             continue
         }
         host := match[1]
         port := match[2]
-
-        // 去掉 IPv6 的 []
         if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
             host = host[1 : len(host)-1]
         }
-
         ipPorts[host] = append(ipPorts[host], port)
     }
-
     for host, ports := range ipPorts {
         put_innet(uid, host, ports)
     }
