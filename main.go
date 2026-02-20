@@ -2636,7 +2636,7 @@ func Check_comment(check_parts, option string) bool {
 //写入内网资产端口
 func in_port(uid, data string) {
     ipPorts := make(map[string][]string)
-    re := regexp.MustCompile(`(?i)(\[[0-9a-f:%]+\]|[a-z0-9.-]+|\d+\.\d+\.\d+\.\d+):\[(\d+)\]`)
+    re := regexp.MustCompile(`(.+?):\[(\d+)\]`)
     matches := re.FindAllStringSubmatch(data, -1)
     for _, match := range matches {
         if len(match) < 3 {
