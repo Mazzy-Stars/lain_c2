@@ -2509,7 +2509,7 @@ func Getcmd(uid, cmd, Taskid string) string {
             if len(parts) != 2 {
                 return "missing parameter"
             }
-            str_parts := strings.Split(parts[1], "*")
+            str_parts := strings.Split(parts[1], "**///**")
             splitSizeStr := strings.TrimSpace(str_parts[len(str_parts)-1])
             if dot := strings.Index(splitSizeStr, "."); dot != -1 {
                 splitSizeStr = splitSizeStr[:dot]
@@ -2520,7 +2520,7 @@ func Getcmd(uid, cmd, Taskid string) string {
             } else {
                 str_parts[len(str_parts)-1] = strconv.Itoa(splitSize)
             }
-            newCmd = "LOAD_U_FILE*//*" + strings.Join(str_parts, "*")
+            newCmd = "LOAD_U_FILE*//*" + strings.Join(str_parts, "**///**")
         }
 
         finalCmd = newCmd + "*//*" + Taskid
