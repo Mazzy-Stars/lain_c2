@@ -3301,65 +3301,94 @@ func Get_Clients(username string) (map[string]string, error) {
     }
     return shell_list, nil
 }
+
 func ClearUnmarkedGlobalVars() {
-    // 1) 清理 msgQueues（替代 msg_get_list）
-    queuesMu.Lock()
-    msgQueues = make(map[string]*uidMsgQueue)
-    queuesMu.Unlock()
+    // 1) 清理 msgQueues
+    go func() {
+        queuesMu.Lock()
+        msgQueues = make(map[string]*uidMsgQueue)
+        queuesMu.Unlock()
+    }()
 
-    // 2) 清理 key1_map / key2_map / key3_map
-    key1Mu.Lock()
-    key1_map = make(map[string][]byte)
-    key1Mu.Unlock()
+    // 2) 清理 key1_map
+    go func() {
+        key1Mu.Lock()
+        key1_map = make(map[string][]byte)
+        key1Mu.Unlock()
+    }()
 
-    key2Mu.Lock()
-    key2_map = make(map[string][]byte)
-    key2Mu.Unlock()
+    // 3) 清理 key2_map
+    go func() {
+        key2Mu.Lock()
+        key2_map = make(map[string][]byte)
+        key2Mu.Unlock()
+    }()
 
-    key3Mu.Lock()
-    key3_map = make(map[string][]int)
-    key3Mu.Unlock()
+    // 4) 清理 key3_map
+    go func() {
+        key3Mu.Lock()
+        key3_map = make(map[string][]int)
+        key3Mu.Unlock()
+    }()
 
-    // 3) 清理 msgFileQueue
-    fileMu.Lock()
-    msgFileQueue = make(map[string]*fileQueue)
-    fileMu.Unlock()
+    // 5) 清理 msgFileQueue
+    go func() {
+        fileMu.Lock()
+        msgFileQueue = make(map[string]*fileQueue)
+        fileMu.Unlock()
+    }()
 
-    // 4) 清理 msg_result_list
-    resultMu.Lock()
-    msgResultQueues = make(map[string]*resultQueue)
-    resultMu.Unlock()
+    // 6) 清理 msgResultQueues
+    go func() {
+        resultMu.Lock()
+        msgResultQueues = make(map[string]*resultQueue)
+        resultMu.Unlock()
+    }()
 
-    // 5) 清理 msg_map_list
-    mapMu.Lock()
-    msg_map_list = make([]Msg_result, 0)
-    mapMu.Unlock()
+    // 7) 清理 msg_map_list
+    go func() {
+        mapMu.Lock()
+        msg_map_list = make([]Msg_result, 0)
+        mapMu.Unlock()
+    }()
 
-    // 6) 清理 msg_file_cache
-    fcache.Lock()
-    msg_file_cache = make([]Msg_file, 0)
-    fcache.Unlock()
+    // 8) 清理 msg_file_cache
+    go func() {
+        fcache.Lock()
+        msg_file_cache = make([]Msg_file, 0)
+        fcache.Unlock()
+    }()
 
-    // 7) 清理 shell_net_post
-    netMu.Lock()
-    shell_net_post = make(map[string]string)
-    netMu.Unlock()
+    // 9) 清理 shell_net_post
+    go func() {
+        netMu.Lock()
+        shell_net_post = make(map[string]string)
+        netMu.Unlock()
+    }()
 
-    upByteMu.Lock()
-    UploadFile_byte_parts = make(map[string][]byte)
-    upByteMu.Unlock()
+    // 10) 清理上传缓存
+    go func() {
+        upByteMu.Lock()
+        UploadFile_byte_parts = make(map[string][]byte)
+        upByteMu.Unlock()
+    }()
 
-    DoByteMu.Lock()
-    DownloadFile_byte_parts = make(map[string][]byte)
-    parts_count = make(map[string]int)
-    DoByteMu.Unlock()
+    // 11) 清理下载缓存
+    go func() {
+        DoByteMu.Lock()
+        DownloadFile_byte_parts = make(map[string][]byte)
+        parts_count = make(map[string]int)
+        DoByteMu.Unlock()
+    }()
 
-    // 9) 全局缓存
-    mutex.Lock()
-    sessionSlice = make([]string, 0)
-    mutex.Unlock()
+    // 12) 清理全局 sessionSlice
+    go func() {
+        mutex.Lock()
+        sessionSlice = make([]string, 0)
+        mutex.Unlock()
+    }()
 
-    // 9) 记录日志
+    // 13) 写日志（这里可以直接写，不影响锁）
     logStr := fmt.Sprintf(log_word["Memory_clean"])
     logger.WriteLog(logStr)
 }
