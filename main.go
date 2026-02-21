@@ -31,7 +31,7 @@ import (
     "server/web_ui"
 )
 var (
-    /*不可清理*/mutex   = &sync.Mutex{}
+    /*不可清理*/mutex   = &sync.RWMutex{}
 
 	/*不可清理*/key_map = make(map[string]string)
     /*不可清理*/keyMu sync.RWMutex
@@ -352,6 +352,7 @@ func User_index(web_route string)http.HandlerFunc {
         }
         var foundUser bool
 
+		mutex.RLock()
         for i := range sessionSlice {
             session := &sessionSlice[i] 
             if *session == usernameCookie.Value {
@@ -359,6 +360,7 @@ func User_index(web_route string)http.HandlerFunc {
                 break
             }
         }
+		mutex.RUnlock()
 
         if !foundUser {
             w.WriteHeader(http.StatusNotFound)
