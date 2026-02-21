@@ -550,7 +550,7 @@ func User_index(web_route string)http.HandlerFunc {
 						    delete(key_map, uid)
 						    keyMu.Unlock()
 						}()
-						go fun() {
+						go func() {
 							uidMutex.Lock()
 							delete(uid_base, uid)
 			                uidMutex.Unlock()
