@@ -996,16 +996,23 @@ func User_index(web_route string)http.HandlerFunc {
                             _os,
                         )
                     case "delFileList":
-
-                        uid := r.URL.Query().Get("uid")
-                        indexStr := r.URL.Query().Get("index")
-
-                        Del_file_list(uid, indexStr)
-                        w.Header().Set("Content-Type", "application/json")
-                        json.NewEncoder(w).Encode(map[string]string{
-                            "code": "200",
-                            "message": "File deleted successfully",
-                        })
+					    uid := r.URL.Query().Get("uid")
+					    indexStr := r.URL.Query().Get("index")
+	
+					    deleted := Del_file_list(uid, indexStr)
+					
+					    w.Header().Set("Content-Type", "application/json")
+					    if deleted {
+					        json.NewEncoder(w).Encode(map[string]string{
+					            "code":    "200",
+					            "message": "File deleted successfully",
+					        })
+					    } else {
+					        json.NewEncoder(w).Encode(map[string]string{
+					            "code":    "400",
+					            "message": "File not found or invalid index",
+					        })
+					    }
                     case "readFileList":
 
                         uid := r.URL.Query().Get("uid")
@@ -2065,27 +2072,27 @@ func Get_file_list(uid, taskid string) string {
     return ""
 }
 //按索引删除客户端目录缓存
-func Del_file_list(uid, indexStr string) {
+func Del_file_list(uid, indexStr string) bool {
     fcache.Lock()
     defer fcache.Unlock()
     index, err := strconv.Atoi(indexStr)
     if err != nil {
-        return
+        return false
     }
     // 找到 uid 对应的所有文件的索引
     var uidIndices []int
     for i := range msg_file_cache {
-        item := &msg_file_cache[i]
-        if item.Uid == uid {
+        if msg_file_cache[i].Uid == uid {
             uidIndices = append(uidIndices, i)
         }
     }
     if index < 0 || index >= len(uidIndices) {
-        return
+        return false
     }
     // 删除对应索引的文件
     delIdx := uidIndices[index]
     msg_file_cache = append(msg_file_cache[:delIdx], msg_file_cache[delIdx+1:]...)
+    return true
 }
 //读取目录缓存给客户端
 type file_json struct {
