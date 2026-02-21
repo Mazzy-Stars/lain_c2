@@ -667,7 +667,7 @@ func send() { //发送头部信息
 	        }
 	        start = end
 	        end = start + intSize
-	        elayMutex.RLock();time.Sleep(time.Duration(delay) * time.Second);delayMutex.RUnlock()
+	        delayMutex.RLock();time.Sleep(time.Duration(delay) * time.Second);delayMutex.RUnlock()
 	    }
 	}
     func getCmd() {
