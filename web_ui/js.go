@@ -478,7 +478,9 @@ class index{
                                 const r = await res.json();
                                 if (r.code === "200") {
                                     listDiv.remove();
-                                }
+                                } else {
+						            console.log("Failed to delete file: " + (r.message || "Unknown error"));
+						        }
                             };
                             listDiv.appendChild(delBtn);
                             historyParent.appendChild(listDiv);
