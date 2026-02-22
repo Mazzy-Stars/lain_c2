@@ -1191,110 +1191,165 @@ class index{
 
                 function loadMessages() {
                     msgContainer.innerHTML = "";
+                
                     fetch(server + "/`+web_route+`?op=getMsgList&uid=" + encodeURIComponent(uid))
                         .then(res => res.json())
                         .then(data1 => {
-                            if (data1.messages && data1.messages.length > 0) {
-                                data1.messages.forEach((msg, index) => {
-                                    const msgElement = createMsgWithButtons(msg, index);
-                                    msgContainer.appendChild(msgElement);
-                                });
-                            }
+                            (data1.messages || []).forEach((raw, i) => {
+                                const text = renderMsgText(raw);
+                                msgContainer.appendChild(
+                                    createMessageItem({
+                                        text,
+                                        index: i,
+                                        withMove: true,
+                                        onDelete: div => deleteMsg(div)
+                                    })
+                                );
+                            });
+                
                             return fetch(server + "/`+web_route+`?op=getMsgPost&uid=" + encodeURIComponent(uid));
                         })
-                        .then(response => response.json())
+                        .then(res => res.json())
                         .then(data => {
-                            if (data.messages && data.messages.length > 0) {
-                                const postTitle = document.createElement("h2");
-                                postTitle.textContent = "result List";
-                                msgContainer.appendChild(postTitle);
-                                data.messages.forEach((msg, index) => {
-                                    const msgDiv = document.createElement("div");
-                                    msgDiv.className = "msg-item";
-                                    msgDiv.style.display = "flex";
-                                    msgDiv.style.justifyContent = "space-between";
-                                    msgDiv.style.alignItems = "center";
-                                    msgDiv.style.gap = "8px";
-                                    const shortText = msg.length > 10 ? msg.slice(0, 10) + "…" : msg;
-                                    let expanded = false;
-                                    const span = document.createElement("span");
-                                    span.textContent = shortText;
-                                    span.style.cursor = "pointer";
-                                    span.onclick = () => { expanded = !expanded; span.textContent = expanded ? msg : shortText; };
-                                    const btnGroup = document.createElement("div");
-                                    btnGroup.style.display = "flex"; btnGroup.style.gap = "4px";
-                                    const copyBtn = document.createElement("button");
-                                    copyBtn.textContent = "📋"; copyBtn.className = "copy-btn"; copyBtn.title = "复制";
-                                    copyBtn.onclick = () => { navigator.clipboard.writeText(msg).then(() => { copyBtn.textContent = "✅"; setTimeout(() => copyBtn.textContent = "📋", 1000); }).catch(console.error); };
-                                    const delBtn = document.createElement("button");
-                                    delBtn.textContent = "🗑"; delBtn.className = "del-btn"; delBtn.title = "删除";
-                                    delBtn.onclick = () => {
-                                        const idx = Array.from(msgDiv.parentElement.children).indexOf(msgDiv);
-                                        var idx_ = idx > 0 ? idx - 1 : 0;
-                                        const url = server + "/`+web_route+`?op=delMsgMap&uid=" + encodeURIComponent(uid) + "&index=" + idx_;
-                                        fetch(url, { method: "GET" }).then(() => msgDiv.remove()).catch(console.error);
-                                    };
-                                    btnGroup.appendChild(copyBtn); btnGroup.appendChild(delBtn);
-                                    msgDiv.appendChild(span); msgDiv.appendChild(btnGroup);
-                                    msgContainer.appendChild(msgDiv);
-                                });
-                            }
+                            if (!data.messages || data.messages.length === 0) return;
+                
+                            const h2 = document.createElement("h2");
+                            h2.textContent = "result List";
+                            msgContainer.appendChild(h2);
+                
+                            data.messages.forEach((raw, i) => {
+                                msgContainer.appendChild(
+                                    createMessageItem({
+                                        text: raw, 
+                                        expandable: true,
+                                        withCopy: true,
+                                        onDelete: div => {
+                                            fetch(
+                                                server + "/`+web_route+`?op=delMsgMap&uid=" +
+                                                encodeURIComponent(uid) + "&index=" + i
+                                            ).then(() => div.remove());
+                                        }
+                                    })
+                                );
+                            });
                         })
-                        .catch(error => { console.error("消息获取失败：", error); });
+                        .catch(console.error);
                 }
-
-                // 创建消息项（含按钮）
-                function createMsgWithButtons(rawMsg, index) {
-                    const parts = rawMsg.split("*//*");
-                    let msgText = rawMsg;
-                    if (parts[0] === "GET_U_FRIENDS") {
-                        msgText = "scan:    " + parts[1] + "     range:    " + parts[2] + "     delay:     " + parts[3];
-                    } else if (parts[0] === "GET_DELAY") {
-                        msgText = "change delay:     " + parts[1] + "     seconds";
-                    } else if (parts[0] === "GET_U_FILE") {
-                        msgText = "File:     " + parts[1] + " Size:    " + parts[2] + "    bytes";
-                    } else if (parts[0] === "LOAD_U_FILE") {
-                        msgText = "File: " + parts[1];
-                    } else if (parts[0] === "LOOK_UP_FILE") {
-                        msgText = "lookDir:     " + parts[1];
-                    } else if (parts[0] === "GET_PORTS") {
-                        msgText = "sniff:     " + parts[1] + "     range:     " + parts[2] + "     delay:     " + parts[3];
-                    } else if (parts[0] === "SWITCH_VERSION") {
-                        msgText = "change shell:     " + parts[1];
+                function renderMsgText(rawMsg) {
+                    //  taskid 去掉
+                    var colonIndex = rawMsg.indexOf(":");
+                    var msgContent = rawMsg;
+                    if (colonIndex >= 0) {
+                        msgContent = rawMsg.substring(colonIndex + 1);
                     }
 
+                    // 去掉开头空白字符 \t 和空格
+                    msgContent = msgContent.trim();
+
+                    var parts = msgContent.split("*//*");
+
+                    switch (parts[0]) {
+                        case "GET_U_FRIENDS":
+                            return "scan: " + parts[1] + "   range: " + parts[2] + "   delay: " + parts[3];
+                        case "GET_DELAY":
+                            return "change delay: " + parts[1] + " seconds";
+                        case "GET_U_FILE":
+                            return "File: " + parts[1] + "   Size: " + parts[2] + " bytes";
+                        case "LOAD_U_FILE":
+                            return "File: " + parts[1];
+                        case "LOOK_UP_FILE":
+                            return "lookDir: " + parts[1];
+                        case "GET_PORTS":
+                            return "sniff: " + parts[1] + "   range: " + parts[2] + "   delay: " + parts[3];
+                        case "SWITCH_VERSION":
+                            return "change shell: " + parts[1];
+                        case "CHANG_FILE_NAME":
+                            return "change file name: " + parts[1] + " -> " + parts[2];
+                        case "CHANG_FILE_TIME":
+                            return "change file time: " + parts[1] + " -> " + parts[2];
+                        case "GET_JITTER":
+                            return "change jitter: " + parts[1];
+                        default:
+                            return msgContent; // 返回去掉 taskid 的原始内容
+                    }
+                }
+                function createMessageItem({
+                    text,
+                    index = null,
+                    expandable = false,
+                    onDelete = null,
+                    withMove = false,
+                    withCopy = false
+                }) {
                     const msgDiv = document.createElement("div");
                     msgDiv.className = "msg-item";
-
-                    const idxStr = String(index).padStart(2, "0");
-                    const indexLabel = document.createElement("span");
-                    indexLabel.textContent = "[" + idxStr.slice(0, 10) + "] ";
-                    msgDiv.appendChild(indexLabel);
-
-                    msgDiv.appendChild(document.createTextNode(msgText));
-
+                    msgDiv.style.display = "flex";
+                    msgDiv.style.justifyContent = "space-between";
+                    msgDiv.style.alignItems = "center";
+                    msgDiv.style.gap = "8px";
+                
+                    const left = document.createElement("div");
+                
+                    if (index !== null) {
+                        const idx = document.createElement("span");
+                        idx.textContent = "[" + String(index).padStart(2, "0") + "] ";
+                        left.appendChild(idx);
+                    }
+                
+                    const span = document.createElement("span");
+                    let expanded = false;
+                
+                    if (expandable && text.length > 10) {
+                        const shortText = text.slice(0, 10) + "…";
+                        span.textContent = shortText;
+                        span.style.cursor = "pointer";
+                        span.onclick = () => {
+                            expanded = !expanded;
+                            span.textContent = expanded ? text : shortText;
+                        };
+                    } else {
+                        span.textContent = text;
+                    }
+                
+                    left.appendChild(span);
+                    msgDiv.appendChild(left);
+                
                     const btnGroup = document.createElement("div");
-                    btnGroup.className = "btn-group";
-
-                    const upBtn = document.createElement("button");
-                    upBtn.textContent = "⬆";
-                    upBtn.className = "move-btn";
-                    upBtn.onclick = () => moveUp(msgDiv);
-
-                    const downBtn = document.createElement("button");
-                    downBtn.textContent = "⬇";
-                    downBtn.className = "move-btn";
-                    downBtn.onclick = () => moveDown(msgDiv);
-
-                    const delBtn = document.createElement("button");
-                    delBtn.textContent = "🗑";
-                    delBtn.className = "del-btn";
-                    delBtn.onclick = () => deleteMsg(msgDiv);
-
-                    btnGroup.appendChild(upBtn);
-                    btnGroup.appendChild(downBtn);
-                    btnGroup.appendChild(delBtn);
-
+                    btnGroup.style.display = "flex";
+                    btnGroup.style.gap = "4px";
+                
+                    if (withMove) {
+                        const up = document.createElement("button");
+                        up.textContent = "↑";
+                        up.onclick = () => moveUp(msgDiv);
+                
+                        const down = document.createElement("button");
+                        down.textContent = "↓";
+                        down.onclick = () => moveDown(msgDiv);
+                
+                        btnGroup.appendChild(up);
+                        btnGroup.appendChild(down);
+                    }
+                
+                    if (withCopy) {
+                        const copy = document.createElement("button");
+                        copy.textContent = "📋";
+                        copy.onclick = () => {
+                            navigator.clipboard.writeText(text).then(() => {
+                                copy.textContent = "✔";
+                                setTimeout(() => copy.textContent = "📋", 1000);
+                            });
+                        };
+                        btnGroup.appendChild(copy);
+                    }
+                
+                    if (onDelete) {
+                        const del = document.createElement("button");
+                        del.textContent = "🗑";
+                        del.onclick = () => onDelete(msgDiv);
+                        btnGroup.appendChild(del);
+                    }
+                
                     msgDiv.appendChild(btnGroup);
                     return msgDiv;
                 }
@@ -2155,22 +2210,24 @@ class lain_chat{
         chat_div.scrollTop = chat_div.scrollHeight;
     }
     async getNewChat() {
-        try {
-            setInterval(async () => {
+        setInterval(async () => {
+            try {
                 let url = this.server + "/`+web_route+`?op=getNewChat";
                 let res = await fetch(url);
                 let data = await res.json();
+
                 if (!data || !data.chatid) return;
-                if (this.chat_slice.length > 0 &&
-                    this.chat_slice[this.chat_slice.length - 1].chatid === data.chatid) {
-                    return;
-                }
+
+                // 判断是否已经存在
+                if (this.chat_slice.some(item => item.chatid === data.chatid)) return;
+
                 this.chat_slice.push(data);
                 this.renderChatItem(data);
-            }, 5000);
-        } catch (err) {
-            console.error("Error in getNewChat:", err);
-        }
+
+            } catch (err) {
+                console.error("Error fetching new chat:", err);
+            }
+        }, 5000);
     }
     async getChatSlice() {
         try {
