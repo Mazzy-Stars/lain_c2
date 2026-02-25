@@ -492,7 +492,7 @@ func User_index(web_route string)http.HandlerFunc {
 
                         uid := r.URL.Query().Get("uid")
 					
-                        DeleteEntry(uid)
+                        DeleteEntry(uid,true)
 					case "delInfo": // 删除客户端
                         uid := r.URL.Query().Get("uid")
                         info := r.URL.Query().Get("info")
@@ -1553,7 +1553,7 @@ func GetInfo(uid,encry_str,key,clientIP string,code_map map[byte]int){
     log_str1 := fmt.Sprintf(log_word["agent_online"],
     username, uid, shellname, osname, version, executable, t, jitter, clientIP, innet_ip, port, protocol, server_remark, currentDir, hashString[12:])
     logger.WriteLog(log_str1)
-    go DeleteEntry(uid)
+    go DeleteEntry(uid,false)
 }
 func Windows_GetInfo(uid,encry_str,key,clientIP string,code_map map[byte]int){
     data := Get_decry_s(&encry_str, &key, code_map)
@@ -1604,7 +1604,7 @@ func Windows_GetInfo(uid,encry_str,key,clientIP string,code_map map[byte]int){
         username, uid, shellname, osname, version, executable, t, jitter, clientIP, innet_ip, port, protocol, server_remark, currentDir, hashString[12:], macs, cpuInfo, memoryStr, systemType, arch, antivirus, browsers, chatApps)
     logger.WriteLog(log_str)
     // 删除连接条目
-    go DeleteEntry(uid)
+    go DeleteEntry(uid,false)
 }
 func updateServerClients(port, protocol string, serverChan chan<- string) {
     serverRemark := "unknown"
@@ -2005,7 +2005,7 @@ func Insert_key(uid, username, shellname string) {
     }
 }
 
-func DeleteEntry(delshell string) {
+func DeleteEntry(delshell string,delbase bool) {
     if delshell == "" {
         return
     }
@@ -2017,6 +2017,13 @@ func DeleteEntry(delshell string) {
             break 
         }
     }
+	if delbase{
+		go func() {
+			uidMutex.Lock()
+			delete(uid_base, delshell)
+			uidMutex.Unlock()
+		}()
+	}
 }
 
 //写入目录列表
