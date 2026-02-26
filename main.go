@@ -2488,7 +2488,7 @@ func Getcmd(uid, cmd, Taskid string) string {
         }
 
         if parts[4] == "" {
-            parts[4] = "whatever"
+            parts[4] = "save"
         }
 
         if strings.HasPrefix(cmd, "GET_U_FRIENDS*//*") {
