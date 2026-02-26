@@ -2209,7 +2209,7 @@ class lain_chat{
             });
 
         } catch (error) {
-            console.error('Error in getChatSlice:', error);
+            this.chat_slice = [];
         }
     }
     async sendChat() {
