@@ -2023,6 +2023,24 @@ func DeleteEntry(delshell string,delbase bool) {
 			delete(uid_base, delshell)
 			uidMutex.Unlock()
 		}()
+
+	    go func() {
+	        key1Mu.Lock()
+	        key1_map = make(map[string][]byte)
+	        key1Mu.Unlock()
+	    }()
+	
+	    go func() {
+	        key2Mu.Lock()
+	        key2_map = make(map[string][]byte)
+	        key2Mu.Unlock()
+	    }()
+	
+	    go func() {
+	        key3Mu.Lock()
+	        key3_map = make(map[string][]int)
+	        key3Mu.Unlock()
+	    }()
 	}
 }
 
