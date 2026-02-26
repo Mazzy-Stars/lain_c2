@@ -2475,7 +2475,7 @@ func Getcmd(uid, cmd, Taskid string) string {
 
         // GET_PORTS / GET_U_FRIENDS
         parts := strings.Split(cmd, "*//*")
-        if len(parts) != 5 {
+        if len(parts) != 4 {
             return "missing parameter"
         }
 
@@ -2485,10 +2485,6 @@ func Getcmd(uid, cmd, Taskid string) string {
         }
         if sleep_time < 1 {
             sleep_time = 1
-        }
-
-        if parts[4] == "" {
-            parts[4] = "save"
         }
 
         if strings.HasPrefix(cmd, "GET_U_FRIENDS*//*") {
@@ -2502,8 +2498,8 @@ func Getcmd(uid, cmd, Taskid string) string {
             return "Format error"
         }
 
-        finalCmd = fmt.Sprintf("%s*//*%s*//*%s*//*%d*//*%s*//*%s",
-            parts[0], parts[1], parts[2], sleep_time, parts[4], Taskid)
+        finalCmd = fmt.Sprintf("%s*//*%s*//*%s*//*%d*//*%s",
+            parts[0], parts[1], parts[2], sleep_time, Taskid)
 
         logMsg = fmt.Sprintf(log_word["scan_msg"], uid, parts[1])
 
