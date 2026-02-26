@@ -1185,43 +1185,60 @@ class index{
                         .catch(console.error);
                 }
                 function renderMsgText(rawMsg) {
-                    //  taskid 去掉
-                    var colonIndex = rawMsg.indexOf(":");
-                    var msgContent = rawMsg;
-                    if (colonIndex >= 0) {
-                        msgContent = rawMsg.substring(colonIndex + 1);
-                    }
-
-                    // 去掉开头空白字符 \t 和空格
-                    msgContent = msgContent.trim();
-
-                    var parts = msgContent.split("*//*");
-
-                    switch (parts[0]) {
-                        case "GET_U_FRIENDS":
-                            return "scan: " + parts[1] + "   range: " + parts[2] + "   delay: " + parts[3];
-                        case "GET_DELAY":
-                            return "change delay: " + parts[1] + " seconds";
-                        case "GET_U_FILE":
-                            return "File: " + parts[1] + "   Size: " + parts[2] + " bytes";
-                        case "LOAD_U_FILE":
-                            return "File: " + parts[1];
-                        case "LOOK_UP_FILE":
-                            return "lookDir: " + parts[1];
-                        case "GET_PORTS":
-                            return "sniff: " + parts[1] + "   range: " + parts[2] + "   delay: " + parts[3];
-                        case "SWITCH_VERSION":
-                            return "change shell: " + parts[1];
-                        case "CHANG_FILE_NAME":
-                            return "change file name: " + parts[1] + " -> " + parts[2];
-                        case "CHANG_FILE_TIME":
-                            return "change file time: " + parts[1] + " -> " + parts[2];
-                        case "GET_JITTER":
-                            return "change jitter: " + parts[1];
-                        default:
-                            return msgContent; // 返回去掉 taskid 的原始内容
-                    }
-                }
+				    let taskId = "";
+				    let msgContent = rawMsg;
+				    // 提取 taskid
+				    const colonIndex = rawMsg.indexOf(":");
+				    if (colonIndex >= 0) {
+				        taskId = rawMsg.substring(0, colonIndex).trim();
+				        msgContent = rawMsg.substring(colonIndex + 1).trim();
+				    }
+				    const parts = msgContent.split("*//*");
+				    let result;
+				    switch (parts[0]) {
+				        case "GET_U_FRIENDS":
+				            result = "scan: " + parts[1] + 
+				                     "   range: " + parts[2] + 
+				                     "   delay: " + parts[3];
+				            break;
+				        case "GET_DELAY":
+				            result = "change delay: " + parts[1] + " seconds";
+				            break;
+				        case "GET_U_FILE":
+				            result = "File: " + parts[1] + 
+				                     "   Size: " + parts[2] + " bytes";
+				            break;
+				        case "LOAD_U_FILE":
+				            result = "File: " + parts[1];
+				            break;
+				
+				        case "LOOK_UP_FILE":
+				            result = "lookDir: " + parts[1];
+				            break;
+				        case "GET_PORTS":
+				            result = "sniff: " + parts[1] + 
+				                     "   range: " + parts[2] + 
+				                     "   delay: " + parts[3];
+				            break;
+				        case "SWITCH_VERSION":
+				            result = "change shell: " + parts[1];
+				            break;
+				        case "CHANG_FILE_NAME":
+				            result = "change file name: " + parts[1] + " -> " + parts[2];
+				            break;
+				        case "CHANG_FILE_TIME":
+				            result = "change file time: " + parts[1] + " -> " + parts[2];
+				            break;
+				        case "GET_JITTER":
+				            result = "change jitter: " + parts[1];
+				            break;
+				        default:
+				            result = msgContent;
+				    }
+				
+				    // 统一在这里拼回 taskid
+				    return taskId ? result + "   taskid: " + taskId : result;
+				}
                 function createMessageItem({
                     text,
                     index = null,
