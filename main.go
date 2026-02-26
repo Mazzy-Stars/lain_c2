@@ -2026,19 +2026,19 @@ func DeleteEntry(delshell string,delbase bool) {
 
 	    go func() {
 	        key1Mu.Lock()
-	        key1_map = make(map[string][]byte)
+			delete(key1_map, delshell)
 	        key1Mu.Unlock()
 	    }()
 	
 	    go func() {
 	        key2Mu.Lock()
-	        key2_map = make(map[string][]byte)
+			delete(key2_map, delshell)
 	        key2Mu.Unlock()
 	    }()
 	
 	    go func() {
 	        key3Mu.Lock()
-	        key3_map = make(map[string][]int)
+	        delete(key3_map, delshell)
 	        key3Mu.Unlock()
 	    }()
 	}
