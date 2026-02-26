@@ -2424,7 +2424,7 @@ func Getcmd(uid, cmd, Taskid string) string {
 		}else if strings.HasPrefix(cmd, "CHANG_FILE_TIME*//*"){
 			logMsg = fmt.Sprintf(log_word["change_file_time"], uid,cmd_split[1],cmd_split[2])
 		}
-		finalCmd = cmd + "*//*" + Taskid
+		finalCmd = cmd
 	}else if strings.HasPrefix(cmd, "SWITCH_VERSION*//*") {
         // SWITCH_VERSION
         cmd_split := strings.Split(cmd, "*//*")
@@ -2456,7 +2456,7 @@ func Getcmd(uid, cmd, Taskid string) string {
             windows_clientMu.Unlock()
 		}()
 
-        finalCmd = cmd + "*//*" + Taskid
+        finalCmd = cmd
 
     } else if strings.HasPrefix(cmd, "GET_JITTER*//*") || strings.HasPrefix(cmd, "GET_DELAY*//*") {
         parts := strings.Split(cmd, "*//*")
@@ -2470,7 +2470,7 @@ func Getcmd(uid, cmd, Taskid string) string {
         if v <= 0 {
             return "parameter must be > 0"
         }
-        finalCmd = cmd + "*//*" + Taskid
+        finalCmd = cmd
     }else if strings.HasPrefix(cmd, "GET_PORTS*//*") || strings.HasPrefix(cmd, "GET_U_FRIENDS*//*") {
 
         // GET_PORTS / GET_U_FRIENDS
@@ -2498,8 +2498,8 @@ func Getcmd(uid, cmd, Taskid string) string {
             return "Format error"
         }
 
-        finalCmd = fmt.Sprintf("%s*//*%s*//*%s*//*%d*//*%s",
-            parts[0], parts[1], parts[2], sleep_time, Taskid)
+        finalCmd = fmt.Sprintf("%s*//*%s*//*%s*//*%d",
+            parts[0], parts[1], parts[2], sleep_time)
 
         logMsg = fmt.Sprintf(log_word["scan_msg"], uid, parts[1])
 
@@ -2544,7 +2544,7 @@ func Getcmd(uid, cmd, Taskid string) string {
             newCmd = "LOAD_U_FILE*//*" + strings.Join(str_parts, "**///**")
         }
 
-        finalCmd = newCmd + "*//*" + Taskid
+        finalCmd = newCmd
 
     } else {
         return "missing parameter"
