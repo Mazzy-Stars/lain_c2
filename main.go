@@ -602,6 +602,16 @@ func User_index(web_route string)http.HandlerFunc {
 							netMu.Unlock()
 						}()
 
+						go func() {
+						    dataInnetmu.Lock()
+						    for i := len(data_innet.Innets) - 1; i >= 0; i-- {
+						        if data_innet.Innets[i].Uid == uid {
+						            data_innet.Innets = append(data_innet.Innets[:i], data_innet.Innets[i+1:]...)
+						        }
+						    }
+							dataInnetmu.Unlock()
+						}()
+
                         logStr := fmt.Sprintf(log_word["removed_agent"], uid)
                         logger.WriteLog(logStr)
                         w.Header().Set("Content-Type", "application/json")
