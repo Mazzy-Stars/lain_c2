@@ -2374,7 +2374,7 @@ func Results(uid, results, Taskid string,code_map map[byte]int) {
         }
     }
 	clientDataMu.RUnlock()
-	windows_clientMu.Lock()
+	windows_clientMu.RLock()
 	for i := range windows_client_data.Clients {
 		client := &windows_client_data.Clients[i]
 		if uid == client.Uid {
@@ -2382,7 +2382,7 @@ func Results(uid, results, Taskid string,code_map map[byte]int) {
 			break
 		}
 	}
-	windows_clientMu.Unlock()
+	windows_clientMu.RUnlock()
     log_str := fmt.Sprintf(log_word["result"], shellname, uid, len(results))
     logger.WriteLog(log_str)
 }
@@ -2647,17 +2647,17 @@ func Getcmd(uid, cmd, Taskid string) string {
                     }
                 }
 				clientDataMu.RUnlock()
-				windows_clientMu.Lock()
+				windows_clientMu.RLock()
 				for i := range windows_client_data.Clients {
 					client := &windows_client_data.Clients[i]
 					if uid == client.Uid {
 						log_str := fmt.Sprintf(log_word["msg"], client.Host, uid, cmd)
 						logger.WriteLog(log_str)
-						windows_clientMu.Unlock()
+						windows_clientMu.RUnlock()
 						return
 					}
 				}
-				windows_clientMu.Unlock()
+				windows_clientMu.RUnlock()
             }(uid)
         }
     }
