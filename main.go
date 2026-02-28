@@ -810,6 +810,7 @@ func User_index(web_route string)http.HandlerFunc {
                     case "delserver":
 
                         port := r.URL.Query().Get("port")
+
 						var needStop bool
 						found := false
 						
@@ -825,7 +826,6 @@ func User_index(web_route string)http.HandlerFunc {
 						            return
 						        }
 						
-						        // 只做数据删除
 						        server_data.Servers = append(
 						            server_data.Servers[:i],
 						            server_data.Servers[i+1:]...,
@@ -842,20 +842,20 @@ func User_index(web_route string)http.HandlerFunc {
 						    logger.WriteLog(stopStr)
 						    return
 						}
+						if needStop {
+						    baseMutex.Lock()
+						    delete(base_map, port)
+						    baseMutex.Unlock()
 						
-						// 锁外做行为
-						baseMutex.Lock()
-						delete(base_map, port)
-						baseMutex.Unlock()
+						    cmapMutex.Lock()
+						    delete(code_map, port)
+						    cmapMutex.Unlock()
 						
-						cmapMutex.Lock()
-						delete(code_map, port)
-						cmapMutex.Unlock()
+						    go protocol.StopServer(port)
 						
-						go protocol.StopServer(port)
-						
-						stopStr := fmt.Sprintf(log_word["removed_server"], port)
-						logger.WriteLog(stopStr)
+						    stopStr := fmt.Sprintf(log_word["removed_server"], port)
+						    logger.WriteLog(stopStr)
+						}
                     case "getloot":
 
                         uid := r.URL.Query().Get("uid")
