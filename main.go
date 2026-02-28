@@ -833,7 +833,7 @@ func User_index(web_route string)http.HandlerFunc {
                                 cmapMutex.Unlock()
 
                                 // 停止服务
-                                protocol.StopServer(port)
+                                go protocol.StopServer(port)
 
                                 // 执行删除
                                 server_data.Servers = append(server_data.Servers[:i], server_data.Servers[i+1:]...)
