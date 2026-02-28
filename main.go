@@ -810,44 +810,52 @@ func User_index(web_route string)http.HandlerFunc {
                     case "delserver":
 
                         port := r.URL.Query().Get("port")
-
-                        found := false
-                        serverDataMu.Lock()
-                        defer serverDataMu.Unlock()
-                        for i := len(server_data.Servers) - 1; i >= 0; i-- {
-                            server := &server_data.Servers[i]
-                            if port == server.Port {
-                                if server.Clients != 0 {
-                                    stop_str := fmt.Sprintf(log_word["stop_server"])
-                                    fmt.Fprint(w, stop_str)
-                                    logger.WriteLog(stop_str)
-                                    return
-                                }
-                                // 清理 Map 数据
-                                baseMutex.Lock()
-                                delete(base_map, port)
-                                baseMutex.Unlock()
-                                
-                                cmapMutex.Lock()
-                                delete(code_map, port)
-                                cmapMutex.Unlock()
-
-                                // 停止服务
-                                go protocol.StopServer(port)
-
-                                // 执行删除
-                                server_data.Servers = append(server_data.Servers[:i], server_data.Servers[i+1:]...)
-                                
-                                found = true
-                                stop_str := fmt.Sprintf(log_word["removed_server"], port)
-                                logger.WriteLog(stop_str)
-                                break // 找到并删除后退出
-                            }
-                        }
-                        if !found {
-                            stop_str := fmt.Sprintf(log_word["no_found_server"], port)
-                            logger.WriteLog(stop_str)
-                        }
+						var needStop bool
+						found := false
+						
+						serverDataMu.Lock()
+						for i := len(server_data.Servers) - 1; i >= 0; i-- {
+						    server := &server_data.Servers[i]
+						    if port == server.Port {
+						        if server.Clients != 0 {
+						            serverDataMu.Unlock()
+						            stopStr := fmt.Sprintf(log_word["stop_server"])
+						            fmt.Fprint(w, stopStr)
+						            logger.WriteLog(stopStr)
+						            return
+						        }
+						
+						        // 只做数据删除
+						        server_data.Servers = append(
+						            server_data.Servers[:i],
+						            server_data.Servers[i+1:]...,
+						        )
+						        found = true
+						        needStop = true
+						        break
+						    }
+						}
+						serverDataMu.Unlock()
+						
+						if !found {
+						    stopStr := fmt.Sprintf(log_word["no_found_server"], port)
+						    logger.WriteLog(stopStr)
+						    return
+						}
+						
+						// 锁外做行为
+						baseMutex.Lock()
+						delete(base_map, port)
+						baseMutex.Unlock()
+						
+						cmapMutex.Lock()
+						delete(code_map, port)
+						cmapMutex.Unlock()
+						
+						go protocol.StopServer(port)
+						
+						stopStr := fmt.Sprintf(log_word["removed_server"], port)
+						logger.WriteLog(stopStr)
                     case "getloot":
 
                         uid := r.URL.Query().Get("uid")
