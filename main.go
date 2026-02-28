@@ -2642,6 +2642,7 @@ func Getcmd(uid, cmd, Taskid string) string {
                     if uid == client.Uid {
                         log_str := fmt.Sprintf(log_word["msg"], client.Host, uid, cmd)
                         logger.WriteLog(log_str)
+						clientDataMu.RUnlock()
                         return
                     }
                 }
@@ -2652,6 +2653,7 @@ func Getcmd(uid, cmd, Taskid string) string {
 					if uid == client.Uid {
 						log_str := fmt.Sprintf(log_word["msg"], client.Host, uid, cmd)
 						logger.WriteLog(log_str)
+						windows_clientMu.Unlock()
 						return
 					}
 				}
