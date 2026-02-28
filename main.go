@@ -1701,13 +1701,13 @@ func Change_pro(uid, username, remarks, delay, jitter, Taskid string) string {
                 if int_delay < 1 { int_delay = 1 }
                 client.Delay = int_delay
                 delayModified = true
-                Getcmd(uid, "GET_DELAY*//*"+delay, Taskid)
+                go Getcmd(uid, "GET_DELAY*//*"+delay, Taskid)
             }
             if int_jitter != client.Jitter {
                 if int_jitter <= 0 { int_jitter = 5 }
                 client.Jitter = int_jitter
                 jitterModified = true
-                Getcmd(uid, "GET_JITTER*//*"+jitter, Taskid)
+                go Getcmd(uid, "GET_JITTER*//*"+jitter, Taskid)
             }
             if !usernameModified && !remarksModified && !delayModified && !jitterModified {
                 return "No changes needed"
@@ -1760,7 +1760,7 @@ func Change(uid, username, remarks, delay, jitter, Taskid string) string {
                 client.Delay = int_delay
                 delayModified = true
                 cmd := "GET_DELAY*//*"+delay
-                Getcmd(uid,cmd,Taskid)
+                go Getcmd(uid,cmd,Taskid)
             }
             if int_jitter != client.Jitter {
                 if int_jitter <= 0 {
@@ -1769,7 +1769,7 @@ func Change(uid, username, remarks, delay, jitter, Taskid string) string {
                 client.Jitter = int_jitter
                 jitterModified = true
                 cmd := "GET_JITTER*//*"+jitter
-                Getcmd(uid,cmd,Taskid)
+                go Getcmd(uid,cmd,Taskid)
             }
             if !usernameModified && !remarksModified && !delayModified && !jitterModified {
                 return "No changes needed"
