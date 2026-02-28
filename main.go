@@ -2439,9 +2439,9 @@ func GetMsg(uid, base_rounds string) string {
 func Getcmd(uid, cmd, Taskid string) string {
     var base_rounds string
     if uid != "" {
-        uidMutex.Lock()
+        uidMutex.RLock()
         val, exists := uid_base[uid]
-        uidMutex.Unlock()
+        uidMutex.RUnlock()
         if !exists {
             return "missing parameter"
         }
