@@ -4140,18 +4140,26 @@ func main(){
     //登录
     http.Handle("/login", withCORS(login(ui_route, web_css)))
 
-    //页面
+	// --- 页面路由 ---
     http.HandleFunc("/"+ui_route, func(w http.ResponseWriter, r *http.Request) {
-        web_ui.Lain(error_str,web_title,web_js,web_css,web_route,sessionSlice).ServeHTTP(w, r)
-    })
-
-    //有权限交互
-    http.Handle("/"+web_route, withCORS(User_index(web_route)))
-
-    //调用js
-    http.HandleFunc("/"+web_js, func(w http.ResponseWriter, r *http.Request) {
-        web_ui.Js(error_str,web_route,web_js,web_css,sessionSlice).ServeHTTP(w, r)
-    })
+	    mutex.RLock()
+	    tempSessions := make([]string, len(sessionSlice))
+	    copy(tempSessions, sessionSlice)
+	    mutex.RUnlock() 
+	    web_ui.Lain(error_str, web_title, web_js, web_css, web_route, tempSessions).ServeHTTP(w, r)
+	})
+	
+	// --- 有权限交互 ---
+	http.Handle("/"+web_route, withCORS(User_index(web_route)))
+	
+	// --- 调用 JS ---
+	http.HandleFunc("/"+web_js, func(w http.ResponseWriter, r *http.Request) {
+	    mutex.RLock()
+	    tempSessions := make([]string, len(sessionSlice))
+	    copy(tempSessions, sessionSlice)
+	    mutex.RUnlock()
+	    web_ui.Js(error_str, web_route, web_js, web_css, tempSessions).ServeHTTP(w, r)
+	})
 
     //调用css
     http.HandleFunc("/"+web_css, func(w http.ResponseWriter, r *http.Request) {
