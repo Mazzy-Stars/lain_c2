@@ -1138,9 +1138,11 @@ class index{
                 const msgContainer = dialog.querySelector("#msg-container");
                 const server = window.location.protocol + "//" + window.location.host;
 
+                let msgPostArray = [];
+
                 function loadMessages() {
                     msgContainer.innerHTML = "";
-                
+
                     fetch(server + "/`+web_route+`?op=getMsgList&uid=" + encodeURIComponent(uid))
                         .then(res => res.json())
                         .then(data1 => {
@@ -1155,31 +1157,34 @@ class index{
                                     })
                                 );
                             });
-                
                             return fetch(server + "/`+web_route+`?op=getMsgPost&uid=" + encodeURIComponent(uid));
                         })
                         .then(res => res.json())
                         .then(data => {
                             if (!data.messages || data.messages.length === 0) return;
-                
+
+                            msgPostArray = data.messages; // 保存到前端数组
                             const h2 = document.createElement("h2");
                             h2.textContent = "result List";
                             msgContainer.appendChild(h2);
-                
-                            data.messages.forEach((raw, i) => {
-                                msgContainer.appendChild(
-                                    createMessageItem({
-                                        text: raw, 
-                                        expandable: true,
-                                        withCopy: true,
-                                        onDelete: div => {
-                                            fetch(
-                                                server + "/`+web_route+`?op=delMsgMap&uid=" +
-                                                encodeURIComponent(uid) + "&index=" + i
-                                            ).then(() => div.remove());
+
+                            data.messages.forEach((raw, idx) => {
+                                const div = createMessageItem({
+                                    text: raw,
+                                    expandable: true,
+                                    withCopy: true,
+                                    onDelete: div => {
+                                        const realIndex = msgPostArray.indexOf(raw);
+                                        if (realIndex !== -1) {
+                                            msgPostArray.splice(realIndex, 1);
                                         }
-                                    })
-                                );
+                                        fetch(
+                                            server + "/`+web_route+`?op=delMsgMap&uid=" +
+                                            encodeURIComponent(uid) + "&index=" + realIndex
+                                        ).then(() => div.remove());
+                                    }
+                                });
+                                msgContainer.appendChild(div);
                             });
                         })
                         .catch(console.error);
