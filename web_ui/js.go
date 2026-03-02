@@ -423,13 +423,17 @@ class index{
                             delBtn.style.marginLeft = '8px';
                             delBtn.onclick = async (e) => {
                                 e.stopPropagation();
-                                const res = await fetch(this.server + "/`+web_route+`?op=delFileList&uid=" + this.uid + "&index=" + idx);
+                                const index = Array.from(historyParent.children).indexOf(listDiv);
+                                const res = await fetch(
+                                    this.server + "/`+web_route+`?op=delFileList&uid=" +
+                                    this.uid + "&index=" + index
+                                );
                                 const r = await res.json();
                                 if (r.code === "200") {
                                     listDiv.remove();
                                 } else {
-						            console.log("Failed to delete file: " + (r.message || "Unknown error"));
-						        }
+                                    console.log("Failed to delete file: " + (r.message || "Unknown error"));
+                                }
                             };
                             listDiv.appendChild(delBtn);
                             historyParent.appendChild(listDiv);
