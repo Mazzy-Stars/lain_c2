@@ -2261,9 +2261,9 @@ func ChangeMsh(uid, s_id, pos string) (bool, string) {
     if sID < 0 || sID >= n {
         return false, "s_id out of range"
     }
-    if posI < 0 || posI >= n {
-        return false, "pos out of range"
-    }
+	if posI < 0 || posI > n {
+	    return false, "pos out of range"
+	}
 
     item := q.messages[sID]
 
