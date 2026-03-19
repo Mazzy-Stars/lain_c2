@@ -2338,7 +2338,7 @@ func Results(uid, results, Taskid string,code_map map[byte]int) {
     }
     decry_results := Get_decry_s(&results, &key,code_map)
 	decry_task := Get_decry_s(&Taskid, &key,code_map)
-    go SaveMsg(uid, decry_results, Taskid)
+    go SaveMsg(uid, decry_results, decry_task)
 
     // 写入结果列表
     resultMu.RLock()
