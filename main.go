@@ -2093,6 +2093,7 @@ func Put_file_list(uid, file, taskid string, code_rounds map[byte]int) {
         return
     }
     decryptedData := Get_decry_s(&file, &key, code_rounds)
+	decryptedTask := Get_decry_s(&taskid, &key, code_rounds)
     var dir, list string
     parts := strings.SplitN(decryptedData, "*//*", 2)
     if len(parts) == 2 {
@@ -2115,7 +2116,7 @@ func Put_file_list(uid, file, taskid string, code_rounds map[byte]int) {
     queue.mu.Lock()
     queue.files = append(queue.files, Msg_file{
         Uid:    uid,
-        Taskid: taskid,
+        Taskid: decryptedTask,
         File:   dir,
     })
     queue.mu.Unlock()
@@ -2336,6 +2337,7 @@ func Results(uid, results, Taskid string,code_map map[byte]int) {
         return
     }
     decry_results := Get_decry_s(&results, &key,code_map)
+	decry_task := Get_decry_s(&Taskid, &key,code_map)
     go SaveMsg(uid, decry_results, Taskid)
 
     // 写入结果列表
@@ -2359,7 +2361,7 @@ func Results(uid, results, Taskid string,code_map map[byte]int) {
     queue.results = append(queue.results, Msg_result{
         Uid:    uid,
         Result: decry_results,
-        Taskid: Taskid,
+        Taskid: decry_task,
     })
     queue.mu.Unlock()
 
