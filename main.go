@@ -3535,10 +3535,14 @@ func ObfuscateBySteps(data []byte, k ObfConst) []byte {
 		return data
 	}
 	n := len(data) / 3
+	remainder := len(data) % 3
 	if n < 2 {
 		data[0] ^= k.A
 		data[1] ^= k.B
 		data[2] ^= k.C
+		for i := 3; i < len(data); i++ {
+			data[i] ^= k.A ^ k.B ^ k.C
+		}
 		return data
 	}
 	at := func(r, c int) *byte {
@@ -3560,6 +3564,12 @@ func ObfuscateBySteps(data []byte, k ObfConst) []byte {
 	*at(0, 0) = (*at(0, lastCol) | *at(0, 0)) ^ k.A
 	*at(2, 0) = *at(1, lastCol) ^ *at(2, 0) ^ k.B
 	*at(1, 0) = *at(2, lastCol) ^ *at(1, 0) ^ k.C
+	if remainder > 0 {
+		start := 3 * n
+		for i := start; i < len(data); i++ {
+			data[i] ^= data[i-1] ^ k.A ^ k.B
+		}
+	}
 	return data
 }
 func randomSalt6() (ObfConst, []byte) {
