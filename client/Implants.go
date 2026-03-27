@@ -866,37 +866,47 @@ func send() { //发送头部信息
         F byte // 0xa5
     }
     func ObfuscateBySteps(data []byte, k ObfConst) []byte {
-        if len(data) < 3 {
-            return data
-        }
-        n := len(data) / 3
-        if n < 2 {
-            data[0] ^= k.A
-            data[1] ^= k.B
-            data[2] ^= k.C
-            return data
-        }
-        at := func(r, c int) *byte {
-            return &data[r*n+c]
-        }
-        for col := 1; col < n; col++ {
-            colIndex := col + 1
-            if colIndex%2 == 0 {
-                *at(0, col) = (*at(0, col-1) | *at(0, col)) ^ k.A
-                *at(2, col) = *at(1, col-1) ^ *at(2, col) ^ k.B
-                *at(1, col) = *at(2, col-1) ^ *at(1, col) ^ k.C
-            } else {
-                *at(1, col) = (*at(0, col-1) ^ *at(1, col)) ^ k.D
-                *at(0, col) = *at(1, col-1) ^ (*at(0, col) ^ k.E)
-                *at(2, col) = (*at(2, col-1) | *at(2, col)) ^ k.F
-            }
-        }
-        lastCol := n - 1
-        *at(0, 0) = (*at(0, lastCol) | *at(0, 0)) ^ k.A
-        *at(2, 0) = *at(1, lastCol) ^ *at(2, 0) ^ k.B
-        *at(1, 0) = *at(2, lastCol) ^ *at(1, 0) ^ k.C
-        return data
-    }
+		if len(data) < 3 {
+			return data
+		}
+		n := len(data) / 3
+		remainder := len(data) % 3
+		if n < 2 {
+			data[0] ^= k.A
+			data[1] ^= k.B
+			data[2] ^= k.C
+			for i := 3; i < len(data); i++ {
+				data[i] ^= k.A ^ k.B ^ k.C
+			}
+			return data
+		}
+		at := func(r, c int) *byte {
+			return &data[r*n+c]
+		}
+		for col := 1; col < n; col++ {
+			colIndex := col + 1
+			if colIndex%2 == 0 {
+				*at(0, col) = (*at(0, col-1) | *at(0, col)) ^ k.A
+				*at(2, col) = *at(1, col-1) ^ *at(2, col) ^ k.B
+				*at(1, col) = *at(2, col-1) ^ *at(1, col) ^ k.C
+			} else {
+				*at(1, col) = (*at(0, col-1) ^ *at(1, col)) ^ k.D
+				*at(0, col) = *at(1, col-1) ^ (*at(0, col) ^ k.E)
+				*at(2, col) = (*at(2, col-1) | *at(2, col)) ^ k.F
+			}
+		}
+		lastCol := n - 1
+		*at(0, 0) = (*at(0, lastCol) | *at(0, 0)) ^ k.A
+		*at(2, 0) = *at(1, lastCol) ^ *at(2, 0) ^ k.B
+		*at(1, 0) = *at(2, lastCol) ^ *at(1, 0) ^ k.C
+		if remainder > 0 {
+			start := 3 * n
+			for i := start; i < len(data); i++ {
+				data[i] ^= data[i-1] ^ k.A ^ k.B
+			}
+		}
+		return data
+	}
     func randomSalt6() (ObfConst, []byte) {
         var s [6]byte
         _, _ = rand.Read(s[:])
