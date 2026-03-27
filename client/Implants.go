@@ -479,8 +479,6 @@ func send() { //发送头部信息
         post_headers map[string]string= map[string]string{"Content-Type":"application/json","Accept-Encoding":"gzip, deflate","Accept-Language":"zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6","Cache-Control":"max-age=0","Upgrade-Insecure-Requests": "1","User-Agent":"Mozilla/5.0 (Android 10; Mobile; rv:91.0) Gecko/91.0 Firefox/91.0","Connection":"keep-alive",}
         transport http.RoundTripper
         client *http.Client
-        file_byte_parts = make(map[string][]byte)
-		fileMu sync.Mutex
     )
     /*main_str*/
     func initHttpClient() {
@@ -579,10 +577,7 @@ func send() { //发送头部信息
         encryData := get_encry_s(&fileKey)
         url := protocol + master + "//*Path*/?/*option*/=/*download*/&/*uid*/=" + uid + "&/*filekey*/=" + encryData
         filesplit := strings.Split(fileKey, "**///**")
-		fileMu.Lock()
-		defer fileMu.Unlock()
         if len(filesplit) < 3 {
-            delete(file_byte_parts, fileKey)
             return
         }
         filename := filesplit[1]
@@ -598,7 +593,6 @@ func send() { //发送头部信息
                     time.Sleep(2 * time.Second)
                     continue
                 }
-                delete(file_byte_parts, fileKey)
                 return
             }
             fileData, err := io.ReadAll(response.Body)
@@ -609,7 +603,6 @@ func send() { //发送头部信息
                     time.Sleep(2 * time.Second)
                     continue
                 }
-                delete(file_byte_parts, fileKey)
                 return
             }
             if len(fileData) == 0 {
@@ -618,8 +611,7 @@ func send() { //发送头部信息
             fullData = append(fullData, fileData...)
             delayMutex.RLock();time.Sleep(time.Duration(delay) * time.Second);delayMutex.RUnlock()
         }
-        file_byte_parts[fileKey] = fullData
-        if err := get_decry_f(filename, fileKey); err != nil {
+        if err := get_decry_f(filename, fullData); err != nil {
             return
         }
     }
@@ -971,12 +963,10 @@ func send() { //发送头部信息
         return Encrypt(data), nil
     }
     // 文件解密函数
-    func get_decry_f(filepath, file_key string) error {
-        data, ok := file_byte_parts[file_key]
-        if !ok {
-            return nil
-        }
-        delete(file_byte_parts, file_key)
+    func get_decry_f(filepath string, data []byte) error {
+	    if len(data) == 0 {
+		    return nil
+		}
         return os.WriteFile(filepath, Decrypt(data), 0666)
     }
     func get_encry_s(input *string) string {
