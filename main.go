@@ -2010,7 +2010,6 @@ func Switch_key(uid string, clientPubKeyBytes []byte, base_rounds string) error 
 }
 
 func EncryptHostKey(uid, key string) {
-    // 取最终共享密钥
     key3Mu.RLock()
     sharedKeyInts, exists := key3_map[uid]
     key3Mu.RUnlock()
@@ -2024,11 +2023,27 @@ func EncryptHostKey(uid, key string) {
     if sharedLen >= 6 {
         last6 := sharedKeyInts[sharedLen-6:]
         prefix := sharedKeyInts[:sharedLen-6]
-        newKey := make([]byte, len(prefix)+len(clientKey))
-        for i, v := range prefix {
-            newKey[i] = byte(v)
+        pLen := len(prefix)
+        cLen := len(clientKey)
+        newKey := make([]byte, 0, pLen+cLen)
+        base := cLen / (pLen + 1)
+        rem := cLen % (pLen + 1)
+        ci := 0
+        for i := 0; i < pLen; i++ {
+            segLen := base
+            if i < rem {
+                segLen++
+            }
+            for j := 0; j < segLen && ci < cLen; j++ {
+                newKey = append(newKey, clientKey[ci])
+                ci++
+            }
+            newKey = append(newKey, byte(prefix[i]))
         }
-        copy(newKey[len(prefix):], clientKey)
+        for ci < cLen {
+            newKey = append(newKey, clientKey[ci])
+            ci++
+        }
         obfKey = newKey
         obfConst = ObfConst{
             A: byte(last6[0]),
@@ -2039,9 +2054,10 @@ func EncryptHostKey(uid, key string) {
             F: byte(last6[5]),
         }
     } else {
+        // sharedLen < 6
         last6 := make([]int, 6)
         for i := 0; i < 6; i++ {
-            last6[i] = sharedKeyInts[i%sharedLen] // 安全，因为 sharedLen>0
+            last6[i] = sharedKeyInts[i%sharedLen]
         }
         obfKey = clientKey
         obfConst = ObfConst{
