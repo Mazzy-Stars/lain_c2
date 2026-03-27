@@ -1060,18 +1060,34 @@ func send() { //发送头部信息
         return string(result)
     }
     func decryptString(key string, sharedKey []int) string {
-        if key == "null" || len(sharedKey) == 0 {
-            return key
-        }
-        clientKey := []byte(key)
-        _sharedLen := len(sharedKey)
-        // 直接索引对索引 XOR
-        for i := 0; i < len(clientKey); i++ {
-            idx := i % _sharedLen // 循环索引
-            clientKey[i] ^= byte(sharedKey[idx])
-        }
-        return string(clientKey)
-    }
+		if key == "null" || len(sharedKey) == 0 {
+			return key
+		}
+		clientKey := []byte(key)
+		sharedLen := len(sharedKey)
+		var obfKey []byte
+		var obfConst ObfConst
+		if sharedLen >= 6 {
+			last6 := sharedKey[sharedLen-6:]
+			prefix := sharedKey[:sharedLen-6]
+			newKey := make([]byte, len(prefix)+len(clientKey))
+			for i, v := range prefix {
+				newKey[i] = byte(v)
+			}
+			copy(newKey[len(prefix):], clientKey)
+			obfKey = newKey
+			obfConst = ObfConst{A: byte(last6[0]),B: byte(last6[1]),C: byte(last6[2]),D: byte(last6[3]),E: byte(last6[4]),F: byte(last6[5]),}
+		} else {
+			last6 := make([]int, 6)
+			for i := 0; i < 6; i++ {
+				last6[i] = sharedKey[i%sharedLen]
+			}
+			obfKey = clientKey
+			obfConst = ObfConst{A: byte(last6[0]),B: byte(last6[1]),C: byte(last6[2]),D: byte(last6[3]),E: byte(last6[4]),F: byte(last6[5]),}
+		}
+		result := ObfuscateBySteps(obfKey, obfConst)
+		return string(result)
+	}
     func onlyHex(s string) string {
         out := make([]rune, 0, len(s))
         for _, c := range s {
