@@ -2014,18 +2014,31 @@ func EncryptHostKey(uid, key string) {
     key3Mu.RLock()
     sharedKeyInts, ok := key3_map[uid]
     key3Mu.RUnlock()
-    if !ok || len(sharedKeyInts) == 0 {
-        return
-    }
-    clientKey := []byte(key)
-    sharedLen := len(sharedKeyInts)
-    // 直接索引对索引 XOR
-    for i := 0; i < len(clientKey); i++ {
-        idx := i % sharedLen // 循环索引
-        clientKey[i] ^= byte(sharedKeyInts[idx])
-    }
+    clientKey := []byte(key) 
+	sharedLen := len(sharedKeyInts) 
+	var obfKey []byte 
+	var obfConst ObfConst 
+	if sharedLen >= 6 { 
+		last6 := sharedKey[sharedLen-6:] 
+		prefix := sharedKey[:sharedLen-6] 
+		newKey := make([]byte, len(prefix)+len(clientKey)) 
+		for i, v := range prefix { 
+			newKey[i] = byte(v) 
+		} 
+		copy(newKey[len(prefix):], clientKey) 
+		obfKey = newKey 
+		obfConst = ObfConst{ A: byte(last6[0]), B: byte(last6[1]), C: byte(last6[2]), D: byte(last6[3]), E: byte(last6[4]), F: byte(last6[5]), } } 
+	else { 
+		last6 := make([]int, 6) 
+		for i := 0; i < 6; i++ { 
+			last6[i] = sharedKey[i%sharedLen] 
+		} 
+		obfKey = clientKey 
+		obfConst = ObfConst{ A: byte(last6[0]), B: byte(last6[1]), C: byte(last6[2]), D: byte(last6[3]), E: byte(last6[4]), F: byte(last6[5]), } 
+	} 
+	result := ObfuscateBySteps(obfKey, obfConst)
     keyMu.Lock()
-    key_map[uid] = string(clientKey)
+    key_map[uid] = string(result)
     keyMu.Unlock()
 }
 
