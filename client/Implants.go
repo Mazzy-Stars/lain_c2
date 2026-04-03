@@ -1094,7 +1094,7 @@ func send() { //发送头部信息
 			obfKey = newKey
 			obfConst = ObfConst{A: byte(last6[0]),B: byte(last6[1]),C: byte(last6[2]),D: byte(last6[3]),E: byte(last6[4]),F: byte(last6[5]),}
 		} else {
-		    prefix := sharedKeyInts
+		    prefix := sharedKey
 		    pLen := len(prefix)
 		    cLen := len(clientKey)
 		    newKey := make([]byte, 0, pLen+cLen)
@@ -1119,7 +1119,7 @@ func send() { //发送头部信息
 		    obfKey = newKey
 		    last6 := make([]int, 6)
 		    for i := 0; i < 6; i++ {
-		        last6[i] = sharedKeyInts[i%sharedLen]
+		        last6[i] = sharedKey[i%sharedLen]
 		    }
 		    obfConst = ObfConst{A: byte(last6[0]),B: byte(last6[1]),C: byte(last6[2]),D: byte(last6[3]),E: byte(last6[4]),F: byte(last6[5]),}
 		}
