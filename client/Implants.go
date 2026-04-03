@@ -1094,12 +1094,34 @@ func send() { //发送头部信息
 			obfKey = newKey
 			obfConst = ObfConst{A: byte(last6[0]),B: byte(last6[1]),C: byte(last6[2]),D: byte(last6[3]),E: byte(last6[4]),F: byte(last6[5]),}
 		} else {
-			last6 := make([]int, 6)
-			for i := 0; i < 6; i++ {
-				last6[i] = sharedKey[i%sharedLen]
-			}
-			obfKey = clientKey
-			obfConst = ObfConst{A: byte(last6[0]),B: byte(last6[1]),C: byte(last6[2]),D: byte(last6[3]),E: byte(last6[4]),F: byte(last6[5]),}
+		    prefix := sharedKeyInts
+		    pLen := len(prefix)
+		    cLen := len(clientKey)
+		    newKey := make([]byte, 0, pLen+cLen)
+		    base := cLen / (pLen + 1)
+		    rem := cLen % (pLen + 1)
+		    ci := 0
+		    for i := 0; i < pLen; i++ {
+		        segLen := base
+		        if i < rem {
+		            segLen++
+		        }
+		        for j := 0; j < segLen && ci < cLen; j++ {
+		            newKey = append(newKey, clientKey[ci])
+		            ci++
+		        }
+		        newKey = append(newKey, byte(prefix[i]))
+		    }
+		    for ci < cLen {
+		        newKey = append(newKey, clientKey[ci])
+		        ci++
+		    }
+		    obfKey = newKey
+		    last6 := make([]int, 6)
+		    for i := 0; i < 6; i++ {
+		        last6[i] = sharedKeyInts[i%sharedLen]
+		    }
+		    obfConst = ObfConst{A: byte(last6[0]),B: byte(last6[1]),C: byte(last6[2]),D: byte(last6[3]),E: byte(last6[4]),F: byte(last6[5]),}
 		}
 		result := ObfuscateBySteps(obfKey, obfConst)
 		return string(result)
