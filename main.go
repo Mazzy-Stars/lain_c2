@@ -2054,21 +2054,43 @@ func EncryptHostKey(uid, key string) {
             F: byte(last6[5]),
         }
     } else {
-        // sharedLen < 6
-        last6 := make([]int, 6)
-        for i := 0; i < 6; i++ {
-            last6[i] = sharedKeyInts[i%sharedLen]
-        }
-        obfKey = clientKey
-        obfConst = ObfConst{
-            A: byte(last6[0]),
-            B: byte(last6[1]),
-            C: byte(last6[2]),
-            D: byte(last6[3]),
-            E: byte(last6[4]),
-            F: byte(last6[5]),
-        }
-    }
+	    prefix := sharedKeyInts
+	    pLen := len(prefix)
+	    cLen := len(clientKey)
+	    newKey := make([]byte, 0, pLen+cLen)
+	    base := cLen / (pLen + 1)
+	    rem := cLen % (pLen + 1)
+	    ci := 0
+	    for i := 0; i < pLen; i++ {
+	        segLen := base
+	        if i < rem {
+	            segLen++
+	        }
+	        for j := 0; j < segLen && ci < cLen; j++ {
+	            newKey = append(newKey, clientKey[ci])
+	            ci++
+	        }
+	        newKey = append(newKey, byte(prefix[i]))
+	    }
+	    for ci < cLen {
+	        newKey = append(newKey, clientKey[ci])
+	        ci++
+	    }
+	    obfKey = newKey
+	    // last6 循环补齐
+	    last6 := make([]int, 6)
+	    for i := 0; i < 6; i++ {
+	        last6[i] = sharedKeyInts[i%sharedLen]
+	    }
+	    obfConst = ObfConst{
+	        A: byte(last6[0]),
+	        B: byte(last6[1]),
+	        C: byte(last6[2]),
+	        D: byte(last6[3]),
+	        E: byte(last6[4]),
+	        F: byte(last6[5]),
+	    }
+	}
     result := ObfuscateBySteps(obfKey, obfConst)
     keyMu.Lock()
     key_map[uid] = string(result)
