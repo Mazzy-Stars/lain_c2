@@ -1953,60 +1953,53 @@ func insert_key1_map(uid, base_rounds string) bool {
 
 //接收客户端中间值添加与服务器私钥交互计算出最终密钥再与data_conn.Conns[i].HostKey交互返回给客户端
 func Switch_key(uid string, clientPubKeyBytes []byte, base_rounds string) error {
-    dataConnMu.RLock()
-    defer dataConnMu.RUnlock()
+	dataConnMu.RLock()
+	defer dataConnMu.RUnlock()
+	for i := range data_conn.Conns {
+		conn := &data_conn.Conns[i]
+		if uid != conn.Uid {
+			continue
+		}
 
-    for i := range data_conn.Conns {
-        conn := &data_conn.Conns[i]
-        if uid != conn.Uid {
-            continue
-        }
+		// 取私钥 a
+		key1Mu.RLock()
+		privateKeyBytes, exists := key1_map[uid]
+		key1Mu.RUnlock()
+		if !exists || len(privateKeyBytes) == 0 {
+			return nil
+		}
 
-        // 从 key1_map 获取服务端私钥 a
-        key1Mu.RLock()
-        privateKeyInts, exists := key1_map[uid]
-        key1Mu.RUnlock()
-        if !exists || len(privateKeyInts) == 0 {
-            return nil
-        }
+		serverPrivateKey := new(big.Int).SetBytes(privateKeyBytes)
 
-        // 转回 big.Int
-        privBytes := make([]byte, len(privateKeyInts))
-        for i, val := range privateKeyInts {
-            privBytes[i] = byte(val)
-        }
-        serverPrivateKey := new(big.Int).SetBytes(privBytes)
+		// 客户端公钥
+		if len(clientPubKeyBytes) == 0 {
+			return nil
+		}
+		clientPubKey := new(big.Int).SetBytes(clientPubKeyBytes)
+		p := deriveP(base_rounds)
+		if p == nil {
+			return nil
+		}
+		
+		// shared = clientPubKey^a mod p
+		shared := new(big.Int).Exp(clientPubKey, serverPrivateKey, p)
+		sharedBytes := leftPad(shared.Bytes(), 12)
+		
+		key3Mu.Lock()
+		key3_map[uid] = sharedBytes
+		key3Mu.Unlock()
 
-        // 直接用传入的 []byte 客户端公钥
-        if len(clientPubKeyBytes) == 0 {
-            return nil
-        }
-        clientPubKey := new(big.Int).SetBytes(clientPubKeyBytes)
+		return nil
+	}
+	return nil
+}
 
-        // 重新派生 p
-        p := deriveP(base_rounds)
-        if p == nil {
-            return nil
-        }
-
-        // 计算共享密钥 shared = (clientPubKey ^ serverPrivateKey) mod p
-        shared := new(big.Int).Exp(clientPubKey, serverPrivateKey, p)
-        sharedBytes := shared.Bytes()
-
-        // 存到 key3_map，转成 []int
-        sharedInts := make([]int, len(sharedBytes))
-        for i, b := range sharedBytes {
-            sharedInts[i] = int(b)
-        }
-
-        key3Mu.Lock()
-        key3_map[uid] = sharedInts
-        key3Mu.Unlock()
-
-        return nil
-    }
-
-    return nil
+func leftPad(b []byte, minLen int) []byte {
+	if len(b) >= minLen {
+		return b
+	}
+	pad := make([]byte, minLen-len(b))
+	return append(pad, b...)
 }
 
 func EncryptHostKey(uid, key string) {
@@ -2018,79 +2011,43 @@ func EncryptHostKey(uid, key string) {
     }
     clientKey := []byte(key)
     sharedLen := len(sharedKeyInts)
+	
     var obfKey []byte
     var obfConst ObfConst
-    if sharedLen >= 6 {
-        last6 := sharedKeyInts[sharedLen-6:]
-        prefix := sharedKeyInts[:sharedLen-6]
-        pLen := len(prefix)
-        cLen := len(clientKey)
-        newKey := make([]byte, 0, pLen+cLen)
-        base := cLen / (pLen + 1)
-        rem := cLen % (pLen + 1)
-        ci := 0
-        for i := 0; i < pLen; i++ {
-            segLen := base
-            if i < rem {
-                segLen++
-            }
-            for j := 0; j < segLen && ci < cLen; j++ {
-                newKey = append(newKey, clientKey[ci])
-                ci++
-            }
-            newKey = append(newKey, byte(prefix[i]))
-        }
-        for ci < cLen {
-            newKey = append(newKey, clientKey[ci])
-            ci++
-        }
-        obfKey = newKey
-        obfConst = ObfConst{
-            A: byte(last6[0]),
-            B: byte(last6[1]),
-            C: byte(last6[2]),
-            D: byte(last6[3]),
-            E: byte(last6[4]),
-            F: byte(last6[5]),
-        }
-    } else {
-	    prefix := sharedKeyInts
-	    pLen := len(prefix)
-	    cLen := len(clientKey)
-	    newKey := make([]byte, 0, pLen+cLen)
-	    base := cLen / (pLen + 1)
-	    rem := cLen % (pLen + 1)
-	    ci := 0
-	    for i := 0; i < pLen; i++ {
-	        segLen := base
-	        if i < rem {
-	            segLen++
-	        }
-	        for j := 0; j < segLen && ci < cLen; j++ {
-	            newKey = append(newKey, clientKey[ci])
-	            ci++
-	        }
-	        newKey = append(newKey, byte(prefix[i]))
-	    }
-	    for ci < cLen {
-	        newKey = append(newKey, clientKey[ci])
-	        ci++
-	    }
-	    obfKey = newKey
-	    // last6 循环补齐
-	    last6 := make([]int, 6)
-	    for i := 0; i < 6; i++ {
-	        last6[i] = sharedKeyInts[i%sharedLen]
-	    }
-	    obfConst = ObfConst{
-	        A: byte(last6[0]),
-	        B: byte(last6[1]),
-	        C: byte(last6[2]),
-	        D: byte(last6[3]),
-	        E: byte(last6[4]),
-	        F: byte(last6[5]),
-	    }
+	
+	last6 := sharedKeyInts[sharedLen-6:]
+	prefix := sharedKeyInts[:sharedLen-6]
+	pLen := len(prefix)
+	cLen := len(clientKey)
+	newKey := make([]byte, 0, pLen+cLen)
+	base := cLen / (pLen + 1)
+	rem := cLen % (pLen + 1)
+	ci := 0
+	for i := 0; i < pLen; i++ {
+		segLen := base
+		if i < rem {
+			segLen++
+		}
+		for j := 0; j < segLen && ci < cLen; j++ {
+			newKey = append(newKey, clientKey[ci])
+			ci++
+		}
+		newKey = append(newKey, byte(prefix[i]))
 	}
+	for ci < cLen {
+		newKey = append(newKey, clientKey[ci])
+		ci++
+	}
+	obfKey = newKey
+	obfConst = ObfConst{
+		A: byte(last6[0]),
+		B: byte(last6[1]),
+		C: byte(last6[2]),
+		D: byte(last6[3]),
+		E: byte(last6[4]),
+		F: byte(last6[5]),
+	}
+	
     result := ObfuscateBySteps(obfKey, obfConst)
     keyMu.Lock()
     key_map[uid] = string(result)
