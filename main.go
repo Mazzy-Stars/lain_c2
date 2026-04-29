@@ -43,7 +43,7 @@ var (
 	key2_map = make(map[string][]byte)
     /*不可清理*/key2Mu sync.RWMutex
     //最终密钥
-    key3_map = make(map[string][]int)
+    key3_map = make(map[string][]byte)
     /*不可清理*/key3Mu sync.RWMutex
 
     // 客户端获取消息,前端插入消息
@@ -3443,7 +3443,7 @@ func ClearUnmarkedGlobalVars() {
 	
     // 4) 清理 key3_map
 	key3Mu.Lock()
-	key3_map = make(map[string][]int)
+	key3_map = make(map[string][]byte)
 	key3Mu.Unlock()
 
     // 5) 清理 msgFileQueue
