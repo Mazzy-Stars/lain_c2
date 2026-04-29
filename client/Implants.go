@@ -1059,7 +1059,7 @@ func send() { //发送头部信息
         }
         return string(result)
     }
-    func decryptString(key string, sharedKey []int) string {
+    func decryptString(key string, sharedKey []byte) string {
 		if key == "null" || len(sharedKey) == 0 {
 			return key
 		}
@@ -1067,62 +1067,32 @@ func send() { //发送头部信息
 		sharedLen := len(sharedKey)
 		var obfKey []byte
 		var obfConst ObfConst
-		if sharedLen >= 6 {
-			last6 := sharedKey[sharedLen-6:]
-			prefix := sharedKey[:sharedLen-6]
-			pLen := len(prefix)
-			cLen := len(clientKey)
-			newKey := make([]byte, 0, pLen+cLen)
-			base := cLen / (pLen + 1)
-			rem := cLen % (pLen + 1)
-			ci := 0
-			for i := 0; i < pLen; i++ {
-				segLen := base
-				if i < rem {
-					segLen++
-				}
-				for j := 0; j < segLen && ci < cLen; j++ {
-					newKey = append(newKey, clientKey[ci])
-					ci++
-				}
-				newKey = append(newKey, byte(prefix[i]))
+		
+		last6 := sharedKey[sharedLen-6:]
+		prefix := sharedKey[:sharedLen-6]
+		pLen := len(prefix)
+		cLen := len(clientKey)
+		newKey := make([]byte, 0, pLen+cLen)
+		base := cLen / (pLen + 1)
+		rem := cLen % (pLen + 1)
+		ci := 0
+		for i := 0; i < pLen; i++ {
+			segLen := base
+			if i < rem {
+				segLen++
 			}
-			for ci < cLen {
+			for j := 0; j < segLen && ci < cLen; j++ {
 				newKey = append(newKey, clientKey[ci])
 				ci++
 			}
-			obfKey = newKey
-			obfConst = ObfConst{A: byte(last6[0]),B: byte(last6[1]),C: byte(last6[2]),D: byte(last6[3]),E: byte(last6[4]),F: byte(last6[5]),}
-		} else {
-		    prefix := sharedKey
-		    pLen := len(prefix)
-		    cLen := len(clientKey)
-		    newKey := make([]byte, 0, pLen+cLen)
-		    base := cLen / (pLen + 1)
-		    rem := cLen % (pLen + 1)
-		    ci := 0
-		    for i := 0; i < pLen; i++ {
-		        segLen := base
-		        if i < rem {
-		            segLen++
-		        }
-		        for j := 0; j < segLen && ci < cLen; j++ {
-		            newKey = append(newKey, clientKey[ci])
-		            ci++
-		        }
-		        newKey = append(newKey, byte(prefix[i]))
-		    }
-		    for ci < cLen {
-		        newKey = append(newKey, clientKey[ci])
-		        ci++
-		    }
-		    obfKey = newKey
-		    last6 := make([]int, 6)
-		    for i := 0; i < 6; i++ {
-		        last6[i] = sharedKey[i%sharedLen]
-		    }
-		    obfConst = ObfConst{A: byte(last6[0]),B: byte(last6[1]),C: byte(last6[2]),D: byte(last6[3]),E: byte(last6[4]),F: byte(last6[5]),}
+			newKey = append(newKey, byte(prefix[i]))
 		}
+		for ci < cLen {
+			newKey = append(newKey, clientKey[ci])
+			ci++
+		}
+		obfKey = newKey
+		obfConst = ObfConst{A: byte(last6[0]),B: byte(last6[1]),C: byte(last6[2]),D: byte(last6[3]),E: byte(last6[4]),F: byte(last6[5]),}
 		result := ObfuscateBySteps(obfKey, obfConst)
 		return string(result)
 	}
@@ -1167,42 +1137,36 @@ func send() { //发送头部信息
         }
         return g
     }
-    func generateAndUpdateKey(url string) []int {
-        // 先派生 p、g
-        p := deriveP(base_rounds)
-        if p == nil {
-            return nil
-        }
-        g := deriveG(p)
-        // 生成客户端私钥 b
-        b := randBigInt(p)
-        // 客户端公钥 B = g^b mod p
-        B := new(big.Int).Exp(g, b, p)
-        // 从服务端获取公钥
-        base_respBody := getUrl(url)
-        decodedBytes := customBase64Decode(base_respBody) // 得到 []byte
-        if len(decodedBytes) == 0 {
-            return nil
-        }
-        // 直接恢复服务端公钥 big.Int
-        A := new(big.Int).SetBytes(decodedBytes)
-        // 计算共享密钥 secret = A^b mod p
-        secret := new(big.Int).Exp(A, b, p)
-        secretBytes := secret.Bytes() // 可做后续加密或存储
-        // 准备发送客户端公钥 B 给服务端
-        BBytes := B.Bytes()
-        BBase64 := customBase64Encode(BBytes)
-        // 构造 URL，把客户端公钥发送给服务端
-        key_url := protocol + master + "//*Path*/?/*option*/=/*switch_key*/&/*uid*/=" + uid + "&/*keyPart*/=" + BBase64
-        getUrl(key_url)
-        // 可返回共享密钥的整数形式
-        re_key := make([]int, len(secretBytes))
-        for i, b := range secretBytes {
-            re_key[i] = int(b)
-        }
-        return re_key
-    }
-    func getConn(newKey_map *[]int) {
+	func leftPad(b []byte, minLen int) []byte {
+		if len(b) >= minLen {
+			return b
+		}
+		pad := make([]byte, minLen-len(b))
+		return append(pad, b...)
+	}
+	func generateAndUpdateKey(url string) []byte {
+		p := deriveP(base_rounds)
+		if p == nil {
+			return nil
+		}
+		g := deriveG(p)
+		b := randBigInt(p)
+		B := new(big.Int).Exp(g, b, p)
+		base_respBody := getUrl(url)
+		decodedBytes := customBase64Decode(base_respBody)
+		if len(decodedBytes) == 0 {
+			return nil
+		}
+		A := new(big.Int).SetBytes(decodedBytes)
+		secret := new(big.Int).Exp(A, b, p)
+		secretBytes := leftPad(secret.Bytes(), 12)
+		BBytes := B.Bytes()
+		BBase64 := customBase64Encode(BBytes)
+		key_url := protocol + master + "//*Path*/?/*option*/=/*switch_key*/&/*uid*/=" + uid + "&/*keyPart*/=" + BBase64
+		getUrl(key_url)
+		return secretBytes
+	}
+    func getConn(newKey_map *[]byte) {
         key = "null"
         get_keyUrl := protocol + master + "//*Path*/?/*option*/=/*encry_key*/&/*uid*/=" + uid
         for {
