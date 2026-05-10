@@ -799,7 +799,8 @@ func User_index(web_route string)http.HandlerFunc {
                         )
                     
                         serverDataMu.RLock()
-                        for _, server := range server_data.Servers {
+                        for i := range server_data.Servers {
+							server := &server_data.Servers[i]
                             if server.Port == port {
                                 serverRemark = server.Remark
                                 found = true
@@ -815,8 +816,9 @@ func User_index(web_route string)http.HandlerFunc {
                         }
                     
                         clientDataMu.RLock()
-                        for _, c := range client_data.Clients {
-                            if c.Server == serverRemark {
+                        for c := range client_data.Clients {
+							client := &client_data.Clients[c]
+                            if client.Server == serverRemark {
                                 clientDataMu.RUnlock()
                                 stopStr := fmt.Sprintf(log_word["stop_server"])
                                 fmt.Fprint(w, stopStr)
@@ -827,8 +829,9 @@ func User_index(web_route string)http.HandlerFunc {
                         clientDataMu.RUnlock()
                     
                         windows_clientMu.RLock()
-                        for _, c := range windows_client_data.Clients {
-                            if c.Server == serverRemark {
+                        for c := range windows_client_data.Clients {
+                            client := &windows_client_data.Clients[c]
+                            if client.Server == serverRemark {
                                 windows_clientMu.RUnlock()
                                 stopStr := fmt.Sprintf(log_word["stop_server"])
                                 fmt.Fprint(w, stopStr)
@@ -2823,15 +2826,17 @@ func Check_clients() ([]map[string]string, error) {
 
     // 普通客户端
     clientDataMu.RLock()
-    for _, c := range client_data.Clients {
-        serverCount[c.Server]++
+    for c := range client_data.Clients {
+        client := &client_data.Clients[c]
+        serverCount[client.Server]++
     }
     clientDataMu.RUnlock()
 
     // Windows_pro 客户端
     windows_clientMu.RLock()
-    for _, c := range windows_client_data.Clients {
-        serverCount[c.Server]++
+    for c := range windows_client_data.Clients {
+        client := &windows_client_data.Clients[c]
+        serverCount[client.Server]++
     }
     windows_clientMu.RUnlock()
     
@@ -2839,7 +2844,8 @@ func Check_clients() ([]map[string]string, error) {
     serverDataMu.RLock()
     defer serverDataMu.RUnlock()
     result := make([]map[string]string, 0, len(server_data.Servers))
-    for _, server := range server_data.Servers {
+    for i := range server_data.Servers {
+        server := &server_data.Servers[i]
         count := serverCount[server.Remark]
         info := map[string]string{
             "port":   server.Port,
@@ -4503,8 +4509,8 @@ func login(ui_route,web_css string) http.HandlerFunc {
                     SameSite: http.SameSiteNoneMode,
                 }
                 found := false
-                for _, session := range sessionSlice {
-                    if session == cookie_value {
+                for s := range sessionSlice {
+                    if sessionSlice[s] == cookie_value {
                         found = true
                         break
                     }
