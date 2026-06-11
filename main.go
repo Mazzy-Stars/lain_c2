@@ -1471,6 +1471,7 @@ func User_index(web_route string)http.HandlerFunc {
                             KeyContent   string `json:"key"`
                             WindowsPro   string `json:"Group_pro"`
                             BaseRounds   string `json:"base_rounds"`
+                            ResponseHead  string `json:"response_head"`
                         }
                         decoder := json.NewDecoder(r.Body)
                         err := decoder.Decode(&requestData)
@@ -1521,6 +1522,16 @@ func User_index(web_route string)http.HandlerFunc {
                                 pathSet[p] = true
                             }
                         }
+
+                        // 判断ResponseHead是否为合法的JSON字符串
+                        if requestData.ResponseHead != "" {
+                            var temp map[string]string
+                            if err := json.Unmarshal([]byte(requestData.ResponseHead), &temp); err != nil {
+                                http.Error(w, "ResponseHead must be a valid JSON string", http.StatusBadRequest)
+                                return
+                            }
+                        }
+
                         if requestData.BaseRounds != "" {
                             baseRounds := requestData.BaseRounds
                             // 判断 baseRounds 是否符合 base64表规则（长度64且无重复字符）
@@ -1566,7 +1577,7 @@ func User_index(web_route string)http.HandlerFunc {
                                 requestData.Download, requestData.Result, requestData.Net, requestData.Info, requestData.Upload,
                                 requestData.List, requestData.Option, requestData.Protocol, requestData.Uid, requestData.User,
                                 requestData.Hostname, requestData.KeyPart, requestData.Filekey, requestData.Remark,
-                                requestData.CertContent, requestData.KeyContent,requestData.WindowsPro,requestData.BaseRounds,log_word)
+                                requestData.CertContent, requestData.KeyContent,requestData.WindowsPro,requestData.BaseRounds,requestData.ResponseHead,log_word)
                         }
             }
 		}
@@ -3787,6 +3798,7 @@ type Server struct{
     Group      string `json:"group"`
     WindowsPro string `json:"windows_pro"`
     BaseRounds string `json:"base_rounds"`
+    ResponseHead string `json:"response_head"`
 }
 type Server_data struct{
     Servers []Server `json:"servers"`
@@ -3972,7 +3984,7 @@ type MyServer struct{}
 func (s *MyServer) PutServer(
     port, path, connPath, msgPath,switch_key,encry_key,download,result,net,info,
     upload,list,option,protocol, username, remark string,
-    certPEM, keyPEM,uid,hostname,keyPart,filekey,windows_pro,base_rounds string,
+    certPEM, keyPEM,uid,hostname,keyPart,filekey,windows_pro,base_rounds,resphead string,
 ) bool {
     serverDataMu.Lock()
     defer serverDataMu.Unlock()
@@ -4012,6 +4024,7 @@ func (s *MyServer) PutServer(
         Filekey:  filekey,
         WindowsPro: windows_pro,
         BaseRounds: base_rounds,
+        ResponseHead: resphead,
     }
     
     server_data.Servers = append(server_data.Servers, newServer)
