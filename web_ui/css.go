@@ -1341,6 +1341,42 @@ func Css(css_file,error_str string) http.HandlerFunc {
                     border-radius: 4px;
                     font-size: 14px;
                 }
+                #modify-server-dialog {
+                    position: fixed;
+                    top: 10%;
+                    left: 50%;
+                    transform: translateX(-50%);
+                    background: #fff;
+                    z-index: 9999;
+                    width: 400px;
+                    padding: 16px;
+                    border: 1px solid #ccc;
+                    border-radius: 8px;
+                    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+                    font-family: monospace;
+                }
+
+                #modify-server-dialog h3 {
+                    margin-top: 0;
+                }
+
+                #modify-server-dialog textarea {
+                    width: 100%;
+                    height: 200px;
+                    box-sizing: border-box;
+                    font-family: monospace;
+                }
+
+                #modify-server-dialog .button-container {
+                    display: flex;
+                    justify-content: space-between;
+                    margin-top: 16px;
+                }
+
+                #modify-server-dialog .button-container button {
+                    padding: 8px 16px;
+                    cursor: pointer;
+                }
                     `
         }
         w.Header().Set("Content-Type", "text/css")
