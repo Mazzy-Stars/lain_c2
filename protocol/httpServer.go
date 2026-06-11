@@ -9,6 +9,7 @@ import (
     "sync"
     "encoding/json"
     "strconv"
+    "sync/atomic"
 )
 var (
     serverMap = make(map[string]*http.Server)
@@ -23,6 +24,37 @@ type Putserver interface {
 type WLog interface{
     WriteLog(logStr string)
 }
+type ServerConfig struct {
+    RespHead atomic.Value // 存 string
+}
+var (
+    serverConfigMu sync.RWMutex
+    serverConfigs  = make(map[string]*ServerConfig)
+)
+func GetOrCreateConfig(port string) *ServerConfig {
+    // 先用读锁查
+    serverConfigMu.RLock()
+    if cfg, ok := serverConfigs[port]; ok {
+        serverConfigMu.RUnlock()
+        return cfg
+    }
+    serverConfigMu.RUnlock()
+
+    serverConfigMu.Lock()
+    defer serverConfigMu.Unlock()
+    if cfg, ok := serverConfigs[port]; ok {
+        return cfg
+    }
+    cfg := &ServerConfig{}
+    cfg.RespHead.Store("")
+    serverConfigs[port] = cfg
+    return cfg
+}
+// 供 main.go 调用的更新函数
+func UpdateRespHead(port, resphead string) {
+    cfg := GetOrCreateConfig(port)
+    cfg.RespHead.Store(resphead)
+}
 func Http_server(handler Handler, ServerManager Putserver, writeLog WLog,
     port, path, conn_path, GetMsg,switch_key,encry_key,download,result,net,info,upload,list,option,
     protocol,uid,user,hostname,keyPart,filekey,remark,certPEM, keyPEM,windows_pro,baseRounds,resphead string,log_word map[string]string) {
@@ -32,13 +64,20 @@ func Http_server(handler Handler, ServerManager Putserver, writeLog WLog,
     if !strings.HasPrefix(path, "/") {
         path = "/" + path
     }
+    cfg := GetOrCreateConfig(port)
+    // 初始值写进去
+    cfg.RespHead.Store(resphead)
     mux := http.NewServeMux()
     mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
         w.Header().Set("Connection", "keep-alive")
+        
+        // 每次请求都从 atomic 读最新值
+        currentRespHead := cfg.RespHead.Load().(string)
+        
         var headers map[string]string
         var statusCode int
-        if resphead != "" {
-            if err := json.Unmarshal([]byte(resphead), &headers); err == nil {
+        if currentRespHead != "" {
+            if err := json.Unmarshal([]byte(currentRespHead), &headers); err == nil {
                 for k, v := range headers {
                     if strings.ToLower(k) == "status" {
                         if code, err := strconv.Atoi(v); err == nil {
