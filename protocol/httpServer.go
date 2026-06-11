@@ -7,6 +7,8 @@ import (
 	"time"
 	"strings"
     "sync"
+    "encoding/json"
+    "strconv"
 )
 var (
     serverMap = make(map[string]*http.Server)
@@ -16,14 +18,14 @@ type Handler interface {
     Index(conn, Get_Msg,switch_key,encry_key,download,result,net,info,upload,list,option,uid,username,hostname,keyPart,filekey,windows_pro,port string) http.HandlerFunc
 }
 type Putserver interface {
-    PutServer(port, path, connPath, msgPath,switch_key,encry_key,download,result,net,info,upload,list,option,protocol,username,remark,cert, key,uid,hostname,keyPart,filekey,windows_pro,baseRounds string) bool
+    PutServer(port, path, connPath, msgPath,switch_key,encry_key,download,result,net,info,upload,list,option,protocol,username,remark,cert, key,uid,hostname,keyPart,filekey,windows_pro,baseRounds,resphead string) bool
 }
 type WLog interface{
     WriteLog(logStr string)
 }
 func Http_server(handler Handler, ServerManager Putserver, writeLog WLog,
     port, path, conn_path, GetMsg,switch_key,encry_key,download,result,net,info,upload,list,option,
-    protocol,uid,user,hostname,keyPart,filekey,remark,certPEM, keyPEM,windows_pro,baseRounds string,log_word map[string]string) {
+    protocol,uid,user,hostname,keyPart,filekey,remark,certPEM, keyPEM,windows_pro,baseRounds,resphead string,log_word map[string]string) {
     var err error
     var returnStr string
     // 确保 path 以 "/" 开头
@@ -33,7 +35,29 @@ func Http_server(handler Handler, ServerManager Putserver, writeLog WLog,
     mux := http.NewServeMux()
     mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
         w.Header().Set("Connection", "keep-alive")
-        handler.Index(conn_path, GetMsg,switch_key,encry_key,download,result,net,info,upload,list,option,uid,user,hostname,keyPart,filekey,windows_pro,port).ServeHTTP(w, r)
+        var headers map[string]string
+        var statusCode int
+        if resphead != "" {
+            if err := json.Unmarshal([]byte(resphead), &headers); err == nil {
+                for k, v := range headers {
+                    if strings.ToLower(k) == "status" {
+                        if code, err := strconv.Atoi(v); err == nil {
+                            statusCode = code
+                        }
+                        continue
+                    }
+                    w.Header().Set(k, v)
+                }
+            }
+        }
+        if statusCode != 0 {
+            w.WriteHeader(statusCode)
+        }
+        handler.Index(
+            conn_path, GetMsg, switch_key, encry_key,
+            download, result, net, info, upload, list, option,
+            uid, user, hostname, keyPart, filekey, windows_pro, port,
+        ).ServeHTTP(w, r)
     })
     if protocol == "http" {
         server := &http.Server{
@@ -50,7 +74,7 @@ func Http_server(handler Handler, ServerManager Putserver, writeLog WLog,
         port, path,conn_path,GetMsg,switch_key,encry_key,download,result,net,info,upload,list,option)
         writeLog.WriteLog(returnStr)
         go func(){
-			ServerManager.PutServer(port, path, conn_path, GetMsg, switch_key, encry_key, download, result, net, info, upload, list, option, protocol, user, remark,"null","null",uid,hostname,keyPart,filekey,windows_pro,baseRounds)
+			ServerManager.PutServer(port, path, conn_path, GetMsg, switch_key, encry_key, download, result, net, info, upload, list, option, protocol, user, remark,"null","null",uid,hostname,keyPart,filekey,windows_pro,baseRounds,resphead)
 		}()
 		err = server.ListenAndServe()
 		if err != nil {
@@ -105,7 +129,7 @@ func Http_server(handler Handler, ServerManager Putserver, writeLog WLog,
         port, path,conn_path,GetMsg,switch_key,encry_key,download,result,net,info,upload,list,option)
         writeLog.WriteLog(returnStr)
         go func (){
-			ServerManager.PutServer(port,path,conn_path,GetMsg,switch_key,encry_key,download,result,net,info,upload,list,option,protocol,user,remark,cert_g,key_g,uid,hostname,keyPart,filekey,windows_pro,baseRounds)
+			ServerManager.PutServer(port,path,conn_path,GetMsg,switch_key,encry_key,download,result,net,info,upload,list,option,protocol,user,remark,cert_g,key_g,uid,hostname,keyPart,filekey,windows_pro,baseRounds,resphead)
 		}()
 		err = server.ListenAndServeTLS("", "")
 		if err != nil {
