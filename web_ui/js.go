@@ -2404,7 +2404,7 @@ class lain_chat{
             this.chat_slice.push(data);
             this.renderChatItem(data);
         } catch (e) {
-            pendingDiv.innerText = "❌ " + file.name + " (发送失败)";
+            pendingDiv.innerText = "❌ " + file.name + " (Sending failed)";
             pendingDiv.style.color = "red";
         }
         fileInput.value = "";
