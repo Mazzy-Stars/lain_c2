@@ -1444,7 +1444,55 @@ func User_index(web_route string)http.HandlerFunc {
                         logger.WriteLog(fmt.Sprintf(log_word["chat_file"], chat.Username, chat.Message))
                         w.Header().Set("Content-Type", "application/json")
                         w.WriteHeader(http.StatusOK)
-                        json.NewEncoder(w).Encode(chat)                    
+                        json.NewEncoder(w).Encode(chat)       
+                    
+                    // 修改服务器响应头
+                    case "changeResponseHead":
+                        var requestData struct {
+                            Port         string `json:"port"`
+                            ResponseHead  string `json:"response_head"`
+                        }
+                        decoder := json.NewDecoder(r.Body)
+                        err := decoder.Decode(&requestData)
+                        if err != nil {
+                            http.Error(w, "Failed to decode JSON", http.StatusBadRequest)
+                            return
+                        }
+                        if requestData.Port == "" {
+                            http.Error(w, "parameter does not exist", http.StatusBadRequest)
+                            return
+                        }
+                        if requestData.ResponseHead != "" {
+                            var temp map[string]string
+                            if err := json.Unmarshal([]byte(requestData.ResponseHead), &temp); err != nil {
+                                http.Error(w, "ResponseHead must be a valid JSON string", http.StatusBadRequest)
+                                return
+                            }
+                            serverDataMu.Lock()
+                            for i := range server_data.Servers {
+                                server := &server_data.Servers[i]
+                                if requestData.Port == server.Port {
+                                    server.ResponseHead = requestData.ResponseHead
+                                    break
+                                }
+                            }
+                            serverDataMu.Unlock()
+                            protocol.UpdateRespHead(requestData.Port, requestData.ResponseHead)
+                            fmt.Fprintf(w, "Response header updated successfully for port %s", requestData.Port)
+                        } else {
+                            serverDataMu.Lock()
+                            for i := range server_data.Servers {
+                                server := &server_data.Servers[i]
+                                if requestData.Port == server.Port {
+                                    server.ResponseHead = ""
+                                    break
+                                }
+                            }
+                            serverDataMu.Unlock()
+                            protocol.UpdateRespHead(requestData.Port, requestData.ResponseHead)
+                            fmt.Fprintf(w, "Response header cleared successfully for port %s", requestData.Port)
+                        }
+
                     case "startServer":
                         var requestData struct {
                             Port         string `json:"port"`
