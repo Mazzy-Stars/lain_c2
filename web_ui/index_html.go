@@ -127,6 +127,7 @@ func Lain(error_str, web_title, web_js, web_css, web_route string, sessionSlice 
                                     '<input name="hostname" placeholder="parameter hostname"><br>' +
                                     '<input name="keyPart" placeholder="parameter keyPart"><br>' +
                                     '<input name="filekey" placeholder="parameter filekey"><br>' +
+                                    '<input name="response_head" placeholder=\'{"set-cookie":"a98cb4fed"}\'><br>' +
                                     // Base64编码表选择
                                     '<label for="base_rounds_mode">Base64 Table:</label>' +
                                     '<select id="base_rounds_mode" name="base_rounds_mode" onchange="toggleBaseRoundsInput()">' +
