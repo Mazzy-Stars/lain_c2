@@ -483,10 +483,10 @@ func send() { //发送头部信息
     /*main_str*/
     func initHttpClient() {
         transport = &http.Transport{
-            MaxIdleConnsPerHost: 100,
-            MaxIdleConns:        100,
-            IdleConnTimeout:     5,
-            DisableKeepAlives:   false,
+	        MaxConnsPerHost:     1,
+			MaxIdleConns:        1,
+			MaxIdleConnsPerHost: 1,
+			DisableKeepAlives:   false,
             DialContext: (&net.Dialer{
                 Timeout:   30 * time.Second,
                 KeepAlive: 30 * time.Second,
