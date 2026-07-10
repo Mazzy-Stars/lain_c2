@@ -3286,30 +3286,54 @@ type LogEntry struct {
 }
 // 读取日志，返回结构体切片
 func Log_read(maxLines int) ([]LogEntry, error) {
-    file, err := os.Open("server.log")
-    if err != nil {
-        return nil, fmt.Errorf("open log file failed: %v", err)
-    }
-    defer file.Close()
-    entries := make([]LogEntry, 0, maxLines)
-    scanner := bufio.NewScanner(file)
-    for scanner.Scan() {
-        var entry LogEntry
-        if err := json.Unmarshal(scanner.Bytes(), &entry); err != nil {
-            continue
-        }
-        if len(entries) < maxLines {
-            entries = append(entries, entry)
-        } else {
-            // 滑动窗口：整体左移 1 位
-            copy(entries, entries[1:])
-            entries[maxLines-1] = entry
-        }
-    }
-    if err := scanner.Err(); err != nil {
-        return nil, fmt.Errorf("read log file error: %v", err)
-    }
-    return entries, nil
+	file, err := os.Open("server.log")
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	const blockSize int64 = 4096
+	var (
+		pos     = info.Size()
+		buffer  []byte
+		newline = 0
+	)
+	for pos > 0 && newline <= maxLines {
+		size := blockSize
+		if pos < size {
+			size = pos
+		}
+		pos -= size
+		tmp := make([]byte, size)
+		_, err := file.ReadAt(tmp, pos)
+		if err != nil && err != io.EOF {
+			return nil, err
+		}
+		buffer = append(tmp, buffer...)
+		newline = bytes.Count(buffer, []byte{'\n'})
+	}
+	lines := bytes.Split(buffer, []byte{'\n'})
+	// 去掉最后一个空行
+	if len(lines) > 0 && len(lines[len(lines)-1]) == 0 {
+		lines = lines[:len(lines)-1]
+	}
+	if len(lines) > maxLines {
+		lines = lines[len(lines)-maxLines:]
+	}
+	entries := make([]LogEntry, 0, len(lines))
+	for _, line := range lines {
+		if len(line) == 0 {
+			continue
+		}
+		var entry LogEntry
+		if err := json.Unmarshal(line, &entry); err == nil {
+			entries = append(entries, entry)
+		}
+	}
+	return entries, nil
 }
 // 日志记录器
 type MyLog struct{}
