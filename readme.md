@@ -2,7 +2,7 @@
 
 ## lain command-control-frame work
 
-platforms Windows linux、macos、Android。 Protocols supported by the implant http1、2、3
+platforms for Windows linux、macos、Android.Protocols supported by the implant http1、2、3
 
 Uses the third-party library
 
