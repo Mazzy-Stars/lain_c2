@@ -1059,10 +1059,9 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 						})
 						return
 					}
-					
-					parts := strings.Split(server, ":")
-					port := parts[len(parts)-1]
+					port := arr[len(arr)-1]
 					arr[1] = port
+					server = strings.Join(arr[:2], ":")
 
 					baseMutex.RLock()
 					base_rounds, exist := base_map[port]
