@@ -300,18 +300,23 @@ func Lain(error_str, web_title, web_js, web_css, web_route string, sessionSlice 
                         <script>
                             const l_index = new index();
                             shell_list = [];
-                            function get_conn(uid, shellname) {
+                            async function get_conn(uid, shellname) {
                                 if (shell_list.includes(uid)) {
-                                    let ms = confirm("just a sec……");
+                                    let ms = customConfirm("just a sec……");
                                     if (ms) {
-                                        setTimeout(() => {
-                                            l_index.get(uid, shellname);
+                                        setTimeout(async () => {
+                                            await l_index.get(uid, shellname);
                                         }, 60000);
                                     }
                                     return;
                                 }
-                                l_index.get(uid, shellname);
-                                shell_list.push(uid);
+                                const sent = await l_index.get(uid, shellname);
+                                if (!sent) {
+                                    return;
+                                }
+                                if (!shell_list.includes(uid)) {
+                                    shell_list.push(uid);
+                                }
                             }
                             function del_conn(uid) {
                                 l_index.del(uid);
