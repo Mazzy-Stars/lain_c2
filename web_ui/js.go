@@ -4643,17 +4643,7 @@ window.get_conn = async function(uid, shellname) {
     }
     window.shell_list = Array.isArray(window.shell_list) ? window.shell_list : [];
     if (window.shell_list.includes(uid)) {
-        const ms = await customConfirm("just a sec...");
-        if (!ms) {
-            return false;
-        }
-        setTimeout(async () => {
-            const sentLater = await window.l_index.get(uid, shellname);
-            if (sentLater) {
-                customLog("Request sent");
-            }
-        }, 60000);
-        return true;
+        return false;
     }
     const sent = await window.l_index.get(uid, shellname);
     if (!sent) {
