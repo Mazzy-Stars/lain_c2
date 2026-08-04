@@ -2581,6 +2581,47 @@ button:hover {
     }
 }
 
+.serverDialog {
+    position: fixed;
+    top: 50% !important;
+    left: 50% !important;
+    transform: translate(-50%, -50%) !important;
+    margin: 0 !important;
+    z-index: 9999;
+    width: min(720px, calc(100vw - 40px));
+    max-width: calc(100vw - 40px);
+    max-height: min(80vh, 760px);
+    box-sizing: border-box;
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    background: linear-gradient(180deg, #ffffff 0%, #f7fbfd 100%) !important;
+    border: 1px solid #cfdde7 !important;
+    border-radius: 18px !important;
+    padding: 22px 24px 28px !important;
+    box-shadow: 0 18px 48px rgba(53, 83, 102, 0.22) !important;
+}
+
+.serverDialog input,
+.serverDialog select,
+.serverDialog textarea,
+.serverDialog button {
+    font-size: 14px;
+}
+
+@media (max-width: 768px) {
+    .serverDialog {
+        top: 50% !important;
+        left: 50% !important;
+        transform: translate(-50%, -50%) !important;
+        width: calc(100vw - 24px);
+        max-width: calc(100vw - 24px);
+        max-height: 88vh;
+        padding: 18px 16px 20px !important;
+    }
+}
+
                     `
         }
         w.Header().Set("Content-Type", "text/css")
