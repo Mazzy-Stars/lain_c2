@@ -12,4 +12,10 @@ https://github.com/quic-go/quic-go
 
 https://github.com/quic-go/quic-go/http3
 
+https://golang.org/x/sys/windows/registry
+
+https://github.com/shirou/gopsutil/mem
+
+https://github.com/shirou/gopsutil/process
+
 ![html](https://github.com/Mazzy-Stars/lain_c2/raw/main/html/html.png)
