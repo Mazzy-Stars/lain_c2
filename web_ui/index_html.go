@@ -66,15 +66,13 @@ func Lain(error_str, web_title, web_js, web_css, web_route string, sessionSlice 
                     <div id="online_teammates_mount" class="server-teammates-slot"></div>
                     <div id="server_index" class="server-grid"></div>
                     <script>
-                        function downLog() {
-                            // 下载 lain.log 日志文件
-                            const url = window.location.protocol + "//" + window.location.host + "/`+web_route+`?op=downloadlog";
-                            const a = document.createElement("a");
-                            a.href = url;
-                            a.download = "server.log";
-                            document.body.appendChild(a);
-                            a.click();
-                            document.body.removeChild(a);
+                        async function downLog() {
+                            try {
+                                await webSocketClient.ensureConnected();
+                                await webSocketClient.downloadLog();
+                            } catch (err) {
+                                customLog("Download log failed: " + err.message);
+                            }
                         }
                         function openStartServerDialog() {
                             if (document.getElementById("serverDialog")) {
