@@ -814,6 +814,10 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 					}
 					dataInnetmu.Unlock()
 
+					go PushData("", "agentList")
+					go PushData("", "winAgentList")
+
+
 					logStr := fmt.Sprintf(log_word["removed_agent"], uid)
 					logger.WriteLog(logStr)
 					clientWs.WriteJSON(map[string]interface{}{
