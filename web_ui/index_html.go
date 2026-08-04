@@ -299,17 +299,7 @@ func Lain(error_str, web_title, web_js, web_css, web_route string, sessionSlice 
                         <p id='div_conn'></p>
                         <script>
                             const l_index = new index();
-                            shell_list = [];
                             async function get_conn(uid, shellname) {
-                                if (shell_list.includes(uid)) {
-                                    let ms = customConfirm("just a sec……");
-                                    if (ms) {
-                                        setTimeout(async () => {
-                                            await l_index.get(uid, shellname);
-                                        }, 60000);
-                                    }
-                                    return;
-                                }
                                 const sent = await l_index.get(uid, shellname);
                                 if (!sent) {
                                     return;
