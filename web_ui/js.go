@@ -1380,12 +1380,22 @@ class index{
                 }
                 let pluginButtons = "";
                 let pluginParam = key.plugin_parameter;
-                if(pluginParam && pluginParam[os]){
-                    for(let codeword in pluginParam[os]){
-                        pluginButtons += 
-                        '<button class="console-link">'+
-                        '['+codeword+']'+
-                        '</button>';
+                if (pluginParam && typeof pluginParam === 'object' && pluginParam[os]) {
+                    for (let codeword in pluginParam[os]) {
+                        let paramDescList = pluginParam[os][codeword];
+                        let encodedDesc = encodeURIComponent(
+                            (Array.isArray(paramDescList) ? paramDescList : []).join(',')
+                        );
+                        pluginButtons +=
+                        '<button type="button" class="console-link" onclick="showPluginDialog(\'' +
+                        key['uid'] +
+                        '\', \'' +
+                        os +
+                        '\', \'' +
+                        encodedDesc +
+                        '\', \'' +
+                        codeword +
+                        '\')">[' + codeword + ']</button>';
                     }
                 }
                 let userHTML = '<div class="conn-container">' +
@@ -2946,7 +2956,7 @@ class lain_server {
                     htmlContent += "<div class='server-action-row server-action-row-secondary'>";
                         htmlContent += "<a class='server-action-pill server-action-pill-secondary download-config' href='javascript:void(0)' data-port='" + server.port + "'>Download config</a>";
                         htmlContent += "<a class='server-action-pill server-action-pill-secondary modifyServerHeader' href='javascript:void(0)' data-port='" + server.port + "'>Headers</a>";
-                        htmlContent += "<a class='server-action-pill server-action-pill-secondary plugin' href='javascript:void(0)' data-port='" + server.port + "'>Plugins</a>";
+                        htmlContent += "<a class='server-action-pill server-action-pill-secondary plugin' href='javascript:void(0)' data-port='" + server.port + "' style='top: 30%;'>Plugins</a>";
                         htmlContent += "<a class='server-action-pill server-action-pill-danger delete-server' href='javascript:void(0)' data-port='" + server.port + "'>Delete</a>";
                     htmlContent += "</div>";
                 htmlContent += "</div>";
@@ -4129,14 +4139,19 @@ function showPluginDialog(uid, os, paramDescList, codeword) {
         }
         let msg = codeword + '*//*' + msgParts.join('*//*');
         try {
+            const taskid = createRuntimeTaskId("plugin");
             let result = await webSocketClient.send(
-                
                 "msg",
                 {
                     uid: uid,
                     msg: msg,
+                    Taskid: taskid
                 }
             );
+            if (!result) {
+                customAlert("Message send failed");
+                return;
+            }
             customLog("Message sent successfully!");
             inputs.forEach(input => {
                 input.value = '';
