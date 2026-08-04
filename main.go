@@ -1049,17 +1049,21 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 					option, _ := body["option"].(string)
 					code_, _ := body["code"].(string)
 					windows_pro, _ := body["group_pro"].(string)
+
 					arr := strings.Split(server, ":")
 					if len(arr) < 2 {
 						clientWs.WriteJSON(map[string]interface{}{
 							"code": 400,
 							"path": "agentcode",
-
 							"message": "invalid server",
 						})
 						return
 					}
-					port := arr[1]
+					
+					parts := strings.Split(server, ":")
+					port := parts[len(parts)-1]
+					arr[1] = port
+
 					baseMutex.RLock()
 					base_rounds, exist := base_map[port]
 					baseMutex.RUnlock()
@@ -1067,7 +1071,6 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 						clientWs.WriteJSON(map[string]interface{}{
 							"code": 404,
 							"path": "agentcode",
-
 							"message": "base not found",
 						})
 						return
