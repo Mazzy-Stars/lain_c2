@@ -17,13 +17,12 @@ func Lain(error_str, web_title, web_js, web_css, web_route string, sessionSlice 
 
         if r.Method == http.MethodGet {
             html := fmt.Sprintf(`
-            <!-- 2026/07/11/周六  8:26:51.64 -->
             <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>%s</title>
+    <title>test</title>
     <link rel="stylesheet" href="/`+web_css+`">
     <link rel="icon" href="favicon.ico" type="image/x-icon">
 </head>
@@ -63,13 +62,9 @@ func Lain(error_str, web_title, web_js, web_css, web_route string, sessionSlice 
                     <a href="#" data-target="file">📂 Files</a>
                     <a href="#" data-target="chat">📟 chat</a>
                 </div>
-                <div id="server" class="hidden">
-                    <div class="net_scan">
-                        <button class="startBtn" type="button" onclick="openStartServerDialog()">start</button>
-                        <button class="clearMemoryBtn" type="button" onclick="clearMemory()">ClearMemory</button>
-                        <button class="logBtn" type="button" onclick="downLog()">downLoadLog</button>
-                    </div>
-                    <div id="server_index"></div>
+                <div id="server" class="hidden server-page">
+                    <div id="online_teammates_mount" class="server-teammates-slot"></div>
+                    <div id="server_index" class="server-grid"></div>
                     <script>
                         function downLog() {
                             // 下载 lain.log 日志文件
@@ -96,50 +91,87 @@ func Lain(error_str, web_title, web_js, web_css, web_route string, sessionSlice 
                             dialog.className = "serverDialog";
                             dialog.style.display = "block";
                             var formHtml = '' +
-                                '<h3>start server</h3>' +
-                                '<form id="serverForm" method="POST">' +
-                                    '<input name="port" placeholder="Port" required><br>' +
-                                    '<input name="path" placeholder="Path" required><br>' +
-                                    '<input name="connPath" placeholder="Conn parameter"><br>' +
-                                    '<input name="msgPath" placeholder="Msg parameter"><br>' +
-                                    '<input name="switch_key" placeholder="switch parameter"><br>' +
-                                    '<input name="encry_key" placeholder="Key parameter"><br>' +
-                                    '<input name="download" placeholder="Download parameter"><br>' +
-                                    '<input name="result" placeholder="Result parameter"><br>' +
-                                    '<input name="net" placeholder="Net parameter"><br>' +
-                                    '<input name="info" placeholder="Info parameter"><br>' +
-                                    '<input name="upload" placeholder="Upload parameter"><br>' +
-                                    '<input name="list" placeholder="List parameter"><br>' +
-                                    '<input name="remark" placeholder="Remark"><br>' +
-                                    '<select id="protocol" name="protocol">' +
-                                        '<option value="">select</option>' +
-                                        '<option value="http">HTTP</option>' +
-                                        '<option value="https">HTTPS</option>' +
-                                    '</select><br>' +
-                                    '<select id="Group_pro" name="Group_pro">' +
-                                        '<option value="">Normal Version</option>' +
-                                        '<option value="group_pro">Windows Enhanced Version</option>' +
-                                    '</select><br>' +
-                                    // 参数自定义
-                                    '<input name="option" placeholder="parameter Option"><br>' +
-                                    '<input name="uid" placeholder="parameter uid"><br>' +
-                                    '<input name="user" placeholder="parameter user"><br>' +
-                                    '<input name="hostname" placeholder="parameter hostname"><br>' +
-                                    '<input name="keyPart" placeholder="parameter keyPart"><br>' +
-                                    '<input name="filekey" placeholder="parameter filekey"><br>' +
-                                    '<input name="response_head" placeholder=\'{"set-cookie":"a98cb4fed"}\'><br>' +
-                                    // Base64编码表选择
-                                    '<label for="base_rounds_mode">Base64 Table:</label>' +
-                                    '<select id="base_rounds_mode" name="base_rounds_mode" onchange="toggleBaseRoundsInput()">' +
-                                        '<option value="auto">Auto Generate</option>' +
-                                        '<option value="custom">Custom</option>' +
-                                    '</select><br>' +
-                                    '<input name="base_rounds" id="base_rounds_input" placeholder="Custom Base64 Table (64 characters)" style="display:none;"><br>' +
-                                    '<textarea name="cert" placeholder="Cert Content"></textarea><br>' +
-                                    '<textarea name="key" placeholder="Key Content"></textarea><br>' +
-                                    '<button type="button" id="submitBtn" onclick="startServer()">send</button>' +
-                                    '<button type="button" onclick="closeStartServerDialog()">close</button>' +
-                                '</form>';
+                                '<div class="server-dialog">' +
+                                    '<button class="close-x" onclick="closeStartServerDialog()" ' +
+                                        'style="position:absolute;' +
+                                        'right:10px;' +
+                                        'top:8px;' +
+                                        'width:32px;' +
+                                        'height:32px;' +
+                                        'padding:0;' +
+                                        'border:none;' +
+                                        'background:transparent;' +
+                                        'font-size:28px;' +
+                                        'line-height:28px;' +
+                                        'color:#666;' +
+                                        'cursor:pointer;">×</button>' +
+                                    '<div class="server-header">' +
+                                        '<h3>Start Server</h3>' +
+                                    '</div>' +
+
+                                    '<form id="serverForm" method="POST" class="server-form">' +
+
+                                        '<input name="port" placeholder="Port" required>' +
+                                        '<input name="path" placeholder="Path" required>' +
+
+                                        '<input name="connPath" placeholder="Conn parameter">' +
+                                        '<input name="msgPath" placeholder="Msg parameter">' +
+                                        '<input name="switch_key" placeholder="Switch parameter">' +
+                                        '<input name="encry_key" placeholder="Key parameter">' +
+
+                                        '<input name="download" placeholder="Download parameter">' +
+                                        '<input name="result" placeholder="Result parameter">' +
+                                        '<input name="net" placeholder="Net parameter">' +
+                                        '<input name="info" placeholder="Info parameter">' +
+
+                                        '<input name="upload" placeholder="Upload parameter">' +
+                                        '<input name="list" placeholder="List parameter">' +
+                                        '<input name="remark" placeholder="Remark">' +
+
+                                        '<select id="protocol" name="protocol">' +
+                                            '<option value="">Select Protocol</option>' +
+                                            '<option value="http">HTTP</option>' +
+                                            '<option value="https">HTTPS</option>' +
+                                            '<option value="quic">HTTP3</option>' +
+                                        '</select>' +
+
+                                        '<select id="Group_pro" name="Group_pro">' +
+                                            '<option value="">Normal Version</option>' +
+                                            '<option value="group_pro">Windows Enhanced Version</option>' +
+                                        '</select>' +
+
+                                        '<input name="option" placeholder="Parameter Option">' +
+                                        '<input name="uid" placeholder="Parameter UID">' +
+                                        '<input name="user" placeholder="Parameter User">' +
+                                        '<input name="hostname" placeholder="Parameter Hostname">' +
+                                        '<input name="keyPart" placeholder="Parameter keyPart">' +
+                                        '<input name="filekey" placeholder="Parameter filekey">' +
+
+                                        '<input name="response_head" placeholder=\'{"set-cookie":"a98cb4fed"}\'>' +
+
+                                        '<label>Base64Table</label>' +
+
+                                        '<select id="base_rounds_mode" name="base_rounds_mode" onchange="toggleBaseRoundsInput()">' +
+                                            '<option value="auto">Auto Generate</option>' +
+                                            '<option value="custom">Custom</option>' +
+                                        '</select>' +
+
+                                        '<input name="base_rounds" id="base_rounds_input" ' +
+                                            'placeholder="Custom Base64Table (64 characters)" ' +
+                                            'style="display:none;">' +
+
+                                        '<textarea name="cert" placeholder="Cert Content"></textarea>' +
+
+                                        '<textarea name="key" placeholder="Key Content"></textarea>' +
+
+                                        '<div class="server-buttons">' +
+                                            '<button type="button" id="submitBtn" onclick="startServer()">' +
+                                                'Send' +
+                                            '</button>' +
+                                        '</div>' +
+
+                                    '</form>' +
+                                '</div>';
                             dialog.innerHTML = formHtml;
                             var container = document.getElementById("server_index");
                             container.appendChild(dialog);
@@ -159,13 +191,13 @@ func Lain(error_str, web_title, web_js, web_css, web_route string, sessionSlice 
                         }
                         function plugin(remark) {
                             if (!remark || remark.trim() === "") {
-                                alert("Please enter a remark for the plugin!");
+                                customAlert("Please enter a remark for the plugin!");
                                 return;
                             }
                             const form = document.getElementById('pluginForm');
                             const os = document.getElementById('select_os')?.value;
                             if (!os) {
-                                alert("Please select an OS!");
+                                customAlert("Please select an OS!");
                                 return;
                             }
 
@@ -175,7 +207,7 @@ func Lain(error_str, web_title, web_js, web_css, web_route string, sessionSlice 
                             const paramCountInput = form.querySelector('#parameterHidden');
 
                             if (!codeWordInput || !codeInput || !parameterDecInput || !paramCountInput) {
-                                alert("Missing required plugin form fields!");
+                                customAlert("Missing required plugin form fields!");
                                 return;
                             }
 
@@ -185,7 +217,7 @@ func Lain(error_str, web_title, web_js, web_css, web_route string, sessionSlice 
                             var paramCount = parseInt(paramCountInput.value);
 
                             if (codeWord === "" || code === "" || isNaN(paramCount) || paramCount < 1) {
-                                alert("Please complete all plugin fields (codeWord, code, and at least 1 parameter)!");
+                                customAlert("Please complete all plugin fields (codeWord, code, and at least 1 parameter)!");
                                 return;
                             }
                             // 处理 parameterDec 为数组（允许空项）
@@ -234,38 +266,17 @@ func Lain(error_str, web_title, web_js, web_css, web_route string, sessionSlice 
 
                             console.log("[DEBUG] Sending payload:", payload);
 
-                            // 发送到服务端
-                            fetch('/`+web_route+`?op=insertPlugin', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify(payload)
-                            })
-                            .then(function(response) {
-                                if (!response.ok) {
-                                    return response.text().then(function(text) {
-                                        throw new Error(text);
-                                    });
-                                }
-                                return response.text();
-                            })
-                            .then(function(data) {
-                                alert('[✔] Plugin success: ' + data);
-                                form.reset();
-
-                                var dialog = document.getElementById("serverDialog");
-                                if (dialog) {
-                                    dialog.style.transform = "translateX(-50%) scaleY(0)";
-                                    dialog.style.opacity = "0";
-                                    setTimeout(function() {
-                                        dialog.style.display = "none";
-                                    }, 300);
-                                }
-                            })
-                            .catch(function(error) {
-                                console.error('[✘] Plugin fail: ' + error.message);
-                                alert('[✘] send error' + error.message);
-                            });
+                            // plugin发送到服务端
+                            
                         }
+
+                        window.plugin = function(remark) {
+                            if (typeof window.submitPlugin !== "function") {
+                                customAlert("submitPlugin is not available");
+                                return;
+                            }
+                            return window.submitPlugin(remark);
+                        };
 
                         function closeStartServerDialog() {
                             var dialog = document.getElementById("serverDialog");
@@ -278,8 +289,6 @@ func Lain(error_str, web_title, web_js, web_css, web_route string, sessionSlice 
                             }
                         }
                         const server = new lain_server();
-                        server.get_server();
-                        server.checkTime();
                         function startServer(){
                             server.start_server();
                         }
@@ -292,7 +301,6 @@ func Lain(error_str, web_title, web_js, web_css, web_route string, sessionSlice 
                         <p id='div_conn'></p>
                         <script>
                             const l_index = new index();
-                            l_index.lainShell();
                             shell_list = [];
                             function get_conn(uid, shellname) {
                                 if (shell_list.includes(uid)) {
@@ -344,7 +352,6 @@ func Lain(error_str, web_title, web_js, web_css, web_route string, sessionSlice 
                             <option value="">Select</option>
                         </select>
                         <div id="net_uid"></div>
-                        <div id="have_ip"></div>
                     </div>
                     <div class="net_scan">
                         <select id='net_options' name='net_options'>
@@ -368,8 +375,8 @@ func Lain(error_str, web_title, web_js, web_css, web_route string, sessionSlice 
                     </div>
                     <div id="net_div" class="net_div"></div>
                     <script>
+                        net_init()
                         const net = new lain_net();
-                        net.getNet();
                         function checkCustomOption(select) {
                             var customInput = document.getElementById('custom_sleep_time');
                             if(select.value === 'custom') {
@@ -392,10 +399,6 @@ func Lain(error_str, web_title, web_js, web_css, web_route string, sessionSlice 
                     <div id="g_file"></div>
                     <script>
                         const loot = new lain_index();
-                        function Get_loot(){
-                            loot.getloot();
-                        }
-                        Get_loot()
                     </script>
                 </div>
                 <div id="chat" class="hidden">
@@ -410,8 +413,6 @@ func Lain(error_str, web_title, web_js, web_css, web_route string, sessionSlice 
                     </div>
                     <script>
                         const app = new lain_chat();
-                        app.getChatSlice();
-                        app.getNewChat();
 
                         // 🔹 发送按钮点击逻辑
                         document.getElementById("chat_send_btn").onclick = function () {
@@ -484,9 +485,9 @@ func Lain(error_str, web_title, web_js, web_css, web_route string, sessionSlice 
         <button class="close-button" onclick="closeIframe()">x</button>
         <iframe id="iframe" src=""></iframe>
     </div>
-    <script src="/`+web_js+`"></script>
 </body>
 </html>
+
             `,web_title)
 			w.Header().Set("Content-Type", "text/html")
 			fmt.Fprint(w, html)
