@@ -497,6 +497,8 @@ class WebSocketClient {
             case "agentList":
                 this.handleAgentList(msg);
                 break;
+            case "winAgentList":
+                break;
             case "chat":
                 chat_slice = msg.data;
                 this.handleChat(msg);
@@ -664,19 +666,23 @@ class WebSocketClient {
     }
     handleAgentList(msg) {
         let indexInstance = new lain_index();
-        if(msg.data && msg.data.length) {
-            User_data = Array.isArray(msg.data) ? msg.data : [];
-            shell_list = User_data.slice();
+        User_data = (msg.data && msg.data.length) ?
+            (Array.isArray(msg.data) ? msg.data : []) :
+            [];
+        shell_list = User_data.slice();
+        window.shell_list = shell_list;
+
+        if(User_data.length > 0) {
             window.shell_list = shell_list;
-            indexInstance.renderUserList(msg.data);
+            indexInstance.renderUserList(User_data);
             net_init();
             rebuildServerClientCounts(User_data);
         } else {
-            User_data = [];
             shell_list = [];
             window.shell_list = shell_list;
+            indexInstance.renderUserList([]);
             net_init();
-            rebuildServerClientCounts(User_data);
+            rebuildServerClientCounts([]);
         }
     }
     handleServer(msg){
@@ -793,35 +799,41 @@ class index{
             div.appendChild(container);
         }
     }
-        get(uid,shellname){
-            let confirm1=customConfirm("confirm?");
-            if(confirm1){
-                webSocketClient.send(
-                    "insertKey",
-                    {
-                        uid:uid,
-                        username:Username,
-                        request:shellname
-                    }
-                );
-                return uid;
+        async get(uid,shellname){
+            const confirm1 = await customConfirm("confirm?");
+            if(!confirm1){
+                return false;
             }
+            const sent = await webSocketClient.send(
+                "insertKey",
+                {
+                    uid:uid,
+                    username:Username,
+                    request:shellname
+                }
+            );
+            return sent ? uid : false;
         }
-        del(uid){
-            let right=customConfirm("confirm?");
-            let ms=customConfirm("ok");
-            if(right && ms){
-                document
-                .getElementById("container-"+uid)
-                ?.remove();
-                webSocketClient.send(
-                    
-                    "delIndex",
-                    {
-                        uid:uid
-                    }
-                );
+        async del(uid, info = ""){
+            const confirmed = await customConfirm("confirm?");
+            if(!confirmed){
+                return;
             }
+            const result = await webSocketClient.send(
+                "delIndex",
+                {
+                    uid: uid,
+                    info: info || ""
+                }
+            );
+            if(!result){
+                customLog("Delete agent failed");
+                return;
+            }
+            document
+            .getElementById("container-"+uid)
+            ?.remove();
+            customLog("Agent removed");
         }
     }
       
@@ -2490,9 +2502,8 @@ class index{
                 document
                 .getElementById("container-"+uid)
                 ?.remove();
-        
                 webSocketClient.send(
-                    "delIndex",
+                    "delInfo",
                     {
                         uid: uid
                     }
@@ -2882,6 +2893,10 @@ class lain_server {
     }
     async start_server() {
         const form = document.getElementById("serverForm");
+        if (!form) {
+            customAlert("Server form not found");
+            return false;
+        }
         const formData = new FormData(form);
         const jsonData = {};
         const certContent = formData.get("cert") || "";
@@ -2899,14 +2914,37 @@ class lain_server {
         // 添加用户名
         jsonData.username = Username;
         try{
-            let result = await webSocketClient.send(
-                "startServer",
-                jsonData,
+            const responsePromise = webSocketClient.waitForMessage(
+                (msg) => {
+                    return msg.path === "startServer";
+                },
+                15000
             );
-            customLog("start server success:",result);
+            const sent = await webSocketClient.send(
+                "startServer",
+                jsonData
+            );
+            if (!sent) {
+                customAlert("Start server send failed");
+                return false;
+            }
+            const result = await responsePromise;
+            if (!result || result.code !== 200) {
+                customAlert(
+                    (result && result.message) ||
+                    "Start server failed"
+                );
+                return false;
+            }
+            customLog(
+                result.message ||
+                ("Server started on port " + (result.port || ""))
+            );
+            return true;
         }catch(err){
             console.error("start server error:",err);
             customAlert("Start server failed: " + err.message);
+            return false;
         }
     }
 
@@ -2991,18 +3029,33 @@ class lain_server {
             if (target.classList.contains('delete-server')) {
                 const port = target.getAttribute('data-port');
                 try {
-                    let data = await webSocketClient.send(
-                        
+                    const confirmed = await customConfirm("confirm?");
+                    if (!confirmed) {
+                        return;
+                    }
+                    const responsePromise = webSocketClient.waitForMessage(
+                        (msg) => {
+                            return msg.path === "delserver";
+                        },
+                        15000
+                    );
+                    const sent = await webSocketClient.send(
                         "delserver",
                         {
                             port: port
                         }
                     );
+                    if (!sent) {
+                        customAlert("Delete server send failed");
+                        return;
+                    }
+                    const data = await responsePromise;
                     // 有代理不能删除
-                    if (
-                        data === "[!] This server has agents,can not stop\n"
-                    ) {
-                        customAlert(data);
+                    if (!data || data.code !== 200) {
+                        customAlert(
+                            (data && data.message) ||
+                            "Delete server failed"
+                        );
                         return;
                     }
                     // 删除本地数据
@@ -3014,11 +3067,13 @@ class lain_server {
                     if (serverDiv) {
                         serverDiv.remove();
                     }
+                    customLog(data.message || "Server deleted");
                 } catch(err) {
                     console.error(
                         "delete server error:",
                         err
                     );
+                    customAlert("Delete server failed: " + err.message);
                 }
             }
             if (target.classList.contains('download-config')) {
@@ -4565,6 +4620,7 @@ function customConfirm(message) {
 }
 
 window.lainIndex = new lain_index();
+window.l_index = window.l_index || new index();
 window.showTerminalDialog = function(uid, host, os) {
     // 这里要用你的类实例，比如
     if (window.lainIndex) {
@@ -4580,6 +4636,39 @@ window.showMsgDialog = function(uid, host) {
     if (window.lainIndex) {
         window.lainIndex.showMsgDialog(uid, host);
     }
+};
+window.get_conn = async function(uid, shellname) {
+    if (!window.l_index) {
+        return false;
+    }
+    window.shell_list = Array.isArray(window.shell_list) ? window.shell_list : [];
+    if (window.shell_list.includes(uid)) {
+        const ms = await customConfirm("just a sec...");
+        if (!ms) {
+            return false;
+        }
+        setTimeout(async () => {
+            const sentLater = await window.l_index.get(uid, shellname);
+            if (sentLater) {
+                customLog("Request sent");
+            }
+        }, 60000);
+        return true;
+    }
+    const sent = await window.l_index.get(uid, shellname);
+    if (!sent) {
+        return false;
+    }
+    if (!window.shell_list.includes(uid)) {
+        window.shell_list.push(uid);
+    }
+    return true;
+};
+window.del_conn = function(uid) {
+    if (window.l_index) {
+        return window.l_index.del(uid);
+    }
+    return false;
 };
 if (!window.fileDialogButtonBound) {
     document.addEventListener("click", function(event) {
