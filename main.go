@@ -3109,13 +3109,13 @@ func ChangeMsh(uid, s_id, pos string) (bool, string) {
 // 将msg_map输出
 func GetMsgList(uid string) []string {
 	if uid == "" {
-		return nil
+		return []string{}
 	}
 	queuesMu.RLock()
 	q := msgQueues[uid]
 	queuesMu.RUnlock()
 	if q == nil {
-		return nil
+		return []string{}
 	}
 	q.mu.Lock()
 	defer q.mu.Unlock()
