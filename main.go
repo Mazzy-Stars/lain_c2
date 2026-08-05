@@ -3013,9 +3013,10 @@ func save_file_list(uid, file, list string) {
 }
 func sendMsg(uid string) []string {
 	if uid == "" {
-		return nil
+		return []string{}
 	}
 	mapMu.RLock()
+	defer mapMu.RUnlock()
 	msgList := make([]string, 0)
 	for i := range msg_map_list {
 		msg := &msg_map_list[i]
@@ -3026,7 +3027,6 @@ func sendMsg(uid string) []string {
 			)
 		}
 	}
-	mapMu.RUnlock()
 	return msgList
 }
 
