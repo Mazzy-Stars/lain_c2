@@ -1501,7 +1501,7 @@ class index{
                 '<div class="terminal" style="background:#f8fbff;border-radius:16px;border:1px solid rgba(160,176,194,0.32);padding:16px;min-height:420px;color:#000000;box-shadow:inset 0 1px 0 rgba(255,255,255,0.72);">' +
                 '<div class="input-container"></div>' +
                 '</div>' +
-                '<link rel="stylesheet" href="test.css">';
+                '<link rel="stylesheet" href="/`+web_css+`">';
 
             // 关闭按钮
             dialog.querySelector(".terminal-close-btn").onclick = function () {
@@ -1677,7 +1677,7 @@ class index{
                         '</div>' +
                     '</div>' +
                 '</div>' +
-                '<link rel="stylesheet" href="test.css">';
+                '<link rel="stylesheet" href="/`+web_css+`">';
 
             // 关闭按钮
             dialog.querySelector("#file-close-btn").onclick = function () {
