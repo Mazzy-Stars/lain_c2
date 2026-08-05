@@ -1187,6 +1187,7 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 					cmapMutex.Unlock()
 
 					go protocol.StopServer(port)
+					go PushData("", "server")
 					stopStr := fmt.Sprintf(
 						log_word["removed_server"],
 						port,
