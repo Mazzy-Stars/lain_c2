@@ -495,7 +495,7 @@ func PushData(username string, pushType string) {
 		data = Check_Time_Pro()
 	// 日志
 	case "log":
-		data = Log_read(50)
+		data = Log_read(1)
 	// 插件
 	case "PluginList":
 		data = GetAllPluginCode()
@@ -2975,16 +2975,15 @@ type file_json struct {
 func Read_file_list(uid string) []file_json {
 	fcache.RLock()
 	defer fcache.RUnlock()
-	// 只收集匹配的文件，不删除
-	var fileList []file_json
+	fileList := make([]file_json, 0)
 	for i := range msg_file_cache {
 		item := &msg_file_cache[i]
 		if item.Uid == uid {
-			file_json := file_json{
+			fileItem := file_json{
 				List: item.Taskid,
 				File: item.File,
 			}
-			fileList = append(fileList, file_json)
+			fileList = append(fileList, fileItem)
 		}
 	}
 	return fileList
@@ -4122,27 +4121,27 @@ type LootClient struct {
 
 func Get_loots_pro() []LootClient {
 	clientMap := make(map[string]string)
+
 	clientDataMu.RLock()
 	for i := range client_data.Clients {
 		c := &client_data.Clients[i]
 		clientMap[c.Uid] = c.Host
 	}
 	clientDataMu.RUnlock()
+
 	windows_clientMu.RLock()
 	for i := range windows_client_data.Clients {
 		c := &windows_client_data.Clients[i]
 		clientMap[c.Uid] = c.Host
 	}
 	windows_clientMu.RUnlock()
+
+	result := make([]LootClient, 0)
 	if len(clientMap) == 0 {
-		return nil
+		return result
 	}
-	var result []LootClient
 	for uid, host := range clientMap {
-		dirPath := filepath.Join(
-			"uploads",
-			uid,
-		)
+		dirPath := filepath.Join("uploads", uid)
 		files, err := os.ReadDir(dirPath)
 		if err != nil {
 			continue
@@ -4155,30 +4154,21 @@ func Get_loots_pro() []LootClient {
 			if file.IsDir() {
 				continue
 			}
-			fullPath := filepath.Join(
-				dirPath,
-				file.Name(),
-			)
+			fullPath := filepath.Join(dirPath, file.Name())
 			info, err := os.Stat(fullPath)
-
 			if err != nil {
 				continue
 			}
 			loot.Files = append(
 				loot.Files,
 				LootFile{
-					Name:   file.Name(),
-					SizeKB: info.Size() / 1024,
-					ModTime: info.ModTime().Format(
-						"2006-01-02 15:04:05",
-					),
+					Name:    file.Name(),
+					SizeKB:  info.Size() / 1024,
+					ModTime: info.ModTime().Format("2006-01-02 15:04:05"),
 				},
 			)
 		}
-		result = append(
-			result,
-			loot,
-		)
+		result = append(result, loot)
 	}
 	return result
 }
@@ -4335,19 +4325,16 @@ func ClearUnmarkedGlobalVars() {
 
 // 查询内网资产
 func getInnet(uid string) []Innet {
-	var list_innet []Innet
+	listInnet := make([]Innet, 0)
 	dataInnetmu.RLock()
+	defer dataInnetmu.RUnlock()
 	for i := range data_innet.Innets {
 		innet := &data_innet.Innets[i]
 		if uid == innet.Uid {
-			list_innet = append(
-				list_innet,
-				*innet,
-			)
+			listInnet = append(listInnet, *innet)
 		}
 	}
-	dataInnetmu.RUnlock()
-	return list_innet
+	return listInnet
 }
 
 // obf const encry
