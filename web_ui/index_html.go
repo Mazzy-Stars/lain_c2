@@ -22,7 +22,7 @@ func Lain(error_str, web_title, web_js, web_css, web_route string, sessionSlice 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>test</title>
+    <title>%s</title>
     <link rel="stylesheet" href="/`+web_css+`">
     <link rel="icon" href="favicon.ico" type="image/x-icon">
 </head>
