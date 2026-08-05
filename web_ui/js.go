@@ -42,7 +42,6 @@ let onlineTeammates = window.onlineTeammates || [];
 window.onlineTeammates = onlineTeammates;
 window.terminalSessions = window.terminalSessions || {};
 window.netInitTimer = window.netInitTimer || null;
-window.netPollingTimer = window.netPollingTimer || null;
 window.shellInnetData = window.shellInnetData || {};
 
 function createRuntimeTaskId(prefix = "task") {
