@@ -1188,6 +1188,7 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 
 					go protocol.StopServer(port)
 					go PushData("", "server")
+
 					stopStr := fmt.Sprintf(
 						log_word["removed_server"],
 						port,
@@ -3718,9 +3719,6 @@ func ServerIndex() []Server {
 	for i := range server_data.Servers {
 		server := &server_data.Servers[i]
 		matchedServers = append(matchedServers, *server)
-	}
-	if len(matchedServers) == 0 {
-		return nil
 	}
 	return matchedServers
 }
