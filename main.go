@@ -2162,7 +2162,7 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 						Filename:  filename,
 						SplitSize: splitSize,
 					}
-
+					
 					clientWs.WriteJSON(map[string]interface{}{
 						"code": 200,
 						"path": "uploadFile",
@@ -2262,6 +2262,15 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 						data_chat.Chats = append(data_chat.Chats, chat)
 						dataChatmu.Unlock()
 						go PushData("", "chat")
+
+						logger.WriteLog(
+							fmt.Sprintf(
+								log_word["chat_file"],
+								uploadTask.Username,
+								uploadTask.Filename,
+							),
+						)
+						
 						clientWs.WriteJSON(map[string]interface{}{
 							"code": 200,
 							"path": "chatFile",
