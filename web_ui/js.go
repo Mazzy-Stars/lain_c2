@@ -34,15 +34,16 @@ let resultQueues = {};
 let fileQueues = {};
 let netQueues = {};
 
-let resultTimers = window.resultTimers || {};
-window.resultTimers = resultTimers;
-let serverClientCounts = window.serverClientCounts || {};
-window.serverClientCounts = serverClientCounts;
-let onlineTeammates = window.onlineTeammates || [];
-window.onlineTeammates = onlineTeammates;
+window.resultTimers = window.resultTimers || {};
+window.serverClientCounts = window.serverClientCounts || {};
+window.onlineTeammates = window.onlineTeammates || [];
 window.terminalSessions = window.terminalSessions || {};
 window.netInitTimer = window.netInitTimer || null;
 window.shellInnetData = window.shellInnetData || {};
+
+let resultTimers = window.resultTimers;
+let serverClientCounts = window.serverClientCounts;
+let onlineTeammates = window.onlineTeammates;
 
 function createRuntimeTaskId(prefix = "task") {
     return prefix + "-" + Math.random().toString(36).slice(2) + Date.now();
