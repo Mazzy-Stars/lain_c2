@@ -3033,24 +3033,27 @@ class lain_server {
                     if (!confirmed) {
                         return;
                     }
+
                     const responsePromise = webSocketClient.waitForMessage(
                         (msg) => {
                             return msg.path === "delserver";
                         },
                         15000
                     );
+
                     const sent = await webSocketClient.send(
                         "delserver",
                         {
                             port: port
                         }
                     );
+
                     if (!sent) {
                         customAlert("Delete server send failed");
                         return;
                     }
+
                     const data = await responsePromise;
-                    // 有代理不能删除
                     if (!data || data.code !== 200) {
                         customAlert(
                             (data && data.message) ||
@@ -3058,21 +3061,19 @@ class lain_server {
                         );
                         return;
                     }
-                    // 删除本地数据
-                    server_data =
-                        server_data.filter(
-                            s => s.port !== port
-                        );
+
+                    server_data = Array.isArray(server_data)
+                        ? server_data.filter(s => s.port !== port)
+                        : [];
+
                     const serverDiv = document.getElementById(port + "-info");
                     if (serverDiv) {
                         serverDiv.remove();
                     }
+
                     customLog(data.message || "Server deleted");
                 } catch(err) {
-                    console.error(
-                        "delete server error:",
-                        err
-                    );
+                    console.error("delete server error:", err);
                     customAlert("Delete server failed: " + err.message);
                 }
             }
