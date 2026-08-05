@@ -495,7 +495,7 @@ func PushData(username string, pushType string) {
 		data = Check_Time_Pro()
 	// 日志
 	case "log":
-		data = Log_read(1)
+		data = Log_read(50)
 	// 插件
 	case "PluginList":
 		data = GetAllPluginCode()
