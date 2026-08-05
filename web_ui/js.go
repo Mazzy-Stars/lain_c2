@@ -2976,7 +2976,7 @@ class lain_server {
                 htmlContent += "</div>";
                 htmlContent += "<div class='server-meta-grid'>";
                     htmlContent += "<div class='server-meta-item'><span class='server-meta-label'>Port</span><span class='server-meta-value'>" + escapeHtml(server.port) + "</span></div>";
-                    htmlContent += "<div class='server-meta-item'><span class='server-meta-label'>User</span><span class='server-meta-value'>" + escapeHtml(server.user) + "</span></div>";
+                    htmlContent += "<div class='server-meta-item'><span class='server-meta-label'>User</span><span class='server-meta-value'>" + escapeHtml(server.username) + "</span></div>";
                     htmlContent += "<div class='server-meta-item'><span class='server-meta-label'>Cert</span><span class='server-meta-value'>" + escapeHtml(cert_path || "-") + "</span></div>";
                     htmlContent += "<div class='server-meta-item'><span class='server-meta-label'>Key</span><span class='server-meta-value'>" + escapeHtml(key_path || "-") + "</span></div>";
                 htmlContent += "</div>";
