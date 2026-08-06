@@ -816,6 +816,7 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 
 					go PushData("", "agentList")
 					go PushData("", "winAgentList")
+					go PushData("", "loot")
 
 
 					logStr := fmt.Sprintf(log_word["removed_agent"], uid)
@@ -4005,7 +4006,7 @@ func UploadFileHandler(uid, data, filename string,
 		// 解密后清空全局变量中的文件数据
 		delete(UploadFile_byte_parts, file_key)
 
-		go PushData("", "loot")
+		go PushData("", )
 
 	}
 	fileLog2 := fmt.Sprintf(log_word["request_file_part_"],
