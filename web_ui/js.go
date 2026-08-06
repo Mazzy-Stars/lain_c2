@@ -158,24 +158,41 @@ class WebSocketClient {
         this.ws = null;
         this.currentDownload = null;
         this.connectPromise = null;
+        this.pendingWaiters = new Set();
     }
+
+    _rejectAllWaiters(err){
+        for (const waiter of this.pendingWaiters) {
+            try { waiter.reject(err); } catch (_) {}
+        }
+        this.pendingWaiters.clear();
+        if (this.currentDownload) {
+            this.rejectDownload(err);
+        }
+    }
+
     connect(){
-        if(this.ws &&this.ws.readyState === WebSocket.OPEN){
+        if(this.ws && this.ws.readyState === WebSocket.OPEN){
             return Promise.resolve(true);
         }
         if(this.connectPromise){
             return this.connectPromise;
         }
-        console.log("connect:",this.url);
+        console.log("connect:", this.url);
         this.connectPromise = new Promise((resolve, reject)=>{
-            this.ws = new WebSocket(this.url);
-            this.ws.binaryType = "arraybuffer";
-            this.ws.onopen = ()=>{
+            const ws = new WebSocket(this.url);
+            this.ws = ws;
+            ws.binaryType = "arraybuffer";
+
+            ws.onopen = ()=>{
                 console.log("websocket connected");
-                this.connectPromise = null;
+                if (this.ws === ws) {
+                    this.connectPromise = null;
+                }
                 resolve(true);
             };
-            this.ws.onmessage = (event)=>{
+
+            ws.onmessage = (event)=>{
                 if(typeof event.data !== "string"){
                     this.handleBinaryMessage(event.data);
                     return;
@@ -184,7 +201,7 @@ class WebSocketClient {
                 try{
                     msg = JSON.parse(event.data);
                 }catch(e){
-                    console.error("json parse error:",event.data);
+                    console.error("json parse error:", event.data);
                     return;
                 }
                 if(this.handleDownloadMessage(msg)){
@@ -192,16 +209,21 @@ class WebSocketClient {
                 }
                 this.handleMessage(msg);
             };
-            this.ws.onerror=(err)=>{
-                console.error("websocket error:",err);
+
+            ws.onerror = (err)=>{
+                console.error("websocket error:", err);
             };
-            this.ws.onclose=()=>{
+
+            ws.onclose = ()=>{
                 console.log("websocket closed");
-                this.ws=null;
+                if (this.ws === ws) {
+                    this.ws = null;
+                }
                 if(this.connectPromise){
                     reject(new Error("websocket closed before open"));
                     this.connectPromise = null;
                 }
+                this._rejectAllWaiters(new Error("websocket closed"));
             };
         });
         return this.connectPromise;
@@ -222,8 +244,9 @@ class WebSocketClient {
         await Promise.race([connectPromise, timeoutPromise]);
         return this.ws && this.ws.readyState === WebSocket.OPEN;
     }
-    async send(path,body={}){
-        if(!this.ws ||this.ws.readyState !== WebSocket.OPEN){
+
+    async send(path, body = {}){
+        if(!this.ws || this.ws.readyState !== WebSocket.OPEN){
             try{
                 await this.ensureConnected();
             }catch(e){
@@ -231,22 +254,15 @@ class WebSocketClient {
                 return false;
             }
         }
-        if(!this.ws ||this.ws.readyState !== WebSocket.OPEN){
+        if(!this.ws || this.ws.readyState !== WebSocket.OPEN){
             console.error("websocket not connected");
             return false;
         }
-        const data={
-            path:path,
-            body:body
-        };
         try{
-            this.ws.send(
-                JSON.stringify(data)
-            );
-            console.log("send:",data);
+            this.ws.send(JSON.stringify({ path, body }));
             return true;
         }catch(e){
-            console.error("send error:",e);
+            console.error("send error:", e);
             return false;
         }
     }
@@ -259,7 +275,7 @@ class WebSocketClient {
             this.ws.send(data);
             return true;
         }catch(e){
-            console.error("binary send error:",e);
+            console.error("binary send error:", e);
             return false;
         }
     }
@@ -336,8 +352,63 @@ class WebSocketClient {
             size: pending.received,
         });
     }
+    waitForMessage(matcher, timeout = 15000){
+        return new Promise((resolve, reject)=>{
+            if(!this.ws || this.ws.readyState !== WebSocket.OPEN){
+                reject(new Error("websocket not connected"));
+                return;
+            }
+
+            const ws = this.ws;
+            const waiter = { reject };
+            let timer = null;
+
+            const cleanup = ()=>{
+                if(timer){
+                    clearTimeout(timer);
+                    timer = null;
+                }
+                ws.removeEventListener("message", listener);
+                ws.removeEventListener("close", onClose);
+                this.pendingWaiters.delete(waiter);
+            };
+
+            const listener = (event)=>{
+                let msg;
+                try{
+                    msg = JSON.parse(event.data);
+                }catch(e){
+                    return;
+                }
+                if(!matcher(msg)){
+                    return;
+                }
+                cleanup();
+                resolve(msg);
+            };
+
+            const onClose = ()=>{
+                cleanup();
+                reject(new Error("websocket closed"));
+            };
+
+            waiter.reject = (err)=>{
+                cleanup();
+                reject(err);
+            };
+
+            this.pendingWaiters.add(waiter);
+            ws.addEventListener("message", listener);
+            ws.addEventListener("close", onClose);
+
+            timer = setTimeout(()=>{
+                cleanup();
+                reject(new Error("wait message timeout"));
+            }, timeout);
+        });
+    }
     async downloadFile(path, body = {}, timeout = 30000){
-        if(!this.ws || this.ws.readyState !== WebSocket.OPEN){
+        if(!await this.ensureConnected().catch(()=>false)){
             throw new Error("websocket not connected");
         }
         if(this.currentDownload){
@@ -345,14 +416,14 @@ class WebSocketClient {
         }
         const downloadPromise = new Promise((resolve, reject)=>{
             this.currentDownload = {
-                path: path,
+                path,
                 chunks: [],
                 filename: null,
                 size: 0,
                 received: 0,
                 started: false,
-                resolve: resolve,
-                reject: reject,
+                resolve,
+                reject,
                 timer: setTimeout(()=>{
                     this.rejectDownload(new Error("download timeout"));
                 }, timeout),
@@ -403,8 +474,7 @@ class WebSocketClient {
         });
     }
     async sendFile(path, body, file, chunkSize, onProgress){
-        if(!this.ws || this.ws.readyState !== WebSocket.OPEN){
-            console.error("websocket not connected");
+        if(!await this.ensureConnected().catch(()=>false)){
             throw new Error("websocket not connected");
         }
         const readyPromise = this.waitForMessage((msg)=>{
@@ -422,12 +492,7 @@ class WebSocketClient {
         const resultPromise = this.waitForMessage((msg)=>{
             return msg.path === path && msg.type !== "ready";
         });
-        const endSent = await this.send(
-            "upload_end",
-            {
-                type:"upload_end"
-            }
-        );
+        const endSent = await this.send("upload_end", { type: "upload_end" });
         if(!endSent){
             throw new Error("send upload_end failed");
         }
@@ -436,16 +501,6 @@ class WebSocketClient {
             throw new Error(resultMsg.message || "upload failed");
         }
         return resultMsg;
-    }
-    async uploadChatFile(file, path){
-        return this.sendFile(
-            path,
-            {
-                filename:file.name
-            },
-            file,
-            64 * 1024
-        );
     }
     async uploadBinary(file, chunkSize = 64 * 1024, onProgress = null){
         let offset = 0;
@@ -467,14 +522,16 @@ class WebSocketClient {
         }
     }
     close(){
+        this._rejectAllWaiters(new Error("websocket closed"));
         if(this.ws){
             this.ws.close();
-            this.ws=null;
+            this.ws = null;
         }
+        this.connectPromise = null;
     }
     handleMessage(msg) {
         console.log(
-            "PATH:",msg.path,
+            "PATH:", msg.path,
             "received:", msg
         );
         switch(msg.path) {
