@@ -784,6 +784,13 @@ const webSocketClient = new WebSocketClient(
 
 webSocketClient.connect();
 
+window.addEventListener("pageshow", ()=>{
+    webSocketClient.connect().catch(()=>{});
+});
+window.addEventListener("pagehide", ()=>{
+    webSocketClient.close();
+});
+
 class index{
     renderClients(clients){
         if (typeof clients === "string") {
