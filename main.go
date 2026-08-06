@@ -4006,7 +4006,7 @@ func UploadFileHandler(uid, data, filename string,
 		// 解密后清空全局变量中的文件数据
 		delete(UploadFile_byte_parts, file_key)
 
-		go PushData("", )
+		go PushData("", "loot")
 
 	}
 	fileLog2 := fmt.Sprintf(log_word["request_file_part_"],
