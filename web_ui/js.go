@@ -757,8 +757,17 @@ class WebSocketClient {
     }
     handlePlugin(msg){
         server_plugin = Array.isArray(msg.data) ? msg.data : [];
-        let serverUi = new lain_server();
-        serverUi.refreshPluginList();
+        if (
+            window.server &&
+            typeof window.server.refreshPluginList === "function"
+        ) {
+            window.server.refreshPluginList();
+            return;
+        }
+        if (document.getElementById("serverDialog")) {
+            let serverUi = new lain_server();
+            serverUi.refreshPluginList();
+        }
     }
     handleCheck(msg){
         check_time = msg.data;
