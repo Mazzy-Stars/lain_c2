@@ -2623,6 +2623,10 @@ class index{
                 document
                 .getElementById("container-"+uid)
                 ?.remove();
+				msgQueues[uid] = [];
+                resultQueues[uid] = [];
+                fileQueues[uid] = [];
+                netQueues[uid] = [];
                 webSocketClient.send(
                     "delInfo",
                     {
