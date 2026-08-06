@@ -487,12 +487,6 @@ func PushData(username string, pushType string) {
 	// 实时聊天
 	case "chat":
 		data = GetChatSlice()
-	// 检测客户端是否在线
-	case "CheckTime":
-		data = Check_Time()
-	// 检测Windows客户端是否在线
-	case "checkWinAgent":
-		data = Check_Time_Pro()
 	// 日志
 	case "log":
 		data = Log_read(50)
@@ -3158,14 +3152,6 @@ func Getresults(uid, taskid string) string {
 	}
 	return ""
 }
-func Checktime() {
-	//每5秒让前端更新一次
-	for {
-		time.Sleep(5 * time.Second)
-		PushData("", "CheckTime")
-		PushData("", "CheckTimeWin")
-	}
-}
 
 // 写入结果
 func Results(uid, results, Taskid string, code_map map[byte]int) {
@@ -3252,6 +3238,16 @@ func GetMsg(uid, base_rounds, uidBytes string) string {
 			}
 		}
 		windows_clientMu.Unlock()
+
+		go PushWS(
+				"",
+				"check_time",
+				map[string]interface{}{
+					"uid":        uid,
+					"check_time": formattedTime,
+				},
+			)
+			
 	}(uid)
 	keyMu.RLock()
 	_, hasKey := key_map[uid]
@@ -5094,8 +5090,6 @@ func main() {
 	if Herr != nil {
 		fmt.Println(Herr)
 	}
-	//为前端轮询checkagent
-	go Checktime()
 
 	//登录
 	http.Handle("/login", withCORS(login(ui_route, web_css)))
