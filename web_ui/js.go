@@ -757,16 +757,8 @@ class WebSocketClient {
     }
     handlePlugin(msg){
         server_plugin = Array.isArray(msg.data) ? msg.data : [];
-        if (
-            window.server &&
-            typeof window.server.refreshPluginList === "function"
-        ) {
+        if (window.server && typeof window.server.refreshPluginList === "function") {
             window.server.refreshPluginList();
-            return;
-        }
-        if (document.getElementById("serverDialog")) {
-            let serverUi = new lain_server();
-            serverUi.refreshPluginList();
         }
     }
     handleCheck(msg){
@@ -3287,10 +3279,10 @@ class lain_server {
                 const port = target.getAttribute('data-port');
                 const server = server_data.find(s => s.port === port);
                 if (!server) return;
-                let dialog = document.getElementById("serverDialog");
+                let dialog = document.getElementById("pluginDialog");
                 if (!dialog) {
                     dialog = document.createElement("div");
-                    dialog.id = "serverDialog";
+                    dialog.id = "pluginDialog";
                     dialog.className = "serverDialog";
                     dialog.style.left = "50%";
                     dialog.style.display = "block";
@@ -3298,7 +3290,7 @@ class lain_server {
 
                     dialog.innerHTML =
                         "<div class='plugin-dialog-header'>" +
-                            "<button type='button' class='plugin-close-btn' onclick='closeStartServerDialog()' aria-label='close plugin dialog'>x</button>" +
+                            "<button type='button' class='plugin-close-btn' onclick='closePluginDialog()' aria-label='close plugin dialog'>x</button>" +
                             "<h3>plugin</h3>" +
                         "</div>" +
                         "<form id='pluginForm' method='POST' class='plugin-form'>" +
@@ -3321,7 +3313,7 @@ class lain_server {
                         "</form>" +
                         "<div id='plugin_list' class='plugin_list'></div>";
 
-                    document.getElementById("server_index").appendChild(dialog);
+                    document.body.appendChild(dialog);
                     requestAnimationFrame(() => {
                         dialog.style.transform = "translateX(-50%) scaleY(1)";
                         dialog.style.opacity = "1";
@@ -3382,7 +3374,7 @@ class lain_server {
         const serverUi = this;
         var pluginList = document.getElementById("plugin_list");
         if (!pluginList) return;
-        var dialog = document.getElementById("serverDialog");
+        var dialog = document.getElementById("pluginDialog");
         var currentRemark = dialog ? dialog.dataset.remark : "";
         pluginList.innerHTML = "";
         pluginList.classList.add("plugin-panel");
@@ -4456,7 +4448,7 @@ function showPluginDialog(uid, os, paramDescList, codeword) {
     }
 }
 async function submitPlugin(remark) {
-    const dialog = document.getElementById("serverDialog");
+    const dialog = document.getElementById("pluginDialog");
     if (!dialog) {
         customAlert("Plugin dialog not found");
         return false;
@@ -4559,6 +4551,18 @@ async function submitPlugin(remark) {
         if (submitBtn) {
             submitBtn.disabled = false;
         }
+    }
+}
+function closePluginDialog() {
+    var dialog = document.getElementById("pluginDialog");
+    if (dialog) {
+        dialog.style.transform = "translateX(-50%) scaleY(0)";
+        dialog.style.opacity = "0";
+        setTimeout(function () {
+            if (dialog.parentNode) {
+                dialog.parentNode.removeChild(dialog);
+            }
+        }, 300);
     }
 }
 window.submitPlugin = submitPlugin;
