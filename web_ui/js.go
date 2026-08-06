@@ -23,7 +23,6 @@ if (!window.main_server) {
 }
 let server_data = [];
 let User_data = [];
-let check_time = [];
 let shell_list=[];
 let server_plugin = [];
 let chat_slice = [];
@@ -32,6 +31,7 @@ let msgQueues = {};
 let resultQueues = {};
 let fileQueues = {};
 let netQueues = {};
+let checkTimeTimers = {};
 
 window.resultTimers = window.resultTimers || {};
 window.serverClientCounts = window.serverClientCounts || {};
@@ -572,11 +572,8 @@ class WebSocketClient {
             case "PluginList":
                 this.handlePlugin(msg);
                 break;
-            case "CheckTime":
+            case "check_time":
                 this.handleCheck(msg);
-                break;
-            case "checkAgent":
-                this.handleCheckAgent(msg);
                 break;
             case "onlineteamment":
                 if (msg.code === 200 || msg.data) {
@@ -761,15 +758,10 @@ class WebSocketClient {
             window.server.refreshPluginList();
         }
     }
-    handleCheck(msg){
-        check_time = msg.data;
-        let indexCheck = new lain_index();
-        indexCheck.checkTime();
-
-    }
-    handleCheckAgent(msg){
-        let indexCheckAgent = new lain_server();
-        indexCheckAgent.checkAgent(User_data);
+    handleCheck(msg) {
+        if (!msg || !msg.data) return;
+        const indexCheck = new lain_index();
+        indexCheck.checkTime(msg.data);
     }
     handleOnlineTeammates(msg){
         onlineTeammates = Array.isArray(msg.data) ? msg.data : [];
@@ -2587,36 +2579,51 @@ class index{
             document.getElementById('jitter_' + uid).value = jitter;
         }
 
-        async checkTime() {
-            if(!check_time ||!Array.isArray(check_time) ||check_time.length === 0){
-                console.log("check_time is empty");
-                return;
+        async checkTime(item) {
+            if (!item || !item.uid) return;
+
+            const userDiv = document.getElementById(item.uid + "info");
+            if (!userDiv) return;
+
+            const checkElement = document.getElementById(item.uid + "-check");
+            const nextTime = item.check_time || "";
+            const previousTime =
+                userDiv.dataset.lastCheckTime ||
+                (checkElement ? checkElement.innerText.trim() : "");
+
+            const hasNewTime = nextTime !== "" && previousTime !== nextTime;
+            const imgId = item.uid + "-img";
+
+            if (checkTimeTimers[item.uid]) {
+                clearTimeout(checkTimeTimers[item.uid]);
+                delete checkTimeTimers[item.uid];
             }
-            check_time.forEach(item=>{
-                let userDiv =document.getElementById(item.uid + "info");
-                if(userDiv){
-                    let imgElement = document.getElementById(item.uid + "-img");
-                    let checkElement =document.getElementById(item.uid + "-check");
-                    let previousTime =
-                        userDiv.dataset.lastCheckTime ||
-                        (checkElement ? checkElement.innerText.trim() : "");
-                    let hasChanged =
-                        previousTime !== "" &&
-                        previousTime !== item.checkTime;
-                    if(imgElement){
-                        if(hasChanged){
-                            imgElement.outerHTML = '<img class="ip-address" id="' + item.uid + '-img" src="rhythm.gif" style="width: 106px; height: 46px; display: inline-block; vertical-align: middle;"/>';
-                        } else {
-                            imgElement.outerHTML = '<div class="ip-address" id="' + item.uid + '-img" style="background-color: #8B4513; width: 106px; height: 1px; display: inline-block; vertical-align: middle; position: relative;"><div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; box-shadow: inset 0 0 0 106px #8B4513;"></div></div>';
-                        }
+
+            if (hasNewTime) {
+                const imgHtml =
+                    '<img class="ip-address" id="' + imgId + '" src="rhythm.gif" style="width: 106px; height: 46px; display: inline-block; vertical-align: middle;"/>';
+                const oldImg = document.getElementById(imgId);
+                if (oldImg) oldImg.outerHTML = imgHtml;
+
+                checkTimeTimers[item.uid] = setTimeout(function () {
+                    const currentImg = document.getElementById(imgId);
+                    if (currentImg) {
+                        currentImg.outerHTML =
+                            '<div class="ip-address" id="' + imgId + '" style="background-color: #8B4513; width: 106px; height: 1px; display: inline-block; vertical-align: middle; position: relative;"><div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; box-shadow: inset 0 0 0 106px #8B4513;"></div></div>';
                     }
-                    if(checkElement){
-                        checkElement.innerText =item.checkTime;
-                    }
-                    userDiv.dataset.lastCheckTime = item.checkTime;
+                }, 5000);
+            } else {
+                const oldImg = document.getElementById(imgId);
+                if (oldImg) {
+                    oldImg.outerHTML =
+                        '<div class="ip-address" id="' + imgId + '" style="background-color: #8B4513; width: 106px; height: 1px; display: inline-block; vertical-align: middle; position: relative;"><div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; box-shadow: inset 0 0 0 106px #8B4513;"></div></div>';
                 }
-            });
-            console.log(check_time);
+            }
+
+            if (checkElement) {
+                checkElement.innerText = nextTime;
+            }
+            userDiv.dataset.lastCheckTime = nextTime;
         }
         async del(uid){
             let right = await customConfirm("confirm?");
