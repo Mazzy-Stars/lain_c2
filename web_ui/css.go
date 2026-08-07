@@ -1681,12 +1681,6 @@ button:hover {
 }
 
 @media (max-width: 768px) {
-    .serverDialog {
-        width: calc(100vw - 24px);
-        padding: 18px 16px 20px;
-        top: 3%;
-    }
-
     .plugin-dialog-header h3 {
         font-size: 18px;
     }
