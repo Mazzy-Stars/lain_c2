@@ -310,9 +310,6 @@ func Lain(error_str, web_title, web_js, web_css, web_route string, sessionSlice 
                 </div>
                 <div id="file" class="hidden">
                     <div id="g_file"></div>
-                    <script>
-                        const loot = new lain_index();
-                    </script>
                 </div>
                 <div id="chat" class="hidden">
                     <div class="chat">
