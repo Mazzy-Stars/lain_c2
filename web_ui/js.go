@@ -806,8 +806,11 @@ class index{
             var btnRemove = document.createElement('button');
             btnRemove.textContent = "Remove";
             btnRemove.className = "btn remove";
-            btnRemove.onclick = () => {
-                del_conn(c.uid);
+            btnRemove.onclick = async () => {
+                const ok = await del_conn(String(i));
+                if (ok) {
+                    container.remove();
+                }
             };
         
         
@@ -842,27 +845,24 @@ class index{
             );
             return sent ? uid : false;
         }
-        async del(uid, info = ""){
+        async del(index, info = "") {
             const confirmed = await customConfirm("confirm?");
-            if(!confirmed){
-                return;
+            if (!confirmed) {
+                return false;
             }
             const result = await webSocketClient.send(
                 "delIndex",
                 {
-                    uid: uid,
+                    uid: String(index),   // 如果后端还在读 body["uid"]，这里先继续用 uid 字段装索引
                     info: info || ""
                 }
             );
-            if(!result){
+            if (!result) {
                 customLog("Delete agent failed");
-                return;
+                return false;
             }
-            const target =
-                document.getElementById("container-" + uid) ||
-                document.querySelector('.client-card[data-uid="' + uid + '"]');
-            target?.remove();
             customLog("Agent removed");
+            return true;
         }
     }
       
@@ -4855,9 +4855,9 @@ window.get_conn = async function(uid, shellname) {
     }
     return true;
 };
-window.del_conn = function(uid) {
+window.del_conn = function(index) {
     if (window.l_index) {
-        return window.l_index.del(uid);
+        return window.l_index.del(index);
     }
     return false;
 };
