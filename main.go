@@ -2534,44 +2534,6 @@ func Confirm_chan(uid, username string) (Client, error) {
 	}
 	return Client{}, fmt.Errorf("client not found")
 }
-func handleChatFile(clientWs *websocket.Conn, username string, filename string, firstDataChan chan []byte) {
-	chatid := strconv.FormatInt(
-		time.Now().UnixNano(),
-		10,
-	)
-	filename = fmt.Sprintf(
-		"%s_%s",
-		chatid,
-		filepath.Base(filename),
-	)
-	os.MkdirAll(
-		"./chat_uploads/",
-		0755,
-	)
-	savePath := filepath.Join("./chat_uploads/", filename)
-	dst, err := os.Create(savePath)
-	if err != nil {
-		clientWs.WriteJSON(map[string]interface{}{
-			"code":    500,
-			"path":    "chatFile",
-			"message": "file create failed",
-		})
-
-		return
-	}
-	defer dst.Close()
-	clientWs.WriteJSON(map[string]interface{}{
-		"code": 200,
-		"path": "chatFile",
-		"type": "ready",
-	})
-	for {
-		select {
-		case data := <-firstDataChan:
-			dst.Write(data)
-		}
-	}
-}
 func getClientIP(r *http.Request) string {
 	forwarded := r.Header.Get("X-Forwarded-For")
 	if forwarded != "" {
@@ -3607,40 +3569,6 @@ func Del_shell_innet(target, uid string) string {
 		}
 	}
 	return "cannot deleted target"
-}
-func Check_Time_Pro() []map[string]string {
-	windows_clientMu.RLock()
-	defer windows_clientMu.RUnlock()
-	check_map := make([]map[string]string, 0, len(windows_client_data.Clients))
-	for i := range windows_client_data.Clients {
-		client := &windows_client_data.Clients[i]
-		check_info := map[string]string{
-			"checkTime": client.CheckTime,
-			"uid":       client.Uid,
-		}
-		check_map = append(check_map, check_info)
-	}
-	if len(check_map) == 0 {
-		return nil
-	}
-	return check_map
-}
-func Check_Time() []map[string]string {
-	clientDataMu.RLock()
-	defer clientDataMu.RUnlock()
-	check_map := make([]map[string]string, 0, len(client_data.Clients))
-	for i := range client_data.Clients {
-		client := &client_data.Clients[i]
-		check_info := map[string]string{
-			"checkTime": client.checkTime,
-			"uid":       client.Uid,
-		}
-		check_map = append(check_map, check_info)
-	}
-	if len(check_map) == 0 {
-		return nil
-	}
-	return check_map
 }
 func LoadHistoryFiles() error {
 	uploadDir := "./chat_uploads/"
