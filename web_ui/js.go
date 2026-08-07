@@ -1005,9 +1005,7 @@ class index{
             const taskid = msg.taskid || this.currentTaskId || AgentTaskId;
             this.stopGetResults(msg.uid, taskid);
             this.appendOutput(msg.data);
-            if (this.currentInput) {
-                this.currentInput.focus();
-            }
+            this.createInput();
         }
         async get(command){
             if(!this.uid){
@@ -1032,7 +1030,6 @@ class index{
                         this.currentInput.readOnly = true;
                         this.currentInput.classList.add("shell-input-history");
                     }
-                    this.createInput();
                     const started = this.lain_time(this.uid, taskid, command);
                     if (!started) {
                         this.appendOutput("task polling not started");
@@ -4925,7 +4922,6 @@ if (!window.fileDialogButtonBound) {
     });
     window.fileDialogButtonBound = true;
 }
-
 `
 
 			w.Header().Set("Content-Type", "text/javascript")
