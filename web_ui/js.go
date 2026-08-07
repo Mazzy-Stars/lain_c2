@@ -4059,15 +4059,6 @@ function toggleInfo(uid,op) {
     }
     infoContent.classList.toggle("show");
 }
-
-// 鎵撳紑 iframe
-function openIframe(url) {
-    var iframePanel = document.getElementById('iframePanel');
-    var iframe = document.getElementById('iframe');
-    iframe.src = url;
-    iframePanel.style.display = 'block';
-}
-
 // 鍏抽棴 iframe
 function closeIframe() {
     var iframePanel = document.getElementById('iframePanel');
