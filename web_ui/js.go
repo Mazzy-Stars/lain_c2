@@ -4197,10 +4197,10 @@ document.addEventListener('DOMContentLoaded', function () {
         const sidebar = document.getElementById("tle-sidebar");
         if (sidebar.style.display === "none" || sidebar.style.display === "") {
             sidebar.style.display = "block";
-            this.textContent = "馃斀";
+            this.textContent = "Close";
         } else {
             sidebar.style.display = "none";
-            this.textContent = "馃搵";
+            this.textContent = "Menu";
         }
     });
 });
