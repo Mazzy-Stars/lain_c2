@@ -158,6 +158,32 @@ class WebSocketClient {
         this.currentDownload = null;
         this.connectPromise = null;
         this.pendingWaiters = new Set();
+        this.manualClose = false;
+
+        this.bindResumeReconnect();
+    }
+
+    bindResumeReconnect(){
+        const tryReconnect = () => {
+            if (this.manualClose) {
+                return;
+            }
+            this.ensureConnected().catch((err) => {
+                console.log("resume reconnect failed:", err.message);
+            });
+        };
+
+        window.addEventListener("pageshow", tryReconnect);
+
+        window.addEventListener("focus", tryReconnect);
+
+        window.addEventListener("online", tryReconnect);
+
+        document.addEventListener("visibilitychange", () => {
+            if (document.visibilityState === "visible") {
+                tryReconnect();
+            }
+        });
     }
 
     _rejectAllWaiters(err){
@@ -177,7 +203,10 @@ class WebSocketClient {
         if(this.connectPromise){
             return this.connectPromise;
         }
+
+        this.manualClose = false;
         console.log("connect:", this.url);
+
         this.connectPromise = new Promise((resolve, reject)=>{
             const ws = new WebSocket(this.url);
             this.ws = ws;
@@ -225,8 +254,10 @@ class WebSocketClient {
                 this._rejectAllWaiters(new Error("websocket closed"));
             };
         });
+
         return this.connectPromise;
     }
+
     async ensureConnected(timeout = 5000){
         if(this.ws && this.ws.readyState === WebSocket.OPEN){
             return true;
@@ -265,6 +296,7 @@ class WebSocketClient {
             return false;
         }
     }
+
     async sendBinary(data){
         if(!this.ws || this.ws.readyState !== WebSocket.OPEN){
             console.error("websocket not connected");
@@ -278,6 +310,7 @@ class WebSocketClient {
             return false;
         }
     }
+
     handleBinaryMessage(data){
         if(!this.currentDownload){
             return;
@@ -285,6 +318,7 @@ class WebSocketClient {
         this.currentDownload.chunks.push(data);
         this.currentDownload.received += data.byteLength || 0;
     }
+
     handleDownloadMessage(msg){
         if(!this.currentDownload){
             return false;
@@ -312,6 +346,7 @@ class WebSocketClient {
         }
         return false;
     }
+
     rejectDownload(error){
         if(!this.currentDownload){
             return;
@@ -323,6 +358,7 @@ class WebSocketClient {
         this.currentDownload = null;
         pending.reject(error);
     }
+
     finishDownload(){
         if(!this.currentDownload){
             return;
@@ -351,6 +387,7 @@ class WebSocketClient {
             size: pending.received,
         });
     }
+
     waitForMessage(matcher, timeout = 15000){
         return new Promise((resolve, reject)=>{
             if(!this.ws || this.ws.readyState !== WebSocket.OPEN){
@@ -406,6 +443,7 @@ class WebSocketClient {
             }, timeout);
         });
     }
+
     async downloadFile(path, body = {}, timeout = 30000){
         if(!await this.ensureConnected().catch(()=>false)){
             throw new Error("websocket not connected");
@@ -434,9 +472,11 @@ class WebSocketClient {
         }
         return downloadPromise;
     }
+
     async downloadLog(){
         return this.downloadFile("downloadlog");
     }
+
     async sendFile(path, body, file, chunkSize, onProgress){
         if(!await this.ensureConnected().catch(()=>false)){
             throw new Error("websocket not connected");
@@ -466,6 +506,7 @@ class WebSocketClient {
         }
         return resultMsg;
     }
+
     async uploadBinary(file, chunkSize = 64 * 1024, onProgress = null){
         let offset = 0;
         while(offset < file.size){
@@ -482,10 +523,12 @@ class WebSocketClient {
             if(onProgress){
                 onProgress(offset, file.size);
             }
-            console.log("upload:",offset,"/",file.size);
+            console.log("upload:", offset, "/", file.size);
         }
     }
-    close(){
+
+    close(manual = true){
+        this.manualClose = manual;
         this._rejectAllWaiters(new Error("websocket closed"));
         if(this.ws){
             this.ws.close();
@@ -493,6 +536,7 @@ class WebSocketClient {
         }
         this.connectPromise = null;
     }
+
     handleMessage(msg) {
         console.log(
             "PATH:", msg.path,
@@ -564,7 +608,7 @@ class WebSocketClient {
                 } else {
                     console.log("Failed to insert key: " + msg.message);
                 }
-                break
+                break;
             case "insertPlugin":
                 if(msg.code === 200){
                     customLog(msg.message || "Plugin inserted successfully");
@@ -581,21 +625,21 @@ class WebSocketClient {
                 break;
             case "agentcode":
                 if(msg.code===200){
-                    let blob=new Blob(
+                    let blob = new Blob(
                         [msg.data],
                         {
                             type:"text/plain"
                         }
                     );
-                    let a=document.createElement("a");
-                    a.href=URL.createObjectURL(blob);
-                    a.download="agent.go";
+                    let a = document.createElement("a");
+                    a.href = URL.createObjectURL(blob);
+                    a.download = "agent.go";
                     a.click();
                 }
                 break;
             case "sendChat":
                 if (msg.code===200){
-                    document.getElementById("chat_input").value="";
+                    document.getElementById("chat_input").value = "";
                 }
                 break;
             case "deleteChat":
@@ -656,6 +700,7 @@ class WebSocketClient {
                 break;
         }
     }
+
     handleLog(msg) {
         if(!msg.data || !msg.data.length){
             return;
@@ -667,10 +712,11 @@ class WebSocketClient {
         }
         let html = "";
         for(let i = 0; i < msg.data.length; i++) {
-            html += "[" + msg.data[i].time + "] : "+ msg.data[i].message + "<br>";
-        }        
+            html += "[" + msg.data[i].time + "] : " + msg.data[i].message + "<br>";
+        }
         logDiv.innerHTML = html;
     }
+
     handleChat(msg){
         let indexchat = new lain_chat();
         let chat_div = document.getElementById("chat_div");
@@ -683,10 +729,12 @@ class WebSocketClient {
             indexchat.renderChatItem(msg.data[i]);
         }
     }
+
     handleListen(msg) {
         let indexInstance = new index();
         indexInstance.renderClients(msg.data);
     }
+
     handleAgentList(msg) {
         let indexInstance = new lain_index();
         User_data = (msg.data && msg.data.length) ?
@@ -708,6 +756,7 @@ class WebSocketClient {
             rebuildServerClientCounts([]);
         }
     }
+
     handleServer(msg){
         let indexServer = new lain_server();
         server_data = msg.data;
@@ -716,17 +765,20 @@ class WebSocketClient {
         rebuildServerClientCounts(User_data);
         indexServer.requestOnlineTeammates();
     }
+
     handlePlugin(msg){
         server_plugin = Array.isArray(msg.data) ? msg.data : [];
         if (window.server && typeof window.server.refreshPluginList === "function") {
             window.server.refreshPluginList();
         }
     }
+
     handleCheck(msg) {
         if (!msg || !msg.data) return;
         const indexCheck = new lain_index();
         indexCheck.checkTime(msg.data);
     }
+
     handleOnlineTeammates(msg){
         onlineTeammates = Array.isArray(msg.data) ? msg.data : [];
         window.onlineTeammates = onlineTeammates;
@@ -739,13 +791,10 @@ const webSocketClient = new WebSocketClient(
     "wss://" + main_server + "/"+"`+web_route+`"
 );
 
-webSocketClient.connect();
+webSocketClient.connect().catch(()=>{});
 
-window.addEventListener("pageshow", ()=>{
-    webSocketClient.connect().catch(()=>{});
-});
-window.addEventListener("pagehide", ()=>{
-    webSocketClient.close();
+window.addEventListener("beforeunload", ()=>{
+    webSocketClient.close(true);
 });
 
 class index{
