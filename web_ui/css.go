@@ -19,7 +19,8 @@ func Css(css_file,error_str string) http.HandlerFunc {
 				cssContent = string(content)
 			} else {
 				cssContent = `
-				html, body {
+
+html, body {
     margin: 0;
     height: 100%;
     font-family: Arial, sans-serif;
@@ -36,53 +37,6 @@ func Css(css_file,error_str string) http.HandlerFunc {
     display: flex; /* 使用flexbox布局 */
     width: 100vw; /* 父容器宽度为视口宽度 */
     height: 100vh; /* 父容器高度为视口高度 */
-}
-.startBtn {
-    background-color:rgb(0, 225, 255);
-    color: white;
-    font-size: 12px;
-    position: absolute;
-    top:auto;
-    left: 186px;
-    border: none;
-    padding: 10px 20px;
-    border-radius: 5px;
-    cursor: pointer;
-    z-index: 1000;
-}
-.startBtn:hover {
-    background-color:rgb(48, 53, 102);
-} 
-.clearMemoryBtn {
-    background-color:rgb(0, 225, 255);
-    color: white;
-    font-size: 12px;
-    /*靠在最左侧*/
-    position: absolute;
-    top:auto;
-    left: 70px;
-    border: none;
-    padding: 10px 20px;
-    border-radius: 5px;
-    cursor: pointer;
-}
-.clearMemoryBtn:hover {
-    background-color:rgb(48, 53, 102);
-}       
-.logBtn{
-    background-color:rgb(0, 225, 255);
-    color: white;
-    font-size: 12px;
-    position: absolute;
-    top:auto;
-    left: 254px;
-    border: none;
-    padding: 10px 20px;
-    border-radius: 5px;
-    cursor: pointer;
-}        
-.logBtn:hover {
-    background-color:rgb(48, 53, 102);
 }
 .sidebar {
     width: 180px;
@@ -412,23 +366,6 @@ func Css(css_file,error_str string) http.HandlerFunc {
         background: #0056b3;
     }
 }
-.server-container {
-    display: flex;
-    align-items: center;
-    justify-content: flex-start; /* 水平排列 */
-    border: 1px solid #ccc;
-    padding: 7px;
-    margin: 5px 0;
-    border-radius: 5px;
-    background-color: #f9f9f9;
-    width: 98%;
-    flex-wrap: nowrap; /* 禁止子元素换行 */
-}
-.server-container > * {
-                    /* 确保子元素适应父容器宽度 */
-    max-width: 100%;
-    flex-shrink: 0; /* 防止子元素压缩 */
-}
 .conn-container {
     display: flex;
     align-items: center;
@@ -581,37 +518,14 @@ func Css(css_file,error_str string) http.HandlerFunc {
     margin-left: auto;
     background-color: #f9f9f9;
 }
-.host-container{
-    white-space: nowrap; /* 防止内部元素换行 */
-}
-.ip-address, .online-time, .shell-address {
+.ip-address, .shell-address {
     display: inline-block;
     margin-right: 10px;
     font-size: 1em;
     font-weight: bold;
 }
-.let-it-in-button {
-    padding: 8px 12px;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    background-color: #4CAF50;
-    color: white;
-    display: inline-block;
-    margin-right: 10px;
-}
 .button-container {
     width: 40%;
-}
-.server-info {
-    display: inline-block;
-    min-width: 1020px;
-    padding: 10px;
-    background: #fff;
-    margin: 15px 0 15px 50px; /* 替代 top-margin */
-    border-radius: 8px;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-    border: none;
 }
 /*植入物气泡样式*/
 .ip-info {
@@ -738,7 +652,7 @@ input.s_right_input.custom-remarks:focu {
         line-height: 28px; /* 确保文字居中 */
     }
 }
-.ip-address, .action-button, .console-link {
+.ip-address, .console-link {
     margin-right: 3.5px; /* 元素之间的间隔 */
     white-space: nowrap;  /*防止换行 */
     border: none; /* 去掉边框 */
@@ -747,25 +661,6 @@ input.s_right_input.custom-remarks:focu {
     font-size: 12px;
     color: #555;
     margin-right: 8px;
-}
-.host-name { /* 主机名特殊样式 */
-    font-weight: bold; /* 加粗显示 */
-}
-.action-button {
-    padding: 5px 10px;
-    border-radius: 5px;
-    cursor: pointer;
-    justify-content: center;
-    gap: 25px; /* 按钮之间的间距 */
-    font-size: 12px;
-    background-color: #ccc; /* 浅灰色 */
-    color: #fff;
-    border: none; /* 去掉按钮边框 */
-    transition: background-color 0.3s; /* 平滑过渡效果 */
-}
-.action-button:hover {
-    background-color: #fff; /* 鼠标悬浮时背景变为白色 */
-    color: #333; /* 鼠标悬浮时文字颜色变为深色 */
 }
 .console-link {
     justify-content: center;
@@ -793,54 +688,6 @@ input.s_right_input.custom-remarks:focu {
     background-color: #0062cc; /* 鼠标按下时的背景颜色 */
     box-shadow: none; /* 移除阴影 */
 }
-.external-address {
-    margin-left: 5px; /* 与前面的元素保持间隔 */
-    border: none; /* 去掉边框 */
-}
-.external-address .ip-address {
-    margin-left: 10px; /* 与前面的按钮保持间隔 */
-}
-.server_form {
-    background: #fff;
-    padding: 10px;
-    width: 95%;
-    border-radius: 8px;
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-    display: flex;
-    flex-direction: row; /* 横向排列 */
-    gap: 3px; /* 元素之间的间距 */
-    align-items: center; /* 元素垂直居中 */
-    margin-left: 20px;
-}
-.keyput{
-    width: 20px;
-    height: 20px;
-    opacity: 0;
-    position: absolute;
-    z-index: -1;
-}
-.custom-file-upload {
-    display: inline-block;
-    padding: 6px 12px;
-    cursor: pointer;
-    background-color: #007bff;
-    color: #fff;
-    border-radius: 5px;
-    font-size: 14px;
-    font-weight: bold;
-    text-align: center;
-    border: none;
-    transition: background-color 0.3s ease;
-}
-.custom-file-upload:hover {
-    background-color: #0056b3;
-}
-/* 让按钮看起来更像其他输入框 */
-.file-upload-container {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-}                
 .form {
     background: #fff;
     padding: 10px;
@@ -898,20 +745,9 @@ button:hover {
 }
 /* 为移动设备设置 sidebar 的宽度 */
 @media (max-width: 768px) {
-    .server-info {
-        max-width: 400px; /* 让 ip-info 在移动端填满整个屏幕 */
-        margin: 0;
-    }
     .ip-info {
         max-width: 400px; /* 让 ip-info 在移动端填满整个屏幕 */
         margin: 0;
-    }
-    .server-container {
-        flex-direction: row; /* 确保子元素在一行内 */
-        flex-wrap: wrap; /* 允许换行 */
-        max-width: 100%; /* 防止超出 */
-        overflow: hidden; /* 避免溢出 */
-        background-color: #f9f9f9;
     }
     .conn-container {
         flex-direction: row; /* 确保子元素在一行内 */
@@ -927,46 +763,6 @@ button:hover {
         background-color: #f9f9f9;
         margin-left: 0; /* 取消自动推到右侧 */
     }                    
-    .ip-address, .action-button, .console-link {
-        margin-right: 0; /* 移动端去掉右侧的间隔 */
-        margin-bottom: 10px; /* 元素之间增加垂直间隔 */
-        font-size: 14px; /* 调整字体大小 */
-    }
-    .action-button, .console-link {
-        width: 100%; /* 在移动设备上按钮占满整个行 */
-        text-align: center; /* 按钮内文字居中 */
-    }
-    .host-name, .ip-address {
-        font-size: 14px; /* 调整主机名和 IP 的字体大小 */
-    }
-    .let-it-in-button {
-        width: 100%; /* 按钮宽度 100% 占据一整行 */
-        margin-bottom: 10px;
-    }
-    .server_form{
-        background: #fff;
-        padding: 10px;
-        width: 100%;
-        border-radius: 8px;
-        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-        display: flex;
-        flex-direction: row; /* 横向排列 */
-        align-items: center; /* 元素垂直居中 */
-        margin: 0 auto;
-    }
-    .custom-file-upload {
-        display: inline-block;
-        padding: 3px 6px;
-        cursor: pointer;
-        background-color: #007bff;
-        color: #fff;
-        border-radius: 5px;
-        font-size: 7px;
-        font-weight: bold;
-        text-align: center;
-        border: none;
-        transition: background-color 0.3s ease;
-    }
     .form {
         background: #fff;
         padding: 10px;
@@ -1378,52 +1174,6 @@ button:hover {
     white-space: pre-wrap;
     margin: 5px 0;
     font-size: 12px;
-}
-.form-in {
-    background-color: #ffffff;
-    padding: 30px; 
-    border-radius: 10px;
-    box-shadow: 0px 4px 15px rgba(0, 0, 0, 0.2); 
-    width: 300px;
-    height: auto; 
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    position: absolute;
-    top: 50%; /* 距离页面顶部 50% */
-    left: 50%; /* 距离页面左侧 50% */
-    transform: translate(-50%, -50%); /* 使用 transform 来居中 */
-}
-.form-in input[type="text"],
-.form-in input[type="password"] {
-    width: 100%; 
-    padding: 10px; /* 增加内边距 */
-    margin: 10px 0; /* 增加垂直方向的间距 */
-    border-radius: 5px; /* 设置输入框的圆角 */
-    border: 1px solid #ccc; /* 边框颜色 */
-    font-size: 16px; /* 设置字体大小 */
-    box-sizing: border-box; /* 包含内边距和边框 */
-}
-.form-in button {
-    width: 100%; 
-    padding: 10px; /* 增加内边距 */
-    background-color: #ffaec6; 
-    color: white; /* 按钮文字颜色 */
-    border: none;
-    border-radius: 5px;
-    font-size: 16px; /* 字体大小 */
-    cursor: pointer; 
-    margin-top: 10px; /* 按钮与输入框之间的间距 */
-    transition: background-color 0.3s ease; /* 添加平滑过渡效果 */
-}
-.form-in button:hover {
-    background-color: #ff75ba; /* 悬停时的背景颜色 */
-}
-.form-in h1 {
-    font-size: 24px; /* 设置标题的字体大小 */
-    margin-bottom: 20px; /* 标题与输入框之间的间距 */
-    color: #333; /* 标题颜色 */
 }
 .chat {
     width: 100%;
@@ -2029,74 +1779,6 @@ button:hover {
     box-sizing: border-box;
 }
 
-.server-toolbar {
-    position: sticky;
-    top: 18px;
-    z-index: 5;
-    display: flex;
-    justify-content: flex-start;
-    align-items: center;
-    margin: 0 0 18px;
-    padding: 0;
-    border: none;
-    background: transparent;
-    box-shadow: none;
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-}
-
-.server-toolbar-group {
-    display: inline-flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    align-items: center;
-    padding: 10px;
-    border: 1px solid rgba(180, 201, 217, 0.65);
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.88);
-    box-shadow: 0 16px 40px rgba(60, 86, 110, 0.08);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-}
-
-.server-toolbar-btn,
-.server-page .startBtn,
-.server-page .clearMemoryBtn,
-.server-page .logBtn {
-    position: static;
-    left: auto;
-    top: auto;
-    margin: 0;
-    border: 1px solid rgba(126, 155, 178, 0.28);
-    border-radius: 999px;
-    padding: 10px 16px;
-    background: linear-gradient(180deg, #ffffff 0%, #eef5fb 100%);
-    color: #24435b;
-    font-size: 13px;
-    font-weight: 600;
-    letter-spacing: 0.01em;
-    cursor: pointer;
-    box-shadow: 0 8px 24px rgba(72, 102, 128, 0.10);
-    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background-color 0.18s ease;
-}
-
-.server-toolbar-btn:hover,
-.server-page .startBtn:hover,
-.server-page .clearMemoryBtn:hover,
-.server-page .logBtn:hover {
-    background: linear-gradient(180deg, #ffffff 0%, #e7f2fb 100%);
-    border-color: rgba(96, 139, 171, 0.38);
-    color: #16344c;
-    transform: translateY(-1px);
-    box-shadow: 0 12px 28px rgba(72, 102, 128, 0.14);
-}
-
-.server-toolbar-btn:active,
-.server-page .startBtn:active,
-.server-page .clearMemoryBtn:active,
-.server-page .logBtn:active {
-    transform: translateY(0);
-}
 
 .server-teammates-slot {
     margin-bottom: 18px;
@@ -2264,22 +1946,6 @@ button:hover {
         padding: 18px 14px 32px;
     }
 
-    .server-toolbar {
-        top: 10px;
-    }
-
-    .server-toolbar-group {
-        width: 100%;
-        border-radius: 18px;
-        padding: 12px;
-    }
-
-    .server-toolbar-btn,
-    .server-page .startBtn,
-    .server-page .clearMemoryBtn,
-    .server-page .logBtn {
-        width: 100%;
-    }
 
     #server_index.server-grid {
         grid-template-columns: 1fr;
@@ -2621,8 +2287,7 @@ button:hover {
         padding: 18px 16px 20px !important;
     }
 }
-
-                    `
+`
         }
         w.Header().Set("Content-Type", "text/css")
         fmt.Fprint(w, cssContent)
