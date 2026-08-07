@@ -724,7 +724,7 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 
 				case "delIndex":
 					uid, _ := body["uid"].(string)
-					DeleteEntry(uid, true)
+					DeleteEntry_index(uid,true)
 				case "delInfo":
 					uid, _ := body["uid"].(string)
 					info, _ := body["info"].(string)
@@ -2814,37 +2814,81 @@ func Insert_key(uid, username, shellname string) {
 	}
 }
 
+func cleanupDeletedUID(uid string, delbase bool) {
+	key1Mu.Lock()
+	delete(key1_map, uid)
+	key1Mu.Unlock()
+
+	key2Mu.Lock()
+	delete(key2_map, uid)
+	key2Mu.Unlock()
+
+	key3Mu.Lock()
+	delete(key3_map, uid)
+	key3Mu.Unlock()
+
+	if delbase {
+		uidMutex.Lock()
+		delete(uid_base, uid)
+		uidMutex.Unlock()
+	}
+	go PushData("", "listen")
+}
+
+func deleteConnAtIndex(index int, delbase bool) bool {
+	if index < 0 {
+		return false
+	}
+	var uid string
+	dataConnMu.Lock()
+	if index >= len(data_conn.Conns) {
+		dataConnMu.Unlock()
+		return false
+	}
+	uid = data_conn.Conns[index].Uid
+	data_conn.Conns = append(
+		data_conn.Conns[:index],
+		data_conn.Conns[index+1:]...,
+	)
+	dataConnMu.Unlock()
+	cleanupDeletedUID(uid, delbase)
+	return true
+}
+
+func DeleteEntry_index(indexStr string, delbase bool) {
+	if indexStr == "" {
+		return
+	}
+	index, err := strconv.Atoi(indexStr)
+	if err != nil {
+		return
+	}
+	deleteConnAtIndex(index, delbase)
+}
+
 func DeleteEntry(delshell string, delbase bool) {
 	if delshell == "" {
 		return
 	}
 	dataConnMu.Lock()
+	index := -1
 	for i := range data_conn.Conns {
 		if data_conn.Conns[i].Uid == delshell {
-			data_conn.Conns = append(data_conn.Conns[:i], data_conn.Conns[i+1:]...)
+			index = i
 			break
 		}
 	}
-	dataConnMu.Unlock()
-
-	key1Mu.Lock()
-	delete(key1_map, delshell)
-	key1Mu.Unlock()
-
-	key2Mu.Lock()
-	delete(key2_map, delshell)
-	key2Mu.Unlock()
-
-	key3Mu.Lock()
-	delete(key3_map, delshell)
-	key3Mu.Unlock()
-
-	if delbase {
-		uidMutex.Lock()
-		delete(uid_base, delshell)
-		uidMutex.Unlock()
+	if index == -1 {
+		dataConnMu.Unlock()
+		return
 	}
-	go PushData("", "listen")
+	uid := data_conn.Conns[index].Uid
+	data_conn.Conns = append(
+		data_conn.Conns[:index],
+		data_conn.Conns[index+1:]...,
+	)
+	dataConnMu.Unlock()
+	cleanupDeletedUID(uid, delbase)
 }
 
 // 写入目录列表
@@ -4755,7 +4799,7 @@ func put_conn(username, host, online_time, uid, shell_ip, host_key string) {
 	}
 	data_conn.Conns = append(data_conn.Conns, newConn)
 	dataConnMu.Unlock()
-
+	
 	go PushData("", "listen")
 
 	log_str := fmt.Sprintf(log_word["request_host"], username, shell_ip, host, uid)
