@@ -688,6 +688,52 @@ input.s_right_input.custom-remarks:focu {
     background-color: #0062cc; /* 鼠标按下时的背景颜色 */
     box-shadow: none; /* 移除阴影 */
 }
+.form-in {
+    background-color: #ffffff;
+    padding: 30px;
+    border-radius: 10px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    width: 300px;
+    height: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+}
+.form-in input[type="text"],
+.form-in input[type="password"] {
+    width: 100%;
+    padding: 10px;
+    margin: 10px 0;
+    border-radius: 5px;
+    border: 1px solid #ccc;
+    font-size: 16px;
+    box-sizing: border-box;
+}
+.form-in button {
+    width: 100%;
+    padding: 10px;
+    background-color: #ffaec6;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    font-size: 16px;
+    cursor: pointer;
+    margin-top: 10px;
+    transition: background-color 0.3s ease;
+}
+.form-in button:hover {
+    background-color: #ff75ba;
+}
+.form-in h1 {
+    font-size: 24px;
+    margin-bottom: 20px;
+    color: #333;
+}
 .form {
     background: #fff;
     padding: 10px;
