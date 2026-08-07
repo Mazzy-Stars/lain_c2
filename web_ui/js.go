@@ -927,6 +927,7 @@ class index{
             this.terminalEl = null;
             this.dialogEl = null;
             this.currentTaskId = "";
+            this.pendingTaskInputs = {};
             this.inputKeydown = this.inputKeydown.bind(this);
         }
         getDialogNode(selector) {
@@ -979,6 +980,19 @@ class index{
             terminalEl.scrollTop = terminalEl.scrollHeight;
             return output;
         }
+        removeInputNode(inputEl) {
+            if (!inputEl || !inputEl.isConnected) {
+                return;
+            }
+            const prompt = inputEl.previousElementSibling;
+            if (prompt && prompt.classList.contains("output") && prompt.textContent === "Command>") {
+                prompt.remove();
+            }
+            inputEl.remove();
+            if (this.currentInput === inputEl) {
+                this.currentInput = "";
+            }
+        }
         stopGetResults(uid,taskid){
             let key = uid+"*"+taskid;
             if(resultTimers[key]){
@@ -1003,17 +1017,28 @@ class index{
         }
         handleResult(msg) {
             const taskid = msg.taskid || this.currentTaskId || AgentTaskId;
+            const key = msg.uid + "*" + taskid;
+            const taskInput = this.pendingTaskInputs[key] || null;
+            delete this.pendingTaskInputs[key];
             this.stopGetResults(msg.uid, taskid);
             this.appendOutput(msg.data);
-            this.createInput();
+            if (taskInput && taskInput.isConnected) {
+                this.removeInputNode(taskInput);
+                this.createInput();
+            } else if (!this.currentInput || !this.currentInput.isConnected) {
+                this.createInput();
+            }
         }
         async get(command){
             if(!this.uid){
                 return;
             }
-            this.sendjob('agent'); // 鍒涘缓鏂扮殑鎻愮ず绗�
+            this.sendjob('agent'); // ???????????
             try {
                 const taskid = createRuntimeTaskId("terminal");
+                const activeInput = this.currentInput && this.currentInput.isConnected
+                    ? this.currentInput
+                    : null;
                 let result = await webSocketClient.send(
                     
                     "msg",
@@ -1025,22 +1050,24 @@ class index{
                 );
                 if(result){
                     this.currentTaskId = taskid;
-                    if (this.currentInput) {
-                        this.currentInput.disabled = true;
-                        this.currentInput.readOnly = true;
-                        this.currentInput.classList.add("shell-input-history");
-                    }
                     const started = this.lain_time(this.uid, taskid, command);
                     if (!started) {
                         this.appendOutput("task polling not started");
+                        return;
+                    }
+                    this.pendingTaskInputs[this.uid + "*" + taskid] = activeInput;
+                    if (activeInput && activeInput.isConnected) {
+                        activeInput.value = "";
+                        activeInput.focus();
                     }
                 }
             } catch(err){
                 console.error(err);
-                if (this.currentInput) {
-                    this.currentInput.disabled = false;
+                if (this.currentInput && this.currentInput.isConnected) {
+                    this.currentInput.focus();
+                } else {
+                    this.createInput();
                 }
-                this.createInput();
             }
         }
         async sendjob(str){
@@ -1060,7 +1087,6 @@ class index{
         createInput() {
             if (
                 this.currentInput &&
-                !this.currentInput.disabled &&
                 this.currentInput.isConnected
             ) {
                 this.currentInput.focus();
@@ -1081,10 +1107,15 @@ class index{
         async inputKeydown(event) {
             if (event.key === 'Enter') {
                 event.preventDefault();
-                const command = this.currentInput.value.trim();
+                const inputEl = event.target;
+                if (!inputEl) {
+                    return;
+                }
+                this.currentInput = inputEl;
+                const command = inputEl.value.trim();
                 if (command) {
                     await this.get(command);
-                    // 涓嶉渶瑕佸啀 await lain_time 鍜� createInput锛岃繖浜涘凡鍦� get 閲屽鐞�
+                    // ?????? await lain_time ?? createInput???????? get ?????
                 }
             }
         }
