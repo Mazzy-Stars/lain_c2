@@ -14,7 +14,6 @@ func Js(error_str,web_route,web_js,web_css string, sessionSlice []string) http.H
         }
 		if r.Method == http.MethodGet {
 html := `
-
 if (!window.AgentTaskId) {
     window.AgentTaskId = Math.random().toString(36).substring(2) + Date.now();
 }
@@ -782,6 +781,8 @@ class index{
         
             var container = document.createElement('div');
             container.className = 'client-card';
+            container.id = "container-" + c.uid;
+            container.dataset.uid = c.uid;
         
             var pUid = document.createElement('p');
 			pUid.innerHTML = '<span>Uid</span>' + c.uid;
@@ -857,9 +858,10 @@ class index{
                 customLog("Delete agent failed");
                 return;
             }
-            document
-            .getElementById("container-"+uid)
-            ?.remove();
+            const target =
+                document.getElementById("container-" + uid) ||
+                document.querySelector('.client-card[data-uid="' + uid + '"]');
+            target?.remove();
             customLog("Agent removed");
         }
     }
@@ -4874,6 +4876,7 @@ if (!window.fileDialogButtonBound) {
     });
     window.fileDialogButtonBound = true;
 }
+
 `
 
 			w.Header().Set("Content-Type", "text/javascript")
