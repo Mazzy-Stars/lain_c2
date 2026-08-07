@@ -438,41 +438,6 @@ class WebSocketClient {
     async downloadLog(){
         return this.downloadFile("downloadlog");
     }
-    waitForMessage(matcher, timeout = 15000){
-        return new Promise((resolve, reject)=>{
-            if(!this.ws){
-                reject(new Error("websocket not connected"));
-                return;
-            }
-            let timer = null;
-            const listener = (event)=>{
-                let msg;
-                try{
-                    msg = JSON.parse(event.data);
-                }catch(e){
-                    return;
-                }
-                if(!matcher(msg)){
-                    return;
-                }
-                cleanup();
-                resolve(msg);
-            };
-            const cleanup = ()=>{
-                if(timer){
-                    clearTimeout(timer);
-                }
-                if(this.ws){
-                    this.ws.removeEventListener("message", listener);
-                }
-            };
-            timer = setTimeout(()=>{
-                cleanup();
-                reject(new Error("wait message timeout"));
-            }, timeout);
-            this.ws.addEventListener("message", listener);
-        });
-    }
     async sendFile(path, body, file, chunkSize, onProgress){
         if(!await this.ensureConnected().catch(()=>false)){
             throw new Error("websocket not connected");
@@ -2160,7 +2125,7 @@ class index{
                     }
                 }
                 loadMessages();
-                let msgTimer=setInterval(
+                setInterval(
                     loadMessages,
                     10000
                 );
@@ -4089,7 +4054,6 @@ function toggleSidebar() {
 document.addEventListener("DOMContentLoaded", function () {
     // **鍙皟鏁� .server_index > .content 鍜� #log 鐨勯珮搴�**
     const logDiv = document.getElementById("log");
-    const logContent = document.getElementById("log-content");
     const logHandle = logDiv.querySelector(".resize-handle");
     const serverIndexDiv = document.querySelector(".server_index");
     const contentDiv = serverIndexDiv.querySelector(".content");
