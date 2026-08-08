@@ -1277,7 +1277,7 @@ func send() { //发送头部信息
     func run() {
         if onece {
             rand.Seed(time.Now().UnixNano())
-            a_Mutex.Lock();decodeMap = buildDecodeMap();a_Mutex.UnLock()
+            a_Mutex.Lock();decodeMap = buildDecodeMap();a_Mutex.Unlock()
             if uid == "" {uid = generateUUID()}
             initHttpClient()
             if osname == "win"{version = "cmd"}else if osname == "linux" || osname == "macos"{version = "bash"}else if osname == "android"{version="/system/bin/sh"}
