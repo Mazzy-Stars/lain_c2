@@ -31,6 +31,7 @@ let resultQueues = {};
 let fileQueues = {};
 let netQueues = {};
 let checkTimeTimers = {};
+window.pendingCheckTimes = window.pendingCheckTimes || {};
 
 window.resultTimers = window.resultTimers || {};
 window.serverClientCounts = window.serverClientCounts || {};
@@ -43,6 +44,7 @@ window.shellInnetData = window.shellInnetData || {};
 let resultTimers = window.resultTimers;
 let serverClientCounts = window.serverClientCounts;
 let onlineTeammates = window.onlineTeammates;
+let pendingCheckTimes = window.pendingCheckTimes;
 
 function createRuntimeTaskId(prefix = "task") {
     return prefix + "-" + Math.random().toString(36).slice(2) + Date.now();
@@ -755,6 +757,10 @@ class WebSocketClient {
             net_init();
             rebuildServerClientCounts([]);
         }
+
+        Object.keys(pendingCheckTimes).forEach((uid) => {
+            indexInstance.checkTime(pendingCheckTimes[uid], true);
+        });
     }
 
     handleServer(msg){
@@ -774,8 +780,9 @@ class WebSocketClient {
     }
 
     handleCheck(msg) {
-        if (!msg || !msg.data) return;
-        const indexCheck = new lain_index();
+        if (!msg || !msg.data || !msg.data.uid) return;
+        pendingCheckTimes[msg.data.uid] = msg.data;
+        const indexCheck = window.lainIndex || new lain_index();
         indexCheck.checkTime(msg.data);
     }
 
@@ -2623,11 +2630,14 @@ class index{
             document.getElementById('jitter_' + uid).value = jitter;
         }
 
-        async checkTime(item) {
+        async checkTime(item, forceAnimate = false) {
             if (!item || !item.uid) return;
 
             const userDiv = document.getElementById(item.uid + "info");
-            if (!userDiv) return;
+            if (!userDiv) {
+                pendingCheckTimes[item.uid] = item;
+                return;
+            }
 
             const checkElement = document.getElementById(item.uid + "-check");
             const nextTime = item.check_time || "";
@@ -2635,7 +2645,8 @@ class index{
                 userDiv.dataset.lastCheckTime ||
                 (checkElement ? checkElement.innerText.trim() : "");
 
-            const hasNewTime = nextTime !== "" && previousTime !== nextTime;
+            const hasNewTime =
+                forceAnimate || (nextTime !== "" && previousTime !== nextTime);
             const imgId = item.uid + "-img";
 
             if (checkTimeTimers[item.uid]) {
@@ -2645,7 +2656,7 @@ class index{
 
             if (hasNewTime) {
                 const imgHtml =
-                    '<img class="ip-address" id="' + imgId + '" src="rhythm.gif" style="width: 106px; height: 46px; display: inline-block; vertical-align: middle;"/>';
+                    '<img class="ip-address" id="' + imgId + '" src="rhythm.gif?t=' + Date.now() + '" style="width: 106px; height: 46px; display: inline-block; vertical-align: middle;"/>';
                 const oldImg = document.getElementById(imgId);
                 if (oldImg) oldImg.outerHTML = imgHtml;
 
@@ -2668,6 +2679,7 @@ class index{
                 checkElement.innerText = nextTime;
             }
             userDiv.dataset.lastCheckTime = nextTime;
+            delete pendingCheckTimes[item.uid];
         }
         async del(uid){
             let right = await customConfirm("confirm?");
