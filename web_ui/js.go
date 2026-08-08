@@ -783,7 +783,7 @@ class WebSocketClient {
         if (!msg || !msg.data || !msg.data.uid) return;
         pendingCheckTimes[msg.data.uid] = msg.data;
         const indexCheck = window.lainIndex || new lain_index();
-        indexCheck.checkTime(msg.data);
+        indexCheck.checkTime(msg.data, true);
     }
 
     handleOnlineTeammates(msg){
