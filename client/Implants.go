@@ -1108,7 +1108,7 @@ func send() { //发送头部信息
         for i := 0; i < len(s); i++ {
 			a_Mutex.RLock()
             v, ok := decodeMap[s[i]]
-			a_Mutex.RLock()
+			a_Mutex.RUnlock()
             if !ok {
                 continue
             }
