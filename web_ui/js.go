@@ -439,10 +439,12 @@ class WebSocketClient {
             ws.addEventListener("message", listener);
             ws.addEventListener("close", onClose);
 
-            timer = setTimeout(()=>{
-                cleanup();
-                reject(new Error("wait message timeout"));
-            }, timeout);
+            if (typeof timeout === "number" && timeout > 0) {
+                timer = setTimeout(()=>{
+                    cleanup();
+                    reject(new Error("wait message timeout"));
+                }, timeout);
+            }
         });
     }
 
@@ -929,6 +931,9 @@ class index{
             this.move_file = this.move_file.bind(this);
             this.look_file = this.look_file.bind(this);
             this.intervalId = null;
+            this.fileListPollTimer = null;
+            this.fileListTaskId = "";
+            this.fileListPendingDir = "";
             this.currentInput="";
             this.inputContainer="";
             this.terminalEl = null;
@@ -1350,67 +1355,114 @@ class index{
                 }
             }
         }
+        stopFileListPolling(taskId = "") {
+            if (taskId && this.fileListTaskId && this.fileListTaskId !== taskId) {
+                return;
+            }
+            if (this.fileListPollTimer) {
+                clearInterval(this.fileListPollTimer);
+                this.fileListPollTimer = null;
+            }
+            this.fileListTaskId = "";
+            this.fileListPendingDir = "";
+        }
+        canUseFileDialog(taskId = "") {
+            if (!this.uid || !this.dialogEl || !this.dialogEl.isConnected) {
+                return false;
+            }
+            if (taskId && this.fileListTaskId !== taskId) {
+                return false;
+            }
+            return true;
+        }
         async look_file(dir) {
             dir = dir || this.shell_dir || "./";
             if(!this.uid || !dir){
                 return false;
             }
+            this.stopFileListPolling();
             const powershell = "LOOK_UP_FILE*//*" + dir;
+            const taskId = createRuntimeTaskId("filelist");
+            this.fileListTaskId = taskId;
+            this.fileListPendingDir = dir;
             try {
                 const sent = await webSocketClient.send(
                     "msg",
                     {
                         uid:this.uid,
                         msg:powershell,
-                        Taskid:AgentTaskId
+                        Taskid:taskId
                     }
                 );
                 if(!sent){
+                    this.stopFileListPolling(taskId);
                     return false;
                 }
-                const deadline = Date.now() + 15000;
-                while(Date.now() < deadline){
-                    const responsePromise = webSocketClient.waitForMessage(
-                        (msg)=>{
-                            return msg.path === "getFileList" &&
-                                msg.code === 200 &&
-                                msg.uid === this.uid &&
-                                msg.taskid === AgentTaskId;
-                        },
-                        1200
-                    );
-                    const listSent = await webSocketClient.send(
+
+                const responsePromise = webSocketClient.waitForMessage(
+                    (msg)=>{
+                        return this.canUseFileDialog(taskId) &&
+                            msg.path === "getFileList" &&
+                            msg.code === 200 &&
+                            msg.uid === this.uid &&
+                            msg.taskid === taskId;
+                    },
+                    0
+                );
+
+                const sendListRequest = async () => {
+                    if (!this.canUseFileDialog(taskId)) {
+                        return false;
+                    }
+                    return await webSocketClient.send(
                         "getFileList",
                         {
                             uid:this.uid,
-                            Taskid:AgentTaskId
+                            Taskid:taskId
                         }
                     );
-                    if(!listSent){
-                        return false;
-                    }
-                    try{
-                        const result = await responsePromise;
-                        if(result && result.data){
-                            this.shell_dir = dir;
-                            this.renderFileList(
-                                result.data,
-                                this.shell_dir
-                            );
-                            this.history_file(this.uid);
-                            return true;
-                        }
-                    }catch(waitErr){
-                    }
-                    await new Promise((resolve)=>{
-                        setTimeout(resolve, 500);
-                    });
+                };
+
+                const firstSent = await sendListRequest();
+                if(!firstSent){
+                    this.stopFileListPolling(taskId);
+                    return false;
                 }
-                return false;
+
+                this.fileListPollTimer = setInterval(() => {
+                    sendListRequest()
+                        .then((ok) => {
+                            if (!ok) {
+                                this.stopFileListPolling(taskId);
+                            }
+                        })
+                        .catch(() => {});
+                }, 1200);
+
+                const result = await responsePromise;
+                if (!this.canUseFileDialog(taskId)) {
+                    this.stopFileListPolling(taskId);
+                    return false;
+                }
+
+                this.stopFileListPolling(taskId);
+                if(result && result.data){
+                    this.shell_dir = dir;
+                    this.renderFileList(
+                        result.data,
+                        this.shell_dir
+                    );
+                    this.history_file(this.uid);
+                    return true;
+                }
             } catch(err) {
                 console.error(err);
-                return false;
+            } finally {
+                if (this.fileListTaskId === taskId) {
+                    this.stopFileListPolling(taskId);
+                }
             }
+            return false;
         }
          async move_file(num, cur_dir) {
             let cur_dir_p = this.getDialogNode("#cur_dir_p");
@@ -1822,6 +1874,9 @@ class index{
 
             // 鍏抽棴鎸夐挳
             dialog.querySelector("#file-close-btn").onclick = function () {
+                if (fileManager && typeof fileManager.stopFileListPolling === "function") {
+                    fileManager.stopFileListPolling();
+                }
                 if (window.fileManagerSessions) {
                     delete window.fileManagerSessions[uid];
                 }
@@ -1996,14 +2051,18 @@ class index{
                 });
 
                 // 杩斿洖涓婄骇鐩綍
-                dialog.querySelector("#dir-btn").onclick = function() {
-                    fliemanage.move_file(1, "no");
-                };
+                const dirBtn = dialog.querySelector("#dir-btn");
+                if (dirBtn) {
+                    dirBtn.addEventListener("click", function() {
+                        fliemanage.move_file(1, "no");
+                    });
+                }
 
                 // 璺宠浆鐩綍
-                dialog.querySelector("#moveDirButton").onclick = function() {
-                    fliemanage.move_dir();
-                };
+                const btn = dialog.querySelector("#moveDirButton");
+                if (btn) {
+                btn.addEventListener("click", () => fliemanage.move_dir());
+                }
 
                 dialog.addEventListener("mousedown", function() {
                     window.activeFileManager = fliemanage;
