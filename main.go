@@ -702,11 +702,10 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 					})
 				case "insertKey":
 					uid, _ := body["uid"].(string)
-					username, _ := body["username"].(string)
 					shellname, _ := body["request"].(string)
 					go func() {
 						dataConnMu.Lock()
-						Insert_key(uid, username, shellname)
+						Insert_key(uid, shellname)
 						dataConnMu.Unlock()
 					}()
 
@@ -2792,7 +2791,7 @@ func EncryptHostKey(uid, key string) {
 }
 
 // 插入密钥
-func Insert_key(uid, username, shellname string) {
+func Insert_key(uid, shellname string) {
 	charset := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	rand.Seed(time.Now().UnixNano())
 	keyLength := rand.Intn(255) + 1030 // 密钥长度在1030到1284之间
@@ -2807,7 +2806,7 @@ func Insert_key(uid, username, shellname string) {
 	// 查找并更新对应的连接
 	for i := range data_conn.Conns {
 		conn := &data_conn.Conns[i]
-		if uid == conn.Uid && username == conn.Username && shellname == conn.Host {
+		if uid == conn.Uid && shellname == conn.Host {
 			conn.HostKey = key
 			break
 		}
