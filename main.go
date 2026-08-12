@@ -4781,7 +4781,7 @@ func put_conn(host, online_time, uid, shell_ip, host_key string) {
 	}
 	for i := range data_conn.Conns {
 		conn := &data_conn.Conns[i]
-		if uid == conn.Uid {
+		if uid == conn.Uid && host == conn.Host {
 			dataConnMu.Unlock()
 			return
 		}
