@@ -20,10 +20,10 @@ var (
     mutex     sync.Mutex
 )
 type Handler interface {
-    Index(conn, Get_Msg,switch_key,encry_key,download,result,net,info,upload,list,option,uid,username,hostname,keyPart,filekey,windows_pro,port string) http.HandlerFunc
+    Index(conn, Get_Msg,switch_key,encry_key,download,result,net,info,upload,list,option,uid,hostname,keyPart,filekey,windows_pro,port string) http.HandlerFunc
 }
 type Putserver interface {
-    PutServer(port, path, connPath, msgPath,switch_key,encry_key,download,result,net,info,upload,list,option,protocol,user,remark,cert, key,uid,hostname,keyPart,filekey,windows_pro,baseRounds,resphead,username string) bool
+    PutServer(port, path, connPath, msgPath,switch_key,encry_key,download,result,net,info,upload,list,option,protocol,remark,cert, key,uid,hostname,keyPart,filekey,windows_pro,baseRounds,resphead,username string) bool
 }
 type WLog interface{
     WriteLog(logStr string)
@@ -86,7 +86,7 @@ func UpdateRespHead(port, resphead string) {
 }
 func Http_server(handler Handler, ServerManager Putserver, writeLog WLog,
     port, path, conn_path, GetMsg,switch_key,encry_key,download,result,net,info,upload,list,option,
-    protocol,uid,user,hostname,keyPart,filekey,remark,certPEM, keyPEM,windows_pro,baseRounds,resphead,username string,log_word map[string]string) {
+    protocol,uid,hostname,keyPart,filekey,remark,certPEM, keyPEM,windows_pro,baseRounds,resphead,username string,log_word map[string]string) {
     var err error
     var returnStr string
     // 确保 path 以 "/" 开头
@@ -128,7 +128,7 @@ func Http_server(handler Handler, ServerManager Putserver, writeLog WLog,
         handler.Index(
             conn_path, GetMsg, switch_key, encry_key,
             download, result, net, info, upload, list, option,
-            uid, user, hostname, keyPart, filekey, windows_pro, port,
+            uid, hostname, keyPart, filekey, windows_pro, port,
         ).ServeHTTP(w, r)
     })
     if protocol == "http" {
@@ -146,7 +146,7 @@ func Http_server(handler Handler, ServerManager Putserver, writeLog WLog,
         port, path,conn_path,GetMsg,switch_key,encry_key,download,result,net,info,upload,list,option)
         writeLog.WriteLog(returnStr)
         go func(){
-			ServerManager.PutServer(port, path, conn_path, GetMsg, switch_key, encry_key, download, result, net, info, upload, list, option, protocol, user, remark,"null","null",uid,hostname,keyPart,filekey,windows_pro,baseRounds,resphead,username)
+			ServerManager.PutServer(port, path, conn_path, GetMsg, switch_key, encry_key, download, result, net, info, upload, list, option, protocol, remark,"null","null",uid,hostname,keyPart,filekey,windows_pro,baseRounds,resphead,username)
 		}()
 		err = server.ListenAndServe()
 		if err != nil {
@@ -201,7 +201,7 @@ func Http_server(handler Handler, ServerManager Putserver, writeLog WLog,
         port, path,conn_path,GetMsg,switch_key,encry_key,download,result,net,info,upload,list,option)
         writeLog.WriteLog(returnStr)
         go func (){
-			ServerManager.PutServer(port,path,conn_path,GetMsg,switch_key,encry_key,download,result,net,info,upload,list,option,protocol,user,remark,cert_g,key_g,uid,hostname,keyPart,filekey,windows_pro,baseRounds,resphead,username)
+			ServerManager.PutServer(port,path,conn_path,GetMsg,switch_key,encry_key,download,result,net,info,upload,list,option,protocol,remark,cert_g,key_g,uid,hostname,keyPart,filekey,windows_pro,baseRounds,resphead,username)
 		}()
 		err = server.ListenAndServeTLS("", "")
 		if err != nil {
@@ -262,7 +262,7 @@ func Http_server(handler Handler, ServerManager Putserver, writeLog WLog,
             )
             writeLog.WriteLog(returnStr)
             go func(){
-                ServerManager.PutServer(port,path,conn_path,GetMsg,switch_key,encry_key,download,result,net,info,upload,list,option,protocol,user,remark,cert_g,key_g,uid,hostname,keyPart,filekey,windows_pro,baseRounds,resphead,username)
+                ServerManager.PutServer(port,path,conn_path,GetMsg,switch_key,encry_key,download,result,net,info,upload,list,option,protocol,remark,cert_g,key_g,uid,hostname,keyPart,filekey,windows_pro,baseRounds,resphead,username)
             }()
             // 写临时证书文件并启动（避免传空路径导致底层尝试打开空路径出错）
             certFilePath, keyFilePath, werr := writeTempCertFiles(
