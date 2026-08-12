@@ -30,7 +30,8 @@ let msgQueues = {};
 let resultQueues = {};
 let fileQueues = {};
 let netQueues = {};
-let checkTimeTimers = {};
+const checkTimeTimers = window.checkTimeTimers || (window.checkTimeTimers = {});
+const checkTimeState = window.checkTimeState || (window.checkTimeState = {});
 window.pendingCheckTimes = window.pendingCheckTimes || {};
 
 window.resultTimers = window.resultTimers || {};
@@ -2689,58 +2690,63 @@ class index{
         }
 
         async checkTime(item, forceAnimate = false) {
-            if (!item || !item.uid) return;
-
-            const userDiv = document.getElementById(item.uid + "info");
-            if (!userDiv) {
-                pendingCheckTimes[item.uid] = item;
-                return;
-            }
-
-            const checkElement = document.getElementById(item.uid + "-check");
-            const nextTime = item.check_time || "";
-            const previousTime =
-                userDiv.dataset.lastCheckTime ||
-                (checkElement ? checkElement.innerText.trim() : "");
-
-            const hasNewTime =
-                forceAnimate || (nextTime !== "" && previousTime !== nextTime);
-            const imgId = item.uid + "-img";
-            if (checkTimeTimers[item.uid]) {
-                clearTimeout(checkTimeTimers[item.uid]);
-                delete checkTimeTimers[item.uid];
-            }
-            const oldImg = document.getElementById(imgId);
-			if (hasNewTime) {
-			    if (!oldImg) {
-			        const img = document.createElement("img");
-			        img.className = "ip-address";
-			        img.id = imgId;
-			        img.src = "rhythm.gif";
-			        img.style.cssText =
-			            "width:106px;height:46px;display:inline-block;vertical-align:middle;";
-			        checkElement?.parentNode?.appendChild(img);
-			    }
-			    if (checkTimeTimers[item.uid]) {
-			        clearTimeout(checkTimeTimers[item.uid]);
-			    }
-			    checkTimeTimers[item.uid] = setTimeout(() => {
-			        const currentImg = document.getElementById(imgId);
-			        if (currentImg) {
-			            currentImg.outerHTML =
-			                '<div class="ip-address" id="' + imgId +
-			                '" style="background:#8B4513;width:106px;height:1px;' +
-			                'display:inline-block;vertical-align:middle;"></div>';
-			        }
-			        delete checkTimeTimers[item.uid];
-			    }, 5000);
-			}
-            if (checkElement) {
-                checkElement.innerText = nextTime;
-            }
-            userDiv.dataset.lastCheckTime = nextTime;
-            delete pendingCheckTimes[item.uid];
-        }
+		    if (!item || !item.uid) return;
+		    const userDiv = document.getElementById(item.uid + "info");
+		    if (!userDiv) {
+		        pendingCheckTimes[item.uid] = item;
+		        return;
+		    }
+		    const checkElement = document.getElementById(item.uid + "-check");
+		    const nextTime = item.check_time || "";
+		    const previousTime =
+		        userDiv.dataset.lastCheckTime ||
+		        (checkElement ? checkElement.innerText.trim() : "");
+		    const hasNewTime =
+		        forceAnimate || (nextTime !== "" && previousTime !== nextTime);
+		    const imgId = item.uid + "-img";
+		    const state = checkTimeState[item.uid] || (checkTimeState[item.uid] = {
+		        animating: false
+		    });
+		    function renderStaticLine() {
+		        const el = document.getElementById(imgId);
+		        if (!el) return;
+		        el.outerHTML =
+		            '<div class="ip-address" id="' + imgId + '"' +
+		            ' style="background-color:#8B4513;width:106px;height:1px;' +
+		            'display:inline-block;vertical-align:middle;position:relative;">' +
+		            '<div style="position:absolute;top:0;left:0;right:0;bottom:0;' +
+		            'box-shadow:inset 0 0 0 106px #8B4513;"></div></div>';
+		        state.animating = false;
+		    }
+		    function renderGifOnce() {
+		        const el = document.getElementById(imgId);
+		        if (!el) return;
+		        if (el.tagName !== "IMG") {
+		            el.outerHTML =
+		                '<img class="ip-address" id="' + imgId + '"' +
+		                ' src="rhythm.gif?t=' + Date.now() + '"' +
+		                ' style="width:106px;height:46px;display:inline-block;vertical-align:middle;" />';
+		        }
+		        state.animating = true;
+		    }
+		    if (hasNewTime) {
+		        if (!state.animating) {
+		            renderGifOnce();
+		        }
+		        if (checkTimeTimers[item.uid]) {
+		            clearTimeout(checkTimeTimers[item.uid]);
+		        }
+		        checkTimeTimers[item.uid] = setTimeout(function () {
+		            renderStaticLine();
+		            delete checkTimeTimers[item.uid];
+		        }, 5000);
+		    }
+		    if (checkElement) {
+		        checkElement.innerText = nextTime;
+		    }
+		    userDiv.dataset.lastCheckTime = nextTime;
+		    delete pendingCheckTimes[item.uid];
+		}
         async del(uid){
             let right = await customConfirm("confirm?");
             if(right){
