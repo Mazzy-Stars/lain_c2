@@ -2706,33 +2706,33 @@ class index{
             const hasNewTime =
                 forceAnimate || (nextTime !== "" && previousTime !== nextTime);
             const imgId = item.uid + "-img";
-
             if (checkTimeTimers[item.uid]) {
                 clearTimeout(checkTimeTimers[item.uid]);
                 delete checkTimeTimers[item.uid];
             }
-
             if (hasNewTime) {
-                const imgHtml =
-                    '<img class="ip-address" id="' + imgId + '" src="rhythm.gif?t=' + Date.now() + '" style="width: 106px; height: 46px; display: inline-block; vertical-align: middle;"/>';
-                const oldImg = document.getElementById(imgId);
-                if (oldImg) oldImg.outerHTML = imgHtml;
-
-                checkTimeTimers[item.uid] = setTimeout(function () {
-                    const currentImg = document.getElementById(imgId);
-                    if (currentImg) {
-                        currentImg.outerHTML =
-                            '<div class="ip-address" id="' + imgId + '" style="background-color: #8B4513; width: 106px; height: 1px; display: inline-block; vertical-align: middle; position: relative;"><div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; box-shadow: inset 0 0 0 106px #8B4513;"></div></div>';
-                    }
-                }, 5000);
-            } else {
-                const oldImg = document.getElementById(imgId);
-                if (oldImg) {
-                    oldImg.outerHTML =
-                        '<div class="ip-address" id="' + imgId + '" style="background-color: #8B4513; width: 106px; height: 1px; display: inline-block; vertical-align: middle; position: relative;"><div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; box-shadow: inset 0 0 0 106px #8B4513;"></div></div>';
-                }
-            }
-
+			    if (checkTimeTimers[item.uid]) {
+			        clearTimeout(checkTimeTimers[item.uid]);
+			    }
+			    const imgHtml =
+			        '<img class="ip-address" id="' + imgId +
+			        '" src="rhythm.gif?t=' + Date.now() +
+			        '" style="width:106px;height:46px;display:inline-block;vertical-align:middle;" />';
+			    const oldImg = document.getElementById(imgId);
+			    if (oldImg) {
+			        oldImg.outerHTML = imgHtml;
+			    }
+			    checkTimeTimers[item.uid] = setTimeout(function () {
+			        const currentImg = document.getElementById(imgId);
+			        if (currentImg) {
+			            currentImg.outerHTML =
+			                '<div class="ip-address" id="' + imgId +
+			                '" style="background:#8B4513;width:106px;height:1px;' +
+			                'display:inline-block;vertical-align:middle;"></div>';
+			        }
+			        delete checkTimeTimers[item.uid];
+			    }, 5000);
+			}
             if (checkElement) {
                 checkElement.innerText = nextTime;
             }
