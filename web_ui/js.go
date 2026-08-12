@@ -897,7 +897,6 @@ class index{
                 "insertKey",
                 {
                     uid:uid,
-                    username:Username,
                     request:shellname
                 }
             );
