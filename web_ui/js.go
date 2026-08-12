@@ -2710,19 +2710,21 @@ class index{
                 clearTimeout(checkTimeTimers[item.uid]);
                 delete checkTimeTimers[item.uid];
             }
-            if (hasNewTime) {
+            const oldImg = document.getElementById(imgId);
+			if (hasNewTime) {
+			    if (!oldImg) {
+			        const img = document.createElement("img");
+			        img.className = "ip-address";
+			        img.id = imgId;
+			        img.src = "rhythm.gif";
+			        img.style.cssText =
+			            "width:106px;height:46px;display:inline-block;vertical-align:middle;";
+			        checkElement?.parentNode?.appendChild(img);
+			    }
 			    if (checkTimeTimers[item.uid]) {
 			        clearTimeout(checkTimeTimers[item.uid]);
 			    }
-			    const imgHtml =
-			        '<img class="ip-address" id="' + imgId +
-			        '" src="rhythm.gif?t=' + Date.now() +
-			        '" style="width:106px;height:46px;display:inline-block;vertical-align:middle;" />';
-			    const oldImg = document.getElementById(imgId);
-			    if (oldImg) {
-			        oldImg.outerHTML = imgHtml;
-			    }
-			    checkTimeTimers[item.uid] = setTimeout(function () {
+			    checkTimeTimers[item.uid] = setTimeout(() => {
 			        const currentImg = document.getElementById(imgId);
 			        if (currentImg) {
 			            currentImg.outerHTML =
