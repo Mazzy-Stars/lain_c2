@@ -390,7 +390,7 @@ class WebSocketClient {
         });
     }
 
-    waitForMessage(matcher, timeout = 15000){
+    waitForMessage(matcher, timeout = 65000){
         return new Promise((resolve, reject)=>{
             if(!this.ws || this.ws.readyState !== WebSocket.OPEN){
                 reject(new Error("websocket not connected"));
@@ -448,7 +448,7 @@ class WebSocketClient {
         });
     }
 
-    async downloadFile(path, body = {}, timeout = 30000){
+    async downloadFile(path, body = {}, timeout = 65000){
         if(!await this.ensureConnected().catch(()=>false)){
             throw new Error("websocket not connected");
         }
