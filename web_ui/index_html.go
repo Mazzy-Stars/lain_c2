@@ -140,7 +140,6 @@ func Lain(error_str, web_title, web_js, web_css, web_route string, sessionSlice 
 
                                         '<input name="option" placeholder="Parameter Option">' +
                                         '<input name="uid" placeholder="Parameter UID">' +
-                                        '<input name="user" placeholder="Parameter User">' +
                                         '<input name="hostname" placeholder="Parameter Hostname">' +
                                         '<input name="keyPart" placeholder="Parameter keyPart">' +
                                         '<input name="filekey" placeholder="Parameter filekey">' +
