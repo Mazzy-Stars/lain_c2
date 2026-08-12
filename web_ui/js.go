@@ -3387,7 +3387,6 @@ class lain_server {
                     server.upload_path,
                     server.list_path,
                     server.option_path,
-                    server.user,
                     server.uid,
                     server.hostname,
                     server.keyPart,
@@ -3857,9 +3856,9 @@ class lain_server {
         URL.revokeObjectURL(url);
     }
     async redirectToAgentCode(protocol,os,server,path,connPath,msgPath,switch_key,encry_key,
-        download,result,net,info,upload,list,option,user,uid,hostname,keyPart,filekey,code,windows_pro){
+        download,result,net,info,upload,list,option,uid,hostname,keyPart,filekey,code,windows_pro){
         try {
-            console.log(protocol,os,server,path,connPath,msgPath,switch_key,encry_key,download,result,net,info,upload,list,option,user,uid,hostname,keyPart,filekey,code,windows_pro);
+            console.log(protocol,os,server,path,connPath,msgPath,switch_key,encry_key,download,result,net,info,upload,list,option,uid,hostname,keyPart,filekey,code,windows_pro);
             webSocketClient.send(
                 "agentcode",
                 {
@@ -3879,7 +3878,6 @@ class lain_server {
                     list: list,
                     option: option,
                     username:Username,
-                    user:user,
                     uid:uid,
                     hostname:hostname,
                     keyPart:keyPart,
