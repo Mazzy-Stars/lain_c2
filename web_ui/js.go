@@ -1760,7 +1760,7 @@ class index{
                 // 鍒濆鍖� shell 閫夐」
                 const optionsElement = dialog.querySelector(".terminal-shell-select");
                 if (os == "win") {
-                    optionsElement.innerHTML = "<option>Shell</option><option value='cmd'>cmd</option><option value='powershell'>powershell</option><option value='custom'>customize shell</option>";
+                    optionsElement.innerHTML = "<option>Shell</option><option value='cmd.exe'>cmd</option><option value='powershell.exe'>powershell</option><option value='custom'>customize shell</option>";
                 } else if (os == "linux" || os == "macos") {
                     optionsElement.innerHTML = "<option>Shell</option><option value='bash'>bash</option><option value='sh'>sh</option><option value='custom'>customize shell</option>";
                 } else if (os == "android") {
