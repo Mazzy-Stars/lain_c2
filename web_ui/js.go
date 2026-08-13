@@ -2705,7 +2705,8 @@ class index{
 		        forceAnimate || (nextTime !== "" && previousTime !== nextTime);
 		    const imgId = item.uid + "-img";
 		    const state = checkTimeState[item.uid] || (checkTimeState[item.uid] = {
-		        animating: false
+		        animating: false,
+		        lastGifStartAt: 0
 		    });
 		    function renderStaticLine() {
 		        const el = document.getElementById(imgId);
@@ -2718,20 +2719,31 @@ class index{
 		            'box-shadow:inset 0 0 0 106px #8B4513;"></div></div>';
 		        state.animating = false;
 		    }
-		    function renderGifOnce() {
+		    function renderGif(forceRestart = false) {
 		        const el = document.getElementById(imgId);
 		        if (!el) return;
-		        if (el.tagName !== "IMG") {
+		        const newSrc = 'rhythm.gif?t=' + Date.now();
+		        if (el.tagName === "IMG") {
+		            if (forceRestart) {
+		                el.src = newSrc;
+		            }
+		        } else {
 		            el.outerHTML =
 		                '<img class="ip-address" id="' + imgId + '"' +
-		                ' src="rhythm.gif?t=' + Date.now() + '"' +
+		                ' src="' + newSrc + '"' +
 		                ' style="width:106px;height:46px;display:inline-block;vertical-align:middle;" />';
 		        }
 		        state.animating = true;
+		        state.lastGifStartAt = Date.now();
 		    }
 		    if (hasNewTime) {
-		        if (!state.animating) {
-		            renderGifOnce();
+		        const currentEl = document.getElementById(imgId);
+		        const isGifOnScreen = currentEl && currentEl.tagName === "IMG";
+		        const gifRunningTooLong = Date.now() - state.lastGifStartAt > 3000;
+		        if (!isGifOnScreen) {
+		            renderGif(true);
+		        } else if (gifRunningTooLong) {
+		            renderGif(true);
 		        }
 		        if (checkTimeTimers[item.uid]) {
 		            clearTimeout(checkTimeTimers[item.uid]);
@@ -2747,6 +2759,7 @@ class index{
 		    userDiv.dataset.lastCheckTime = nextTime;
 		    delete pendingCheckTimes[item.uid];
 		}
+		
         async del(uid){
             let right = await customConfirm("confirm?");
             if(right){
