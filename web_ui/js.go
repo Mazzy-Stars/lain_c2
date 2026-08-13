@@ -162,6 +162,8 @@ class WebSocketClient {
         this.connectPromise = null;
         this.pendingWaiters = new Set();
         this.manualClose = false;
+        this.reconnectTimer = null;
+        this.reconnectDelay = 2000; // 2秒后重试
 
         this.bindResumeReconnect();
     }
@@ -189,8 +191,19 @@ class WebSocketClient {
         });
     }
 
+    _rejectWaitersForSocket(targetWs, err){
+        for (const waiter of Array.from(this.pendingWaiters)) {
+            if (waiter.ws === targetWs) {
+                try { waiter.reject(err); } catch (_) {}
+            }
+        }
+        if (this.currentDownload && this.currentDownload.ws === targetWs) {
+            this.rejectDownload(err);
+        }
+    }
+
     _rejectAllWaiters(err){
-        for (const waiter of this.pendingWaiters) {
+        for (const waiter of Array.from(this.pendingWaiters)) {
             try { waiter.reject(err); } catch (_) {}
         }
         this.pendingWaiters.clear();
@@ -198,11 +211,26 @@ class WebSocketClient {
             this.rejectDownload(err);
         }
     }
-
+    scheduleReconnect(){
+        if (this.manualClose || this.reconnectTimer) {
+            return;
+        }
+        this.reconnectTimer = setTimeout(() => {
+            this.reconnectTimer = null;
+            this.connect().catch((err) => {
+                console.error("reconnect failed:", err);
+            });
+        }, this.reconnectDelay);
+    }
     connect(){
         if(this.ws && this.ws.readyState === WebSocket.OPEN){
             return Promise.resolve(true);
         }
+
+        if(this.ws && this.ws.readyState === WebSocket.CONNECTING && this.connectPromise){
+            return this.connectPromise;
+        }
+
         if(this.connectPromise){
             return this.connectPromise;
         }
@@ -210,16 +238,23 @@ class WebSocketClient {
         this.manualClose = false;
         console.log("connect:", this.url);
 
-        this.connectPromise = new Promise((resolve, reject)=>{
+        const connectPromise = new Promise((resolve, reject)=>{
             const ws = new WebSocket(this.url);
             this.ws = ws;
             ws.binaryType = "arraybuffer";
 
             ws.onopen = ()=>{
                 console.log("websocket connected");
-                if (this.ws === ws) {
+
+                if (this.reconnectTimer) {
+                    clearTimeout(this.reconnectTimer);
+                    this.reconnectTimer = null;
+                }
+
+                if (this.ws === ws && this.connectPromise === connectPromise) {
                     this.connectPromise = null;
                 }
+
                 resolve(true);
             };
 
@@ -228,6 +263,7 @@ class WebSocketClient {
                     this.handleBinaryMessage(event.data);
                     return;
                 }
+
                 let msg;
                 try{
                     msg = JSON.parse(event.data);
@@ -235,9 +271,11 @@ class WebSocketClient {
                     console.error("json parse error:", event.data);
                     return;
                 }
+
                 if(this.handleDownloadMessage(msg)){
                     return;
                 }
+
                 this.handleMessage(msg);
             };
 
@@ -245,20 +283,31 @@ class WebSocketClient {
                 console.error("websocket error:", err);
             };
 
-            ws.onclose = ()=>{
-                console.log("websocket closed");
-                if (this.ws === ws) {
+            ws.onclose = (event)=>{
+                console.log("websocket closed", event.code, event.reason);
+
+                const isCurrentSocket = this.ws === ws;
+                const isCurrentConnect = this.connectPromise === connectPromise;
+
+                if (isCurrentSocket) {
                     this.ws = null;
                 }
-                if(this.connectPromise){
-                    reject(new Error("websocket closed before open"));
+
+                if (isCurrentConnect) {
                     this.connectPromise = null;
+                    reject(new Error("websocket closed before open"));
                 }
-                this._rejectAllWaiters(new Error("websocket closed"));
+
+                this._rejectWaitersForSocket(ws, new Error("websocket closed"));
+
+                if (isCurrentSocket && !this.manualClose) {
+                    this.scheduleReconnect();
+                }
             };
         });
 
-        return this.connectPromise;
+        this.connectPromise = connectPromise;
+        return connectPromise;
     }
 
     async ensureConnected(timeout = 5000){
@@ -269,12 +318,19 @@ class WebSocketClient {
         if(!connectPromise){
             return false;
         }
+        let timeoutId = null;
         const timeoutPromise = new Promise((_, reject)=>{
-            setTimeout(()=>{
+            timeoutId = setTimeout(()=>{
                 reject(new Error("websocket connect timeout"));
             }, timeout);
         });
-        await Promise.race([connectPromise, timeoutPromise]);
+        try{
+            await Promise.race([connectPromise, timeoutPromise]);
+        } finally {
+            if (timeoutId) {
+                clearTimeout(timeoutId);
+            }
+        }
         return this.ws && this.ws.readyState === WebSocket.OPEN;
     }
 
@@ -399,7 +455,10 @@ class WebSocketClient {
             }
 
             const ws = this.ws;
-            const waiter = { reject };
+            const waiter = {
+                ws: ws,
+                reject: null
+            };
             let timer = null;
 
             const cleanup = ()=>{
@@ -458,6 +517,7 @@ class WebSocketClient {
         }
         const downloadPromise = new Promise((resolve, reject)=>{
             this.currentDownload = {
+                ws: this.ws,
                 path,
                 chunks: [],
                 filename: null,
@@ -532,8 +592,12 @@ class WebSocketClient {
         }
     }
 
-    close(manual = true){
-        this.manualClose = manual;
+    close(){
+        this.manualClose = true;
+        if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = null;
+        }
         this._rejectAllWaiters(new Error("websocket closed"));
         if(this.ws){
             this.ws.close();
