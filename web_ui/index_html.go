@@ -216,45 +216,16 @@ func Lain(error_str, web_title, web_js, web_css, web_route string, sessionSlice 
                 </div>
                 <div id="index" class="hidden">
                         <p id='div_conn'></p>
-                        <script>
-                            const l_index = new index();
-                            async function get_conn(uid, shellname) {
-                                const sent = await l_index.get(uid, shellname);
-                                if (!sent) {
-                                    return;
-                                }
-                                if (!shell_list.includes(uid)) {
-                                    shell_list.push(uid);
-                                }
-                            }
-                            function del_conn(uid) {
-                                l_index.del(uid);
-                            }
-                        </script>
                 </div>
                 <div id="userIndex" class="hidden">
                     <p id='div_index'></p>
                     <script>
                         const _index = new lain_index();
-                        _index.lain_shell()
-                        _index.checkTime()
-                        function get(shell){
-                            _index.get(shell)
+                        function saveInfo(uid){
+                            _index.saveInfo(uid)
                         }
                         function del(shell){
                             _index.del(shell)
-                        }
-                        function switchVer(shell,ver){
-                            _index.switchVer(shell,ver)
-                        }   
-                        function remarks(shell){
-                            _index.remarks(shell)
-                        }
-                        function rate(shell){
-                            _index.rate(shell)
-                        }
-                        function saveInfo(uid){
-                            _index.saveInfo(uid)
                         }
                     </script>
                 </div>
