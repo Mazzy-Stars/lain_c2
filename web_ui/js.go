@@ -29,7 +29,6 @@ let chat_slice = [];
 let msgQueues = {};
 let resultQueues = {};
 let fileQueues = {};
-let netQueues = {};
 const checkTimeTimers = window.checkTimeTimers || (window.checkTimeTimers = {});
 const checkTimeState = window.checkTimeState || (window.checkTimeState = {});
 window.pendingCheckTimes = window.pendingCheckTimes || {};
@@ -122,7 +121,6 @@ function applyNetData(uid, list) {
         return;
     }
     const safeList = Array.isArray(list) ? list : [];
-    netQueues[uid] = safeList;
 
     window.shellInnetData = window.shellInnetData || {};
     window.shellInnetData[uid] = safeList.flatMap(function(item) {
@@ -155,8 +153,9 @@ function getCookie(name) {
 const Username = getCookie("cookie");
 
 class WebSocketClient {
-    constructor(url){
+    constructor(url, options = {}){
         this.url = url;
+        this.options = options;
         this.ws = null;
         this.currentDownload = null;
         this.connectPromise = null;
@@ -164,8 +163,13 @@ class WebSocketClient {
         this.manualClose = false;
         this.reconnectTimer = null;
         this.reconnectDelay = 2000; // 2秒后重试
+        this.enableResumeReconnect = options.enableResumeReconnect !== false;
+        this.enableAutoReconnect = options.enableAutoReconnect !== false;
+        this.useDedicatedTransfers = options.useDedicatedTransfers !== false;
 
-        this.bindResumeReconnect();
+        if (this.enableResumeReconnect) {
+            this.bindResumeReconnect();
+        }
     }
 
     bindResumeReconnect(){
@@ -212,7 +216,7 @@ class WebSocketClient {
         }
     }
     scheduleReconnect(){
-        if (this.manualClose || this.reconnectTimer) {
+        if (!this.enableAutoReconnect || this.manualClose || this.reconnectTimer) {
             return;
         }
         this.reconnectTimer = setTimeout(() => {
@@ -258,24 +262,21 @@ class WebSocketClient {
                 resolve(true);
             };
 
-            ws.onmessage = (event)=>{
-                if(typeof event.data !== "string"){
+            ws.onmessage = async (event) => {
+                if (typeof event.data !== "string") {
                     this.handleBinaryMessage(event.data);
                     return;
                 }
-
                 let msg;
-                try{
+                try {
                     msg = JSON.parse(event.data);
-                }catch(e){
+                } catch (e) {
                     console.error("json parse error:", event.data);
                     return;
                 }
-
-                if(this.handleDownloadMessage(msg)){
+                if (await this.handleDownloadMessage(msg)) {
                     return;
                 }
-
                 this.handleMessage(msg);
             };
 
@@ -369,84 +370,6 @@ class WebSocketClient {
             return false;
         }
     }
-
-    handleBinaryMessage(data){
-        if(!this.currentDownload){
-            return;
-        }
-        this.currentDownload.chunks.push(data);
-        this.currentDownload.received += data.byteLength || 0;
-    }
-
-    handleDownloadMessage(msg){
-        if(!this.currentDownload){
-            return false;
-        }
-        if(msg.path !== this.currentDownload.path){
-            return false;
-        }
-        if(msg.code && msg.code !== 200){
-            this.rejectDownload(new Error(msg.message || "download failed"));
-            return true;
-        }
-        const isStart = msg.type === "file_start" ||
-            (msg.filename && typeof msg.size !== "undefined");
-        if(isStart){
-            this.currentDownload.filename = msg.filename || this.currentDownload.filename;
-            this.currentDownload.size = msg.size || 0;
-            this.currentDownload.started = true;
-            return true;
-        }
-        const isEnd = msg.type === "file_end" ||
-            msg.message === "download finished";
-        if(isEnd){
-            this.finishDownload();
-            return true;
-        }
-        return false;
-    }
-
-    rejectDownload(error){
-        if(!this.currentDownload){
-            return;
-        }
-        const pending = this.currentDownload;
-        if(pending.timer){
-            clearTimeout(pending.timer);
-        }
-        this.currentDownload = null;
-        pending.reject(error);
-    }
-
-    finishDownload(){
-        if(!this.currentDownload){
-            return;
-        }
-        const pending = this.currentDownload;
-        if(pending.timer){
-            clearTimeout(pending.timer);
-        }
-        const blob = new Blob(
-            pending.chunks,
-            { type: "application/octet-stream" }
-        );
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = pending.filename || "download.bin";
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        setTimeout(()=>{
-            URL.revokeObjectURL(url);
-        }, 1000);
-        this.currentDownload = null;
-        pending.resolve({
-            filename: pending.filename,
-            size: pending.received,
-        });
-    }
-
     waitForMessage(matcher, timeout = 65000){
         return new Promise((resolve, reject)=>{
             if(!this.ws || this.ws.readyState !== WebSocket.OPEN){
@@ -507,42 +430,268 @@ class WebSocketClient {
             }
         });
     }
+    handleBinaryMessage(data) {
+        if (!this.currentDownload || !this.currentDownload.started) {
+            return;
+        }
 
-    async downloadFile(path, body = {}, timeout = 65000){
-        if(!await this.ensureConnected().catch(()=>false)){
+        this.currentDownload.chunks.push(data);
+        this.refreshDownloadTimer();
+    }
+
+    async handleDownloadMessage(msg) {
+        const task = this.currentDownload;
+        if (!task) {
+            return false;
+        }
+
+        if (msg.path !== task.path) {
+            return false;
+        }
+
+        if (msg.code && msg.code !== 200) {
+            this.rejectDownload(new Error(msg.message || "download failed"));
+            return true;
+        }
+
+        const isStart =
+            msg.type === "file_start" ||
+            (msg.path === "downloadlog" && msg.filename && typeof msg.size === "number");
+
+        if (isStart) {
+            task.started = true;
+            task.filename = msg.filename || task.filename;
+            task.size = typeof msg.size === "number" ? msg.size : task.size;
+            task.offset = typeof msg.offset === "number" ? msg.offset : task.offset;
+            this.notifyDownloadProgress(task);
+            this.refreshDownloadTimer();
+            return true;
+        }
+
+        const isEnd =
+            msg.type === "file_end" ||
+            (msg.path === "downloadlog" && msg.message === "download finished");
+
+        if (!isEnd) {
+            return false;
+        }
+
+        task.filename = msg.filename || task.filename;
+        task.size = typeof msg.size === "number" ? msg.size : task.size;
+
+        if (typeof msg.nextOffset === "number") {
+            task.offset = msg.nextOffset;
+            task.received = msg.nextOffset;
+        } else if (typeof msg.sentSize === "number") {
+            task.received += msg.sentSize;
+            task.offset += msg.sentSize;
+        }
+
+        this.notifyDownloadProgress(task);
+
+        const eof = !!msg.eof || (task.size > 0 && task.received >= task.size);
+
+        if (!eof) {
+            this.refreshDownloadTimer();
+            await this.requestNextDownloadChunk();
+            return true;
+        }
+
+        clearTimeout(task.timer);
+
+        const blob = new Blob(task.chunks, {
+            type: "application/octet-stream"
+        });
+
+        task.received = task.size || blob.size;
+        this.notifyDownloadProgress(task);
+
+        const result = {
+            filename: task.filename || "download.bin",
+            size: task.received,
+            blob,
+        };
+
+        this.currentDownload = null;
+        this.saveDownloadedFile(result.filename, result.blob);
+        task.resolve(result);
+        return true;
+    }
+
+    rejectDownload(err) {
+        if (!this.currentDownload) {
+            return;
+        }
+
+        clearTimeout(this.currentDownload.timer);
+        this.currentDownload.reject(err);
+        this.currentDownload = null;
+    }
+
+    createTransferClient() {
+        return new WebSocketClient(this.url, {
+            enableResumeReconnect: false,
+            enableAutoReconnect: false,
+            useDedicatedTransfers: false,
+        });
+    }
+
+    async _downloadFileInternal(path, body = {}, timeout = 65000, chunkSize = 1024 * 1024, onProgress = null) {
+        if (!await this.ensureConnected().catch(() => false)) {
             throw new Error("websocket not connected");
         }
-        if(this.currentDownload){
+
+        if (this.currentDownload) {
             throw new Error("another download is in progress");
         }
-        const downloadPromise = new Promise((resolve, reject)=>{
+
+        const downloadPromise = new Promise((resolve, reject) => {
             this.currentDownload = {
                 ws: this.ws,
                 path,
+                body: { ...body },
+                chunkSize,
+                timeout,
+                onProgress,
                 chunks: [],
                 filename: null,
                 size: 0,
                 received: 0,
+                offset: 0,
                 started: false,
                 resolve,
                 reject,
-                timer: setTimeout(()=>{
-                    this.rejectDownload(new Error("download timeout"));
-                }, timeout),
+                timer: null,
             };
         });
-        const sent = await this.send(path, body);
-        if(!sent){
+
+        this.refreshDownloadTimer();
+
+        const sent = await this.send(path, {
+            ...body,
+            offset: 0,
+            chunkSize,
+        });
+
+        if (!sent) {
             this.rejectDownload(new Error("send download request failed"));
         }
+
         return downloadPromise;
     }
 
-    async downloadLog(){
-        return this.downloadFile("downloadlog");
+    async downloadFile(path, body = {}, timeout = 65000, chunkSize = 1024 * 1024, onProgress = null) {
+        if (!this.useDedicatedTransfers) {
+            return this._downloadFileInternal(path, body, timeout, chunkSize, onProgress);
+        }
+
+        const transferClient = this.createTransferClient();
+        try {
+            return await transferClient._downloadFileInternal(path, body, timeout, chunkSize, onProgress);
+        } finally {
+            transferClient.close();
+        }
     }
 
-    async sendFile(path, body, file, chunkSize, onProgress){
+    async requestNextDownloadChunk() {
+        const task = this.currentDownload;
+        if (!task) {
+            return;
+        }
+
+        const sent = await this.send(task.path, {
+            ...task.body,
+            offset: task.offset,
+            chunkSize: task.chunkSize,
+        });
+
+        if (!sent) {
+            this.rejectDownload(new Error("send next download chunk failed"));
+        }
+    }
+
+    async downloadLog(chunkSize = 1024 * 1024) {
+        const toastId = createTransferToastId("download-log");
+        try {
+            const result = await this.downloadFile(
+                "downloadlog",
+                {},
+                65000,
+                chunkSize,
+                (received, total) => {
+                    const percent = total > 0
+                        ? Math.min(100, Math.floor(received / total * 100))
+                        : 0;
+                    customTransferToast(toastId, {
+                        title: "Download log",
+                        percent,
+                        state: "active",
+                        detail: formatTransferBytes(received) + " / " + formatTransferBytes(total),
+                    });
+                }
+            );
+            customTransferToast(toastId, {
+                title: "Download log",
+                percent: 100,
+                state: "done",
+                detail: result.filename,
+                removeAfter: 1200,
+            });
+            return result;
+        } catch (err) {
+            customTransferToast(toastId, {
+                title: "Download log",
+                percent: 0,
+                state: "error",
+                detail: err.message || "download failed",
+                removeAfter: 2000,
+            });
+            throw err;
+        }
+    }
+
+    notifyDownloadProgress(task) {
+        if (!task || typeof task.onProgress !== "function") {
+            return;
+        }
+
+        try {
+            task.onProgress(task.received, task.size);
+        } catch (err) {
+            console.error("download progress callback error:", err);
+        }
+    }
+
+    refreshDownloadTimer() {
+        const task = this.currentDownload;
+        if (!task) {
+            return;
+        }
+
+        if (task.timer) {
+            clearTimeout(task.timer);
+        }
+
+        task.timer = setTimeout(() => {
+            this.rejectDownload(new Error("download timeout"));
+        }, task.timeout);
+    }
+
+    saveDownloadedFile(filename, blob) {
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = filename || "download.bin";
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+
+        setTimeout(() => {
+            URL.revokeObjectURL(url);
+        }, 1000);
+    }
+
+    async _sendFileInternal(path, body, file, chunkSize, onProgress){
         if(!await this.ensureConnected().catch(()=>false)){
             throw new Error("websocket not connected");
         }
@@ -572,6 +721,25 @@ class WebSocketClient {
         return resultMsg;
     }
 
+    async sendFile(path, body, file, chunkSize, onProgress){
+        if (!this.useDedicatedTransfers) {
+            return this._sendFileInternal(path, body, file, chunkSize, onProgress);
+        }
+
+        const transferClient = this.createTransferClient();
+        try {
+            return await transferClient._sendFileInternal(
+                path,
+                body,
+                file,
+                chunkSize,
+                onProgress
+            );
+        } finally {
+            transferClient.close();
+        }
+    }
+
     async uploadBinary(file, chunkSize = 64 * 1024, onProgress = null){
         let offset = 0;
         while(offset < file.size){
@@ -584,7 +752,7 @@ class WebSocketClient {
             if(!sent){
                 throw new Error("binary send failed");
             }
-            offset += chunkSize;
+            offset = Math.min(offset + chunkSize, file.size);
             if(onProgress){
                 onProgress(offset, file.size);
             }
@@ -1578,15 +1746,6 @@ class index{
                 cur_dir_p.textContent="Path:\t"+this.shell_dir;
             }
         }
-        get_btn_move(){
-            var btn = this.getDialogNode('#dir-btn');
-            if (btn) {
-                btn.addEventListener('click', async () => {
-                    this.move_file(1,'no')
-                });
-            }
-        }
-
         switchVer(value){
             let cmd = "SWITCH_VERSION*//*"+value;
             webSocketClient.send(
@@ -1602,18 +1761,6 @@ class index{
     
     //涓婚〉闈㈢被
     class lain_index{
-        lain_shell(){
-            if(!Username){
-                return;
-            }
-            webSocketClient.send(
-                
-                "agentList",
-                {
-                    username: Username
-                }
-            );
-        }
         renderUserList(data) {
             let container = document.getElementById('div_index');
             if (!container) {
@@ -2089,6 +2236,7 @@ class index{
                     const splitSizeInput = dialog.querySelector("#splitSize");
                     const splitSize = splitSizeInput && splitSizeInput.value ? parseFloat(splitSizeInput.value) * 1024 * 1024 : 0;
                     const file_name = fliemanage.shell_dir + "/" + file.name;
+                    const toastId = createTransferToastId("upload-file");
                     try{
                         await webSocketClient.sendFile(
                             "uploadFile",
@@ -2098,8 +2246,26 @@ class index{
                                 splitSize:String(splitSize)
                             },
                             file,
-                            32 * 1024
+                            32 * 1024,
+                            (received, total) => {
+                                const percent = total > 0
+                                    ? Math.min(100, Math.floor(received / total * 100))
+                                    : 0;
+                                customTransferToast(toastId, {
+                                    title: "Upload " + file.name,
+                                    percent,
+                                    state: "active",
+                                    detail: formatTransferBytes(received) + " / " + formatTransferBytes(total),
+                                });
+                            }
                         );
+                        customTransferToast(toastId, {
+                            title: "Upload " + file.name,
+                            percent: 100,
+                            state: "done",
+                            detail: file_name,
+                            removeAfter: 1200,
+                        });
                         console.log(file_name,"File uploaded successfully");
                         fliemanage.loadFile(
                             file_name,
@@ -2110,6 +2276,13 @@ class index{
                             "upload error:",
                             err
                         );
+                        customTransferToast(toastId, {
+                            title: "Upload " + file.name,
+                            percent: 0,
+                            state: "error",
+                            detail: err.message || "upload failed",
+                            removeAfter: 2000,
+                        });
                         customLog("Upload failed");
                     }
                 });
@@ -2833,7 +3006,6 @@ class index{
 				msgQueues[uid] = [];
                 resultQueues[uid] = [];
                 fileQueues[uid] = [];
-                netQueues[uid] = [];
                 webSocketClient.send(
                     "delInfo",
                     {
@@ -2899,7 +3071,7 @@ class index{
                 btn.className = "loot-download-btn";
                 btn.textContent = "Download";
                 btn.onclick = () => {
-                    this.downloadLoot(uid, name);
+                    this.downloadLoot(uid, name, btn);
                 };
 
                 row.appendChild(info);
@@ -2910,21 +3082,71 @@ class index{
             lootDiv.appendChild(card);
         });
     }
-    async downloadLoot(uid,file){
+    async downloadLoot(uid,file, buttonEl = null){
+        const originalText = buttonEl ? buttonEl.textContent : "";
+        const toastId = createTransferToastId("download-loot");
         try{
+            if (buttonEl) {
+                buttonEl.disabled = true;
+                buttonEl.textContent = "Downloading 0%";
+            }
+
             await webSocketClient.downloadFile(
                 "download_loot",
-                {
-                    uid: uid,
-                    file: file
+                { uid, file },
+                65000,
+                1024 * 1024,
+                (received, total) => {
+                    const percent = total > 0
+                        ? Math.min(100, Math.floor(received / total * 100))
+                        : 0;
+                    customTransferToast(toastId, {
+                        title: "Download " + file,
+                        percent,
+                        state: "active",
+                        detail: formatTransferBytes(received) + " / " + formatTransferBytes(total),
+                    });
+                    if (!buttonEl) {
+                        return;
+                    }
+                    buttonEl.textContent = "Downloading " + percent + "%";
                 }
             );
+
+            customTransferToast(toastId, {
+                title: "Download " + file,
+                percent: 100,
+                state: "done",
+                detail: file,
+                removeAfter: 1200,
+            });
+
+            if (buttonEl) {
+                buttonEl.textContent = "Downloaded";
+            }
         }catch(err){
             console.error(
                 "download loot error:",
                 err
             );
+            if (buttonEl) {
+                buttonEl.textContent = "Failed";
+            }
+            customTransferToast(toastId, {
+                title: "Download " + file,
+                percent: 0,
+                state: "error",
+                detail: err.message || "download failed",
+                removeAfter: 2000,
+            });
             customLog("Download failed");
+        } finally {
+            if (buttonEl) {
+                setTimeout(() => {
+                    buttonEl.disabled = false;
+                    buttonEl.textContent = originalText || "Download";
+                }, 1200);
+            }
         }
     }
 }
@@ -4042,7 +4264,7 @@ class lain_chat{
             link.style.color = "#007BFF";
             link.style.textDecoration = "none";
             link.onclick = () => {
-                this.downloadChatFile(data.message);
+                this.downloadChatFile(data.message, link);
             };
             let linkDiv = document.createElement("div");
             linkDiv.style.marginTop = "4px";
@@ -4125,6 +4347,7 @@ class lain_chat{
         chat_div.appendChild(pendingDiv);
         chat_div.scrollTop =
             chat_div.scrollHeight;
+        const toastId = createTransferToastId("upload-chat");
         try{
             await webSocketClient.sendFile(
                 "chatFile",
@@ -4136,6 +4359,15 @@ class lain_chat{
                 file,
                 1024 * 1024,
                 (offset, total)=>{
+                    const progressPercent = total > 0
+                        ? Math.min(100, Math.floor(offset / total * 100))
+                        : 0;
+                    customTransferToast(toastId, {
+                        title: "Upload " + file.name,
+                        percent: progressPercent,
+                        state: "active",
+                        detail: formatTransferBytes(offset) + " / " + formatTransferBytes(total),
+                    });
                     let percent = total === 0
                         ? 100
                         : Math.min(
@@ -4150,6 +4382,13 @@ class lain_chat{
                         + "%";
                 }
             );
+            customTransferToast(toastId, {
+                title: "Upload " + file.name,
+                percent: 100,
+                state: "done",
+                detail: file.name,
+                removeAfter: 1200,
+            });
             pendingDiv.innerText =
                 "📎"
                 + file.name
@@ -4164,23 +4403,81 @@ class lain_chat{
                 + file.name
                 + " failed";
             pendingDiv.style.color="red";
+            customTransferToast(toastId, {
+                title: "Upload " + file.name,
+                percent: 0,
+                state: "error",
+                detail: e.message || "upload failed",
+                removeAfter: 2000,
+            });
         }
         fileInput.value="";
     }
-    async downloadChatFile(filename){
+    async downloadChatFile(filename, linkEl = null){
+        const originalText = linkEl ? linkEl.innerText : "";
+        const toastId = createTransferToastId("download-chat");
         try {
+            if (linkEl) {
+                linkEl.style.pointerEvents = "none";
+                linkEl.innerText = "Downloading 0%";
+            }
+
             await webSocketClient.downloadFile(
                 "downloadChatFile",
-                {
-                    filename: filename
+                { filename },
+                65000,
+                1024 * 1024,
+                (received, total) => {
+                    const percent = total > 0
+                        ? Math.min(100, Math.floor(received / total * 100))
+                        : 0;
+                    customTransferToast(toastId, {
+                        title: "Download " + filename,
+                        percent,
+                        state: "active",
+                        detail: formatTransferBytes(received) + " / " + formatTransferBytes(total),
+                    });
+                    if (!linkEl) {
+                        return;
+                    }
+                    linkEl.innerText = "Downloading " + percent + "%";
                 }
             );
+
+            customTransferToast(toastId, {
+                title: "Download " + filename,
+                percent: 100,
+                state: "done",
+                detail: filename,
+                removeAfter: 1200,
+            });
+
+            if (linkEl) {
+                linkEl.innerText = "Downloaded";
+            }
         } catch(err){
             console.error(
                 "download error:",
                 err
             );
+            if (linkEl) {
+                linkEl.innerText = "Download failed";
+            }
+            customTransferToast(toastId, {
+                title: "Download " + filename,
+                percent: 0,
+                state: "error",
+                detail: err.message || "download failed",
+                removeAfter: 2000,
+            });
             customLog("Download failed");
+        } finally {
+            if (linkEl) {
+                setTimeout(() => {
+                    linkEl.style.pointerEvents = "";
+                    linkEl.innerText = originalText || filename;
+                }, 1200);
+            }
         }
     }
 }
@@ -4857,7 +5154,18 @@ function customLog() {
     });
 
     while (container.children.length > 12) {
-        container.removeChild(container.firstChild);
+        let removable = null;
+        for (const child of Array.from(container.children)) {
+            if (child.dataset && child.dataset.transferToast === "true") {
+                continue;
+            }
+            removable = child;
+            break;
+        }
+        if (!removable) {
+            break;
+        }
+        container.removeChild(removable);
     }
 
     container.scrollTop = container.scrollHeight;
@@ -4890,6 +5198,211 @@ function customLog() {
     scheduleFadeOut();
 }
 // 鏇夸唬alert鍑芥暟锛屼娇鐢ㄨ嚜瀹氫箟寮圭獥
+function formatTransferBytes(bytes) {
+    const size = Number(bytes);
+    if (!isFinite(size) || size < 0) {
+        return "0 B";
+    }
+    if (size < 1024) {
+        return Math.floor(size) + " B";
+    }
+    const units = ["KB", "MB", "GB", "TB"];
+    let value = size / 1024;
+    let unitIndex = 0;
+    while (value >= 1024 && unitIndex < units.length - 1) {
+        value /= 1024;
+        unitIndex += 1;
+    }
+    return value.toFixed(value >= 10 ? 0 : 1) + " " + units[unitIndex];
+}
+
+function createTransferToastId(prefix = "transfer") {
+    return prefix + "-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8);
+}
+
+function ensureTransferToastContainer() {
+    let container = document.getElementById("custom-log-container");
+    if (!container) {
+        container = document.createElement("div");
+        container.id = "custom-log-container";
+        container.style.position = "fixed";
+        container.style.right = "20px";
+        container.style.top = "20px";
+        container.style.width = "360px";
+        container.style.maxWidth = "calc(100vw - 24px)";
+        container.style.maxHeight = "50vh";
+        container.style.overflowY = "auto";
+        container.style.zIndex = "9998";
+        container.style.display = "flex";
+        container.style.flexDirection = "column";
+        container.style.gap = "10px";
+        document.body.appendChild(container);
+    }
+    return container;
+}
+
+function removeTransferToast(id) {
+    const state = window.__transferToastState;
+    if (!state || !state.items || !state.items.has(id)) {
+        return;
+    }
+    const record = state.items.get(id);
+    if (record.timer) {
+        clearTimeout(record.timer);
+    }
+    if (record.item) {
+        record.item.style.opacity = "0";
+        record.item.style.transform = "translateY(-6px)";
+        setTimeout(() => {
+            if (record.item && record.item.parentNode) {
+                record.item.parentNode.removeChild(record.item);
+            }
+        }, 220);
+    }
+    state.items.delete(id);
+}
+
+function customTransferToast(id, options = {}) {
+    const container = ensureTransferToastContainer();
+    if (!window.__transferToastState) {
+        window.__transferToastState = {
+            items: new Map(),
+        };
+    }
+    const state = window.__transferToastState;
+    let record = state.items.get(id);
+    if (!record) {
+        const item = document.createElement("div");
+        item.dataset.transferToast = "true";
+        item.style.background = "rgba(255, 255, 255, 0.97)";
+        item.style.color = "#2f2f2f";
+        item.style.border = "1px solid rgba(120, 150, 180, 0.22)";
+        item.style.borderRadius = "10px";
+        item.style.padding = "12px 14px";
+        item.style.boxShadow = "0 10px 28px rgba(80, 102, 125, 0.18)";
+        item.style.fontFamily = "Consolas, Monaco, monospace";
+        item.style.fontSize = "12px";
+        item.style.lineHeight = "1.5";
+        item.style.wordBreak = "break-word";
+        item.style.opacity = "0";
+        item.style.transform = "translateY(-10px)";
+        item.style.transition = "opacity 0.35s ease, transform 0.35s ease";
+
+        const header = document.createElement("div");
+        header.style.display = "flex";
+        header.style.justifyContent = "space-between";
+        header.style.alignItems = "center";
+        header.style.gap = "12px";
+        header.style.marginBottom = "8px";
+
+        const title = document.createElement("div");
+        title.style.fontWeight = "700";
+        title.style.color = "#27455f";
+        title.style.flex = "1";
+        title.style.minWidth = "0";
+        title.style.overflow = "hidden";
+        title.style.textOverflow = "ellipsis";
+        title.style.whiteSpace = "nowrap";
+
+        const status = document.createElement("span");
+        status.style.fontSize = "11px";
+        status.style.color = "#4c84b8";
+        status.style.whiteSpace = "nowrap";
+
+        const closeButton = document.createElement("button");
+        closeButton.type = "button";
+        closeButton.textContent = "x";
+        closeButton.style.border = "none";
+        closeButton.style.background = "transparent";
+        closeButton.style.color = "#7e8a96";
+        closeButton.style.cursor = "pointer";
+        closeButton.style.fontSize = "14px";
+        closeButton.onclick = function() {
+            removeTransferToast(id);
+        };
+
+        header.appendChild(title);
+        header.appendChild(status);
+        header.appendChild(closeButton);
+
+        const barWrap = document.createElement("div");
+        barWrap.style.height = "8px";
+        barWrap.style.borderRadius = "999px";
+        barWrap.style.background = "rgba(76, 132, 184, 0.12)";
+        barWrap.style.overflow = "hidden";
+
+        const barFill = document.createElement("div");
+        barFill.style.height = "100%";
+        barFill.style.width = "0%";
+        barFill.style.borderRadius = "999px";
+        barFill.style.background = "linear-gradient(90deg, #4c84b8, #69c2ff)";
+        barFill.style.transition = "width 0.25s ease, background 0.25s ease";
+        barWrap.appendChild(barFill);
+
+        const detail = document.createElement("div");
+        detail.style.marginTop = "8px";
+        detail.style.fontSize = "11px";
+        detail.style.color = "#5d6f7f";
+        detail.style.whiteSpace = "pre-wrap";
+        detail.style.wordBreak = "break-word";
+
+        item.appendChild(header);
+        item.appendChild(barWrap);
+        item.appendChild(detail);
+        container.appendChild(item);
+
+        requestAnimationFrame(() => {
+            item.style.opacity = "1";
+            item.style.transform = "translateY(0)";
+        });
+
+        record = {
+            item,
+            title,
+            status,
+            barFill,
+            detail,
+            timer: null,
+        };
+        state.items.set(id, record);
+    }
+
+    if (record.timer) {
+        clearTimeout(record.timer);
+        record.timer = null;
+    }
+
+    const titleText = options.title || record.title.textContent || "";
+    const percent = typeof options.percent === "number" ? Math.max(0, Math.min(100, Math.floor(options.percent))) : null;
+    const stateName = options.state || "active";
+    const detailText = options.detail || "";
+
+    record.title.textContent = titleText;
+    record.detail.textContent = detailText;
+
+    if (percent === null) {
+        record.barFill.style.width = "0%";
+        record.status.textContent = stateName === "done" ? "Done" : stateName === "error" ? "Failed" : "";
+    } else {
+        record.barFill.style.width = percent + "%";
+        record.status.textContent = stateName === "done" ? "Done" : stateName === "error" ? "Failed" : (percent + "%");
+    }
+
+    record.barFill.style.background = stateName === "error" ?
+        "linear-gradient(90deg, #d65b5b, #ff8b8b)" :
+        stateName === "done" ?
+            "linear-gradient(90deg, #55b37a, #8ee4b1)" :
+            "linear-gradient(90deg, #4c84b8, #69c2ff)";
+
+    if (stateName === "done" || stateName === "error") {
+        record.timer = setTimeout(() => {
+            removeTransferToast(id);
+        }, typeof options.removeAfter === "number" ? options.removeAfter : 1600);
+    }
+
+    return id;
+}
+
 function customAlert(message) {
     // 閬僵
     let overlay = document.createElement("div");
