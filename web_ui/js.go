@@ -454,9 +454,58 @@ class WebSocketClient {
             return true;
         }
 
+        const isEnd =
+            msg.type === "file_end" ||
+            (msg.path === "downloadlog" && msg.message === "download finished");
+
+        if (isEnd) {
+            task.filename = msg.filename || task.filename;
+            task.size = typeof msg.size === "number" ? msg.size : task.size;
+
+            if (typeof msg.nextOffset === "number") {
+                task.offset = msg.nextOffset;
+                task.received = msg.nextOffset;
+            } else if (typeof msg.sentSize === "number") {
+                task.received += msg.sentSize;
+                task.offset += msg.sentSize;
+            }
+
+            this.notifyDownloadProgress(task);
+
+            const eof = !!msg.eof || (task.size > 0 && task.received >= task.size);
+
+            if (!eof) {
+                this.refreshDownloadTimer();
+                await this.requestNextDownloadChunk();
+                return true;
+            }
+
+            clearTimeout(task.timer);
+
+            const blob = new Blob(task.chunks, {
+                type: "application/octet-stream"
+            });
+
+            task.received = task.size || blob.size;
+            this.notifyDownloadProgress(task);
+
+            const result = {
+                filename: task.filename || "download.bin",
+                size: task.received,
+                blob,
+            };
+
+            this.currentDownload = null;
+            this.saveDownloadedFile(result.filename, result.blob);
+            task.resolve(result);
+            return true;
+        }
+
         const isStart =
             msg.type === "file_start" ||
-            (msg.path === "downloadlog" && msg.filename && typeof msg.size === "number");
+            (msg.path === "downloadlog" &&
+                msg.filename &&
+                typeof msg.size === "number");
 
         if (isStart) {
             task.started = true;
@@ -468,54 +517,7 @@ class WebSocketClient {
             return true;
         }
 
-        const isEnd =
-            msg.type === "file_end" ||
-            (msg.path === "downloadlog" && msg.message === "download finished");
-
-        if (!isEnd) {
-            return false;
-        }
-
-        task.filename = msg.filename || task.filename;
-        task.size = typeof msg.size === "number" ? msg.size : task.size;
-
-        if (typeof msg.nextOffset === "number") {
-            task.offset = msg.nextOffset;
-            task.received = msg.nextOffset;
-        } else if (typeof msg.sentSize === "number") {
-            task.received += msg.sentSize;
-            task.offset += msg.sentSize;
-        }
-
-        this.notifyDownloadProgress(task);
-
-        const eof = !!msg.eof || (task.size > 0 && task.received >= task.size);
-
-        if (!eof) {
-            this.refreshDownloadTimer();
-            await this.requestNextDownloadChunk();
-            return true;
-        }
-
-        clearTimeout(task.timer);
-
-        const blob = new Blob(task.chunks, {
-            type: "application/octet-stream"
-        });
-
-        task.received = task.size || blob.size;
-        this.notifyDownloadProgress(task);
-
-        const result = {
-            filename: task.filename || "download.bin",
-            size: task.received,
-            blob,
-        };
-
-        this.currentDownload = null;
-        this.saveDownloadedFile(result.filename, result.blob);
-        task.resolve(result);
-        return true;
+        return false;
     }
 
     rejectDownload(err) {
@@ -5221,10 +5223,10 @@ function createTransferToastId(prefix = "transfer") {
 }
 
 function ensureTransferToastContainer() {
-    let container = document.getElementById("custom-log-container");
+    let container = document.getElementById("transfer-toast-container");
     if (!container) {
         container = document.createElement("div");
-        container.id = "custom-log-container";
+        container.id = "transfer-toast-container";
         container.style.position = "fixed";
         container.style.right = "20px";
         container.style.top = "20px";
@@ -5236,6 +5238,7 @@ function ensureTransferToastContainer() {
         container.style.display = "flex";
         container.style.flexDirection = "column";
         container.style.gap = "10px";
+        container.style.pointerEvents = "none";
         document.body.appendChild(container);
     }
     return container;
@@ -5274,6 +5277,7 @@ function customTransferToast(id, options = {}) {
     if (!record) {
         const item = document.createElement("div");
         item.dataset.transferToast = "true";
+        item.style.pointerEvents = "auto";
         item.style.background = "rgba(255, 255, 255, 0.97)";
         item.style.color = "#2f2f2f";
         item.style.border = "1px solid rgba(120, 150, 180, 0.22)";
