@@ -4423,6 +4423,13 @@ func ClearUnmarkedGlobalVars() {
 
 	// 13) 清理websocket连接
 	wsUsersMu.Lock()
+	for _, clients := range wsUsers {
+		for _, c := range clients {
+			if c != nil && c.Conn != nil {
+				_ = c.Conn.Close()
+			}
+		}
+	}
 	wsUsers = make(map[string][]*WSClient)
 	wsUsersMu.Unlock()
 
