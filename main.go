@@ -89,7 +89,6 @@ var (
 
 	/*不可清理*/
 	logger = &MyLog{}
-	/*不可清理*/ web_title string
 	/*不可清理*/ log_word = make(map[string]string)
 )
 
@@ -5160,6 +5159,7 @@ func main() {
 	var ui_route string
 	var web_route string
 	var login_route string
+	var web_title string
 
 	var web_js string
 	var web_css string
@@ -5201,7 +5201,7 @@ func main() {
 	}
 
 	//登录
-	http.Handle("/"+login_route, withCORS(login(login_route,ui_route, web_css)))
+	http.Handle("/"+login_route, withCORS(login(login_route,ui_route, web_css,web_title)))
 
 	// --- 页面路由 ---
 	http.HandleFunc("/"+ui_route, func(w http.ResponseWriter, r *http.Request) {
@@ -5418,7 +5418,7 @@ func readWhitelist() ([]string, error) {
 }
 
 // 登录
-func login(login_route,ui_route, web_css string) http.HandlerFunc {
+func login(login_route,ui_route, web_css,web_title string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 			html := fmt.Sprintf(`<!DOCTYPE html>
