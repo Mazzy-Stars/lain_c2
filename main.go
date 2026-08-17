@@ -5159,6 +5159,7 @@ func main() {
 	var css_file string
 	var ui_route string
 	var web_route string
+	var login_route string
 
 	var web_js string
 	var web_css string
@@ -5173,6 +5174,9 @@ func main() {
 	flag.StringVar(&web_title, "title", "connect", "web ui title")
 	flag.StringVar(&ui_route, "ui-route", "server", "web ui route")
 	flag.StringVar(&web_route, "web-route", "user_index", "backend communication routing")
+	flag.StringVar(&login_route, "login-route", "login", "login route")
+
+
 
 	flag.StringVar(&web_js, "js-route", "lain.js", "customize web js")
 	flag.StringVar(&web_css, "css-route", "lain.css", "customize web css")
@@ -5197,7 +5201,7 @@ func main() {
 	}
 
 	//登录
-	http.Handle("/login", withCORS(login(ui_route, web_css)))
+	http.Handle("/"+login_route, withCORS(login(login_route,ui_route, web_css)))
 
 	// --- 页面路由 ---
 	http.HandleFunc("/"+ui_route, func(w http.ResponseWriter, r *http.Request) {
@@ -5261,7 +5265,7 @@ func main() {
 		InsecureSkipVerify: true,
 	}
 	server.TLSConfig = tlsConfig
-	fmt.Printf("[*] Start HTTPS server successful, access address https://localhost:%s/login\n", index_port)
+	fmt.Printf("[*] Start HTTPS server successful, access address https://localhost:%s/%s\n", index_port,login_route)
 	err = server.ListenAndServeTLS("", "")
 	if err != nil {
 		fmt.Printf("FAIL TO START HTTPS SERVER %v\n", err)
@@ -5414,7 +5418,7 @@ func readWhitelist() ([]string, error) {
 }
 
 // 登录
-func login(ui_route, web_css string) http.HandlerFunc {
+func login(login_route,ui_route, web_css string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 			html := fmt.Sprintf(`<!DOCTYPE html>
@@ -5426,14 +5430,14 @@ func login(ui_route, web_css string) http.HandlerFunc {
                 <link rel="stylesheet" href="/`+web_css+`">
             </head>
             <body>
-                <form class="form-in" action="/login" method="post" enctype="application/x-www-form-urlencoded">  
+                <form class="form-in" action="/%s" method="post" enctype="application/x-www-form-urlencoded">  
                     <h1>Login</h1>
                     <input type="text" name="username" id="username" placeholder="Username" required>
                     <input type="password" name="password" placeholder="password" required>
                     <button type="submit">Login</button>
                 </form>
             </body>
-            </html>`, web_title)
+            </html>`, web_title,login_route)
 			w.Header().Set("Content-Type", "text/html")
 			fmt.Fprint(w, html)
 			return
