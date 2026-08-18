@@ -590,7 +590,6 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 		PushData(usernameCookie.Value, "winAgentList")
 		PushData(usernameCookie.Value, "listen")
 		PushData(usernameCookie.Value, "server")
-		PushData(usernameCookie.Value, "checkWinAgent")
 		PushData(usernameCookie.Value, "chat")
 		PushData(usernameCookie.Value, "log")
 		PushData(usernameCookie.Value, "PluginList")
