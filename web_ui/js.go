@@ -22,7 +22,6 @@ if (!window.main_server) {
 }
 let server_data = [];
 let User_data = [];
-let shell_list=[];
 let server_plugin = [];
 let chat_slice = [];
 
@@ -979,17 +978,11 @@ class WebSocketClient {
         User_data = (msg.data && msg.data.length) ?
             (Array.isArray(msg.data) ? msg.data : []) :
             [];
-        shell_list = User_data.slice();
-        window.shell_list = shell_list;
-
         if(User_data.length > 0) {
-            window.shell_list = shell_list;
             indexInstance.renderUserList(User_data);
             net_init();
             rebuildServerClientCounts(User_data);
         } else {
-            shell_list = [];
-            window.shell_list = shell_list;
             indexInstance.renderUserList([]);
             net_init();
             rebuildServerClientCounts([]);
@@ -1062,11 +1055,8 @@ class index{
             return;
         }
         if (clients.length === 0) {
-            shell_list = [];
             return;
         }
-        shell_list = Array.isArray(clients) ? clients.slice() : [];
-        window.shell_list = shell_list;
         for(let i = 0; i < clients.length; i++){
             let c = clients[i];
         
@@ -4496,12 +4486,7 @@ function net_init() {
             }
             return false;
         }
-        if ((!Array.isArray(shell_list) || shell_list.length === 0) &&
-            Array.isArray(User_data) && User_data.length > 0) {
-            shell_list = User_data.slice();
-            window.shell_list = shell_list;
-        }
-        if (!Array.isArray(shell_list) || shell_list.length === 0) {
+        if (!Array.isArray(User_data) || User_data.length === 0) {
             if (!window.netInitTimer) {
                 window.netInitTimer = setInterval(function() {
                     if (net_init()) {
@@ -4514,7 +4499,7 @@ function net_init() {
         }
         const currentValue = selectElement.value;
         selectElement.innerHTML = '<option value="">Select</option>';
-        shell_list.forEach(item => {
+        User_data.forEach(item => {
             if (!item || !item.uid) {
                 return;
             }
@@ -5587,16 +5572,9 @@ window.get_conn = async function(uid, shellname) {
     if (!window.l_index) {
         return false;
     }
-    window.shell_list = Array.isArray(window.shell_list) ? window.shell_list : [];
-    if (window.shell_list.includes(uid)) {
-        return false;
-    }
     const sent = await window.l_index.get(uid, shellname);
     if (!sent) {
         return false;
-    }
-    if (!window.shell_list.includes(uid)) {
-        window.shell_list.push(uid);
     }
     return true;
 };
