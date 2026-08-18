@@ -1063,12 +1063,10 @@ class index{
         }
         if (clients.length === 0) {
             shell_list = [];
-            net_init();
             return;
         }
         shell_list = Array.isArray(clients) ? clients.slice() : [];
         window.shell_list = shell_list;
-        net_init();
         for(let i = 0; i < clients.length; i++){
             let c = clients[i];
         
