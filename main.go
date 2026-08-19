@@ -4738,7 +4738,6 @@ type Server struct {
 	Hostname     string `json:"hostname"`
 	KeyPart      string `json:"keyPart"`
 	Filekey      string `json:"filekey"`
-	Group        string `json:"group"`
 	WindowsPro   string `json:"windows_pro"`
 	BaseRounds   string `json:"base_rounds"`
 	ResponseHead string `json:"response_head"`
