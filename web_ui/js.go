@@ -2862,7 +2862,6 @@ class index{
             const username = document.getElementById('username_' + uid).value;
             try{
                 let result = await webSocketClient.send(
-                    
                     "change",
                     {
                         remarks: remarks,
@@ -2873,14 +2872,6 @@ class index{
                         taskid: AgentTaskId
                     }
                 );
-                // change 鎴愬姛
-                this.updateUserData(
-                    uid,
-                    remarks,
-                    delay,
-                    username,
-                    jitter
-                );
             }catch(err){
                 console.log("change failed:",err.message);
                 let new_user =document.getElementById('username_' + uid).value;
@@ -2889,7 +2880,6 @@ class index{
                 }
                 try{
                     let client = await webSocketClient.send(
-                        
                         "confirm",
                         {
                             uid:uid,
