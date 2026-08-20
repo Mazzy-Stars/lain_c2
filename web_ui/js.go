@@ -1557,7 +1557,7 @@ class index{
                                     index:String(index)
                                 }
                             );
-                            if(res.code===200){
+                            if(res !== false){
                                 if (Array.isArray(fileQueues[uid])) {
                                     fileQueues[uid].splice(index, 1);
                                 }
@@ -2475,7 +2475,7 @@ class index{
                                             1
                                         );
                                     }
-                                    await webSocketClient.send(
+                                    let req = await webSocketClient.send(
                                         
                                         "delMsgMap",
                                         {
@@ -2483,8 +2483,12 @@ class index{
                                             index:String(realIndex)
                                         }
                                     );
-                                    div.remove();
-                                    customLog("Result deleted");
+                                    if(req !== false){
+                                        customLog("Result deleted");
+                                    }else{
+                                        customLog("Delete failed");
+                                    }
+                                        div.remove();
                                 }
                             });
                             msgContainer.appendChild(div);
@@ -2801,17 +2805,19 @@ class index{
                         return;
                     }
                     try{
-                        await webSocketClient.send(
-                            
-                            "delMsgGet",
-                            {
-                                uid: uid,
-                                index: String(idx)
-                            }
-                        );
-                        msgDiv.remove();
-                        refreshMessageIndexes();
-                        customLog("Message deleted");
+                        let rqe = await webSocketClient.send(
+                                
+                                "delMsgGet",
+                                {
+                                    uid: uid,
+                                    index: String(idx)
+                                }
+                            );
+                        if (rqe !== false) {
+                            msgDiv.remove();
+                            refreshMessageIndexes();
+                            customLog("Message deleted");
+                        }
                     }catch(err){
                         console.error("delete msg error:",err);
                     }
@@ -3256,9 +3262,9 @@ class lain_net{
                     target: target
                 }
             );
-            console.log("delete shell innet:",result);
+            customLog("delete shell innet:",result);
         } catch(err){
-            console.error("del shell innet error:",err);
+            customLog("del shell innet error:",err);
         }
     }
     getshellip(shell_ip_data = null, uid = null){
