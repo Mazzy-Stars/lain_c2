@@ -100,7 +100,7 @@ func Http_server(handler Handler, ServerManager Putserver, writeLog WLog,
     mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
         if protocol == "quic" {
             w.Header().Set("Alt-Svc", `h3=":443"`)
-        }else {
+        }else if protocol == "http"{
             w.Header().Set("Connection", "keep-alive")
         }
         
