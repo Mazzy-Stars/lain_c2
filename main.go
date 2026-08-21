@@ -1409,6 +1409,32 @@ func User_index(error_str string) http.HandlerFunc {
 
 						"message": "message deleted",
 					})
+				case "getMsg":
+					uid, ok := body["uid"].(string)
+					if !ok || uid == "" {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code": 400,
+							"path": "getMsg",
+							"message": "invalid uid",
+						})
+						continue
+					}
+					msgList := GetMsgList(uid)
+					if len(msgList) == 0 {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code": 404,
+							"path": "getMsg",
+							"message": "no messages found",
+						})
+						continue
+					}
+					clientWs.WriteJSON(map[string]interface{}{
+						"code": 200,
+						"path": "getMsg",
+						"message": "success",
+						"uid": uid,
+						"data":    msgList,
+					})
 				case "getMsgMap":
 					uid, ok := body["uid"].(string)
 					if !ok || uid == "" {
