@@ -98,12 +98,6 @@ func Http_server(handler Handler, ServerManager Putserver, writeLog WLog,
     cfg.RespHead.Store(resphead)
     mux := http.NewServeMux()
     mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
-        if protocol == "quic" {
-            w.Header().Set("Alt-Svc", `h3=":443"`)
-        }else if protocol == "http"{
-            w.Header().Set("Connection", "keep-alive")
-        }
-        
         // 每次请求都从 atomic 读最新值
         currentRespHead := cfg.RespHead.Load().(string)
         
