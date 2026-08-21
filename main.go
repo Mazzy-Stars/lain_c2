@@ -543,7 +543,7 @@ type UploadTask struct {
 }
 
 // 有权限交互,必须先登录
-func User_index(error_str string) http.HandlerFunc {
+func User_index() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
 		var uploadTask *UploadTask
@@ -5278,7 +5278,7 @@ func main() {
 	})
 
 	// --- 有权限交互 ---
-	http.Handle("/"+web_route, withCORS(User_index(error_str)))
+	http.Handle("/"+web_route, withCORS(User_index()))
 
 	// --- 调用 JS ---
 	http.HandleFunc("/"+web_js, func(w http.ResponseWriter, r *http.Request) {
