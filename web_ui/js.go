@@ -2308,7 +2308,7 @@ class index{
             (async (uid) => {
                 const responsePromise = webSocketClient.waitForMessage(
                     (msg) => msg.path === "getMsg" && msg.code === 200,
-                    5000
+                    3000
                 );
                 const ok = await webSocketClient.send("getMsg", { uid });
                 if (!ok) {
@@ -2328,7 +2328,7 @@ class index{
             (async (uid) => {
                 const responsePromise = webSocketClient.waitForMessage(
                     (msg) => msg.path === "getMsgMap" && msg.code === 200,
-                    5000
+                    3000
                 );
                 const ok = await webSocketClient.send("getMsgMap", { uid });
                 if (!ok) {
@@ -4119,7 +4119,7 @@ class lain_server {
                             return msg.path === "changeResponseHead" &&
                                 String(msg.port || "") === String(port);
                         },
-                        15000
+                        1000
                     );
                     const sent = await webSocketClient.send(
                         "changeResponseHead",
