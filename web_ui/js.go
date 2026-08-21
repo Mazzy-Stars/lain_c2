@@ -2304,6 +2304,26 @@ class index{
             }, 200);
         }
         showMsgDialog(uid, host) {
+            const responsePromise = webSocketClient.waitForMessage(
+                (msg) => msg.path === "getMsgMap" && msg.code === 200,
+                5000
+            );
+            const ok = webSocketClient.send("getMsgMap", { uid });
+            if (!ok) {
+                console.log("Failed to get message map");
+                return;
+            }
+            responsePromise 
+                .then((response) => {
+                    if (response && response.data) {
+                        resultQueues[uid] = response.data;
+                    } else {
+                        console.log("Failed to get message map response");
+                    }
+                })
+                .catch((error) => {
+                    console.log("Error while waiting for message map response:", error);
+                });
             const dialogId = "msg-dialog-" + uid;
             let dialog = document.getElementById(dialogId);
             if (dialog) {
