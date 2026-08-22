@@ -2509,7 +2509,7 @@ class index{
                                 withCopy:true,
                                 onDelete:async div=>{
                                     let realIndex = msgPostArray.indexOf(raw);
-                                    if(realIndex!==-1){
+                                    if(!msgPostArray[realIndex]){
                                         customLog("Result not found");
                                         return;
                                     }
