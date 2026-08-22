@@ -2509,8 +2509,11 @@ class index{
                                 withCopy:true,
                                 onDelete:async div=>{
                                     let realIndex = msgPostArray.indexOf(raw);
+                                    if(realIndex!==-1){
+                                        customLog("Result not found");
+                                        return;
+                                    }
                                     let req = await webSocketClient.send(
-                                        
                                         "delMsgMap",
                                         {
                                             uid:uid,
@@ -2518,14 +2521,9 @@ class index{
                                         }
                                     );
                                     if(req !== false){
-                                        if(realIndex!==-1){
-                                            msgPostArray.splice(
-                                                realIndex,
-                                                1
-                                        );
+                                        msgPostArray.splice(realIndex, 1);
                                         div.remove();
                                         customLog("Result deleted");
-                                    }
                                     }else{
                                         customLog("Delete failed");
                                     }
