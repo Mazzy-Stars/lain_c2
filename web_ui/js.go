@@ -2508,14 +2508,7 @@ class index{
                                 expandable:true,
                                 withCopy:true,
                                 onDelete:async div=>{
-                                    let realIndex =
-                                        msgPostArray.indexOf(raw);
-                                    if(realIndex!==-1){
-                                        msgPostArray.splice(
-                                            realIndex,
-                                            1
-                                        );
-                                    }
+                                    let realIndex = msgPostArray.indexOf(raw);
                                     let req = await webSocketClient.send(
                                         
                                         "delMsgMap",
@@ -2525,11 +2518,17 @@ class index{
                                         }
                                     );
                                     if(req !== false){
+                                        if(realIndex!==-1){
+                                            msgPostArray.splice(
+                                                realIndex,
+                                                1
+                                        );
+                                        div.remove();
                                         customLog("Result deleted");
+                                    }
                                     }else{
                                         customLog("Delete failed");
                                     }
-                                        div.remove();
                                 }
                             });
                             msgContainer.appendChild(div);
