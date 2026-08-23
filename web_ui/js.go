@@ -2646,10 +2646,8 @@ class index{
                 }
                 loadMessages();
 				stopLoadMessages();
-                setInterval(
-                    loadMessages,
-                    10000
-                );
+                dialog._msgInterval = setInterval(loadMessages, 10000);
+                
 				dialog.querySelector("#msg-close-btn").onclick = function () {
 				    stopLoadMessages();
 				    dialog.remove();
