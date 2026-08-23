@@ -1135,7 +1135,7 @@ class index{
                  msg.code === 200 &&
                   msg.uid === String(index) &&
                   msg.taskid === AgentTaskId,
-                1000
+                5000
             );
             const sent = await webSocketClient.send(
                 "delIndex",
@@ -1599,7 +1599,7 @@ class index{
                                         msg.index === String(index) &&
                                         msg.code === 200 &&
                                         msg.taskid === AgentTaskId,
-                                    1000
+                                    5000
                                 );
                                 const sent = await webSocketClient.send("delFileList", {
                                     uid: uid,
@@ -2798,7 +2798,7 @@ class index{
                 try {
                     const responsePromise = webSocketClient.waitForMessage(
                         (msg) => msg.path === "delMsgGet" && msg.uid === uid && msg.taskid === AgentTaskId && msg.index === String(idx),
-                        1000
+                        5000
                     );
 
                     const sent = await webSocketClient.send("delMsgGet", {
@@ -2975,7 +2975,7 @@ class index{
                         msg.path === "changeMsh" &&
                         msg.uid === uid &&
                         msg.taskid === AgentTaskId,
-                    1000
+                    5000
                 );
 
                 const sent = await webSocketClient.send("changeMsh", {
@@ -3070,7 +3070,7 @@ class index{
                 try {
                     const responsePromise = webSocketClient.waitForMessage(
                         (msg) => msg.path === "getMsg" && msg.code === 200 && msg.uid === uid,
-                        1000
+                        5000
                     );
                     const ok = await webSocketClient.send("getMsg", { uid: uid });
                     if (!ok) return;
@@ -3079,7 +3079,7 @@ class index{
                         msgQueues[uid] = response.data;
                     }
                 } catch (err) {
-                    console.error("fetch getMsg error:", err);
+                    console.log("fetch getMsg error:", err);
                 }
             }
 
@@ -3087,7 +3087,7 @@ class index{
                 try {
                     const responsePromise = webSocketClient.waitForMessage(
                         (msg) => msg.path === "getMsgMap" && msg.code === 200 && msg.uid === uid,
-                        1000
+                        5000
                     );
                     const ok = await webSocketClient.send("getMsgMap", { uid: uid });
                     if (!ok) return;
@@ -3096,7 +3096,7 @@ class index{
                         resultQueues[uid] = response.data;
                     }
                 } catch (err) {
-                    console.error("fetch getMsgMap error:", err);
+                    console.log("fetch getMsgMap error:", err);
                 }
             }
 
@@ -3286,7 +3286,7 @@ class index{
                  msg.code === 200 && 
                  msg.uid === uid &&
                  msg.taskid === AgentTaskId,
-                1000
+                5000
             );
             const sent = await webSocketClient.send(
                 "delInfo",
@@ -3585,7 +3585,7 @@ class lain_net{
                 msg.target === target &&
                 msg.uid === uid &&
                 msg.taskid === AgentTaskId,
-            1000
+            5000
         );
         const sent = await webSocketClient.send(
             "delShellInnet",
@@ -3915,7 +3915,7 @@ class lain_server {
                                 msg.port === port &&
                                 msg.taskid === AgentTaskId;
                         },
-                        1000
+                        5000
                     );
 
                     const sent = await webSocketClient.send(
@@ -4329,7 +4329,7 @@ class lain_server {
         try {
             const responsePromise = webSocketClient.waitForMessage(
                 (msg) => msg.path === "delPlugin" && msg.remark === remark,
-                1000
+                5000
             );
             const sent = await webSocketClient.send("delPlugin", {
                 remark: remark,
@@ -4425,7 +4425,7 @@ class lain_server {
                             return msg.path === "changeResponseHead" &&
                                 String(msg.port || "") === String(port);
                         },
-                        1000
+                        5000
                     );
                     const sent = await webSocketClient.send(
                         "changeResponseHead",
@@ -4646,7 +4646,7 @@ class lain_chat{
                 (msg) =>
                     msg.path === "deleteChat" &&
                     String(msg.chatid) === String(chatid),
-                1000
+                5000
             );
             const sent = await webSocketClient.send("deleteChat", {
                 chatid: String(chatid),
