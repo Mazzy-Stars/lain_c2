@@ -2384,90 +2384,78 @@ class index{
             }, 200);
         }
         showMsgDialog(uid, host) {
-
-            (async (uid) => {
-                const responsePromise = webSocketClient.waitForMessage(
-                    (msg) => msg.path === "getMsg" && msg.code === 200,
-                    1000
-                );
-                const ok = await webSocketClient.send("getMsg", { uid });
-                if (!ok) {
-                    console.log("Failed to get message map");
-                    return;
-                }
-                const response = await responsePromise;
-                if (response?.data) {
-                    msgQueues[uid] = response.data;
-                } else {
-                    console.log("Failed to get message map response");
-                }
-            })(uid).catch((error) => {
-                console.log("Error while waiting for message map response:", error);
-            });
-
-            (async (uid) => {
-                const responsePromise = webSocketClient.waitForMessage(
-                    (msg) => msg.path === "getMsgMap" && msg.code === 200,
-                    1000
-                );
-                const ok = await webSocketClient.send("getMsgMap", { uid });
-                if (!ok) {
-                    console.log("Failed to get message map");
-                    return;
-                }
-                const response = await responsePromise;
-                if (response?.data) {
-                    resultQueues[uid] = response.data;
-                } else {
-                    console.log("Failed to get message map response");
-                }
-            })(uid).catch((error) => {
-                console.log("Error while waiting for message map response:", error);
-            });
-                        
             const dialogId = "msg-dialog-" + uid;
             let dialog = document.getElementById(dialogId);
+
             if (dialog) {
                 dialog.style.display = "block";
                 dialog.style.zIndex = String((window.dialogZIndexCounter = (window.dialogZIndexCounter || 9999) + 1));
                 return;
             }
-            if (!dialog) {
-                dialog = document.createElement("div");
-                dialog.id = dialogId;
-                dialog.dataset.uid = uid;
-                dialog.style.position = "fixed";
-                dialog.style.top = "10%";
-                dialog.style.left = "50%";
-                dialog.style.transform = "translateX(-50%)";
-                dialog.style.background = "#fff";
-                dialog.style.zIndex = String((window.dialogZIndexCounter = (window.dialogZIndexCounter || 9999) + 1));
-                dialog.style.maxWidth = "700px";
-                dialog.style.width = "90vw";
-                dialog.style.maxHeight = "90vh";
-                dialog.style.overflow = "auto";
-                dialog.style.border = "1px solid #ccc";
-                dialog.style.borderRadius = "8px";
-                dialog.style.boxShadow = "0 2px 8px rgba(0,0,0,0.2)";
-                dialog.style.padding = "16px";
-                dialog.style.userSelect = "none";
-                dialog.style.touchAction = "none";
-                document.body.appendChild(dialog);
-            }
 
-            // 鎷栧姩鏉″拰鍐呭
+            dialog = document.createElement("div");
+            dialog.id = dialogId;
+            dialog.dataset.uid = uid;
+            dialog.style.position = "fixed";
+            dialog.style.top = "10%";
+            dialog.style.left = "50%";
+            dialog.style.transform = "translateX(-50%)";
+            dialog.style.background = "#fff";
+            dialog.style.zIndex = String((window.dialogZIndexCounter = (window.dialogZIndexCounter || 9999) + 1));
+            dialog.style.maxWidth = "700px";
+            dialog.style.width = "90vw";
+            dialog.style.maxHeight = "90vh";
+            dialog.style.overflow = "auto";
+            dialog.style.border = "1px solid #ccc";
+            dialog.style.borderRadius = "8px";
+            dialog.style.boxShadow = "0 2px 8px rgba(0,0,0,0.2)";
+            dialog.style.padding = "16px";
+            dialog.style.userSelect = "none";
+            dialog.style.touchAction = "none";
+            document.body.appendChild(dialog);
+
             dialog.innerHTML =
                 '<div id="msg-drag-bar" style="position:absolute;top:0;left:0;width:100%;height:32px;cursor:move;background:rgba(0,0,0,0.05);border-top-left-radius:8px;border-top-right-radius:8px;z-index:10001;"></div>' +
                 '<button id="msg-close-btn" class="dialog-close-btn" type="button">x</button>' +
-                '<div style="display: flex; align-items: center; margin-top:32px;">' +
+                '<div style="display:flex;align-items:center;margin-top:32px;">' +
                     '<h2>Msg list</h2>' +
-                    "<p id='hostname' style='margin-left: 25px;'>Host:" + host + "</p>" +
+                    "<p id='hostname' style='margin-left:25px;'>Host:" + host + "</p>" +
                 '</div>' +
                 '<div id="msg-container">loading...</div>';
 
-            // 鎷栧姩閫昏緫锛堝吋瀹筆C鍜岀Щ鍔ㄧ锛屼笖绐楀彛涓嶈兘绉诲嚭椤甸潰锛�
+            const style = document.getElementById("msg-dialog-style") || document.createElement("style");
+            style.id = "msg-dialog-style";
+            style.textContent =
+                ".msg-item {background:white;border:1px solid #ccc;padding:10px;margin-bottom:8px;position:relative;}" +
+                ".btn-group {position:absolute;right:10px;top:10px;}" +
+                ".move-btn, .del-btn {margin-left:5px;padding:4px 6px;font-size:14px;}" +
+                ".msg-item span {user-select:none;}" +
+                ".msg-item span[title] {color:blue;text-decoration:underline dotted;}" +
+                ".msg-item-dragging {opacity:0.92;box-shadow:0 14px 32px rgba(0,0,0,0.14);z-index:10020;}" +
+                ".msg-drag-handle {margin-right:6px;padding:2px 6px;border:1px solid #d7dde5;background:#f7f9fc;border-radius:8px;cursor:grab;touch-action:none;color:#6b7b8b;}" +
+                ".msg-drag-handle:active {cursor:grabbing;}" +
+                ".msg-drop-placeholder {border:1px dashed #9eb3c7;border-radius:10px;margin-bottom:8px;background:rgba(228,236,245,0.45);}";
+            if (!style.parentNode) document.head.appendChild(style);
+
             const dragBar = dialog.querySelector("#msg-drag-bar");
-            let isDragging = false, offsetX = 0, offsetY = 0;
+            const msgContainer = dialog.querySelector("#msg-container");
+            let msgPostArray = [];
+            let activeMessageDrag = null;
+            dialog._msgClosed = false;
+
+            function stopLoadMessages() {
+                if (dialog._msgClosed) return;
+                dialog._msgClosed = true;
+                if (dialog._msgInterval) {
+                    clearInterval(dialog._msgInterval);
+                    dialog._msgInterval = null;
+                }
+            }
+
+            dialog.querySelector("#msg-close-btn").onclick = function () {
+                stopLoadMessages();
+                dialog.remove();
+            };
 
             function clamp(val, min, max) {
                 return Math.max(min, Math.min(val, max));
@@ -2477,22 +2465,26 @@ class index{
                 return dialog.getBoundingClientRect();
             }
 
+            let isDragging = false, offsetX = 0, offsetY = 0;
+
             function onMove(e) {
                 if (!isDragging) return;
-                let clientX = e.touches ? e.touches[0].clientX : e.clientX;
-                let clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
                 let newLeft = clientX - offsetX;
                 let newTop = clientY - offsetY;
-                // 闄愬埗绐楀彛涓嶇Щ鍑洪〉闈�
+
                 const rect = getDialogRect();
                 const winW = window.innerWidth, winH = window.innerHeight;
                 const maxLeft = winW - rect.width;
                 const maxTop = winH - rect.height;
+
                 newLeft = clamp(newLeft, 0, maxLeft > 0 ? maxLeft : 0);
                 newTop = clamp(newTop, 0, maxTop > 0 ? maxTop : 0);
+
                 dialog.style.left = newLeft + "px";
                 dialog.style.top = newTop + "px";
-                dialog.style.transform = ""; // 鎷栧姩鍚庡彇娑堝眳涓�
+                dialog.style.transform = "";
             }
 
             function stopMove() {
@@ -2504,7 +2496,7 @@ class index{
                 document.removeEventListener("touchend", stopMove);
             }
 
-            dragBar.addEventListener("mousedown", function(e) {
+            dragBar.addEventListener("mousedown", function (e) {
                 isDragging = true;
                 const rect = getDialogRect();
                 offsetX = e.clientX - rect.left;
@@ -2513,546 +2505,487 @@ class index{
                 document.addEventListener("mousemove", onMove);
                 document.addEventListener("mouseup", stopMove);
             });
-            dragBar.addEventListener("touchstart", function(e) {
+
+            dragBar.addEventListener("touchstart", function (e) {
                 isDragging = true;
                 const rect = getDialogRect();
                 offsetX = e.touches[0].clientX - rect.left;
                 offsetY = e.touches[0].clientY - rect.top;
                 document.body.style.userSelect = "none";
-                document.addEventListener("touchmove", onMove, {passive: false});
+                document.addEventListener("touchmove", onMove, { passive: false });
                 document.addEventListener("touchend", stopMove);
             });
 
-            // 鍏抽棴鎸夐挳
-            dialog.querySelector("#msg-close-btn").onclick = function () {
-                dialog.remove();
-            };
+            function refreshResultIndexes(container) {
+                Array.from(container.querySelectorAll('[data-result-item="true"]')).forEach((el, idx) => {
+                    el.dataset.resultIndex = String(idx);
+                });
+            }
 
-            // 鏍峰紡锛堝唴瀹瑰悗 append锛岄伩鍏嶈 innerHTML 瑕嗙洊锛�
-            const style = document.createElement("style");
-            style.textContent =
-                ".msg-item {background: white; border: 1px solid #ccc; padding: 10px; margin-bottom: 8px; position: relative;}" +
-                ".btn-group {position: absolute; right: 10px; top: 10px;}" +
-                ".move-btn, .del-btn {margin-left: 5px; padding: 4px 6px; font-size: 14px;}" +
-                ".msg-item span {user-select: none;}" +
-                ".msg-item span[title] {color: blue; text-decoration: underline dotted;}" +
-                ".msg-item-dragging {opacity: 0.92; box-shadow: 0 14px 32px rgba(0,0,0,0.14); z-index: 10020;}" +
-                ".msg-drag-handle {margin-right: 6px; padding: 2px 6px; border: 1px solid #d7dde5; background: #f7f9fc; border-radius: 8px; cursor: grab; touch-action: none; color: #6b7b8b;}" +
-                ".msg-drag-handle:active {cursor: grabbing;}" +
-                ".msg-drop-placeholder {border: 1px dashed #9eb3c7; border-radius: 10px; margin-bottom: 8px; background: rgba(228,236,245,0.45);}";
-            dialog.appendChild(style);
-
-            // 閫昏緫
-            setTimeout(function() {
-                
-                const msgContainer = dialog.querySelector("#msg-container");
-                let msgPostArray = [];
-                let activeMessageDrag = null;
-
-				const stopLoadMessages = () => {
-				    if (dialog._msgInterval) {
-				        clearInterval(dialog._msgInterval);
-				        dialog._msgInterval = null;
-				    }
-				};
-
-                async function loadMessages(){
-                    try{
-                        msgContainer.innerHTML="";
-                        const requestList = document.createElement("div");
-                        requestList.id = "msg-request-list";
-                        msgContainer.appendChild(requestList);
-                        const listData = Array.isArray(msgQueues[uid]) ?
-                            msgQueues[uid] :
-                            [];
-                        listData.forEach((raw,i)=>{
-                            const text =
-                                renderMsgText(raw);
-                            requestList.appendChild(
-                                createMessageItem({
-                                    text:text,
-                                    index:i,
-                                    rawMessage:raw,
-                                    sourceIndex:i,
-                                    withMove:true,
-                                    onDelete:div=>deleteMsg(div)
-                                })
-                            );
-                        });
-                        const postData = Array.isArray(resultQueues[uid]) ?
-                            resultQueues[uid] :
-                            [];
-                        if(postData.length===0){
-                            return;
-                        }
-                        msgPostArray = postData.slice();
-                        let h2=document.createElement("h2");
-                        h2.textContent="result List";
-                        msgContainer.appendChild(h2);
-                        postData.forEach((raw, i) => {
-                            const div = createMessageItem({
-                                text: raw,
-                                expandable: true,
-                                withCopy: true,
-                                onDelete: async div => {
-                                    const realIndex = Number(div.dataset.resultIndex || "-1");
-                                    if (realIndex < 0 || realIndex >= msgPostArray.length) {
-                                        customLog("Result not found");
-                                        return;
-                                    }
-                                    try {
-                                        const responsePromise = webSocketClient.waitForMessage(
-                                            (msg) =>
-                                                msg.path === "delMsgMap" &&
-                                                msg.uid === uid &&
-                                                msg.index === String(realIndex) &&
-                                                msg.code === 200 &&
-                                                msg.taskid === AgentTaskId,
-                                            1000);
-                                        const sent = await webSocketClient.send("delMsgMap", {
-                                            uid: uid,
-                                            index: String(realIndex),
-                                            taskid: AgentTaskId
-                                        });
-                                        if (!sent) {
-                                            customLog("Delete failed");
-                                            return;
-                                        }
-                                        const data = await responsePromise;
-                                        if (data && data.code === 200 && data.uid === uid && data.index === String(realIndex) && data.taskid === AgentTaskId) {
-                                            msgPostArray.splice(realIndex, 1);
-                                            div.remove();
-                                            refreshResultIndexes(msgContainer);
-                                            customLog("Result deleted");
-                                        } else {
-                                            customLog(data?.message || "Delete failed");
-                                        }
-                                    } catch (err) {
-                                        console.error("delMsgMap error:", err);
-                                        customLog("Delete failed");
-                                    }
-                                }
-                            });
-                            div.dataset.resultItem = "true";
-                            div.dataset.resultIndex = String(i);
-                            msgContainer.appendChild(div);
-                        });
-                    }catch(err){
-                        console.error(
-                            "load messages error:",
-                            err
-                        );
-                    }
+            function renderMsgText(rawMsg) {
+                let taskId = "";
+                let msgContent = rawMsg;
+                const colonIndex = rawMsg.indexOf(":");
+                if (colonIndex >= 0) {
+                    taskId = rawMsg.substring(0, colonIndex).trim();
+                    msgContent = rawMsg.substring(colonIndex + 1).trim();
                 }
-                loadMessages();
-				stopLoadMessages();
-                dialog._msgInterval = setInterval(loadMessages, 10000);
-                
-				dialog.querySelector("#msg-close-btn").onclick = function () {
-				    stopLoadMessages();
-				    dialog.remove();
-				};
-                function refreshResultIndexes(container) {
-                    Array.from(container.querySelectorAll('[data-result-item="true"]')).forEach((el, idx) => {
-                        el.dataset.resultIndex = String(idx);
+
+                const parts = msgContent.split("*//*");
+                let result = msgContent;
+
+                switch (parts[0]) {
+                    case "GET_U_FRIENDS":
+                        result = "scan: " + parts[1] + "   range: " + parts[2] + "   delay: " + parts[3];
+                        break;
+                    case "GET_DELAY":
+                        result = "change delay: " + parts[1] + " seconds";
+                        break;
+                    case "GET_U_FILE":
+                        result = "File: " + parts[1] + "   Size: " + parts[2] + " bytes";
+                        break;
+                    case "LOAD_U_FILE":
+                        result = "File: " + parts[1];
+                        break;
+                    case "LOOK_UP_FILE":
+                        result = "lookDir: " + parts[1];
+                        break;
+                    case "GET_PORTS":
+                        result = "sniff: " + parts[1] + "   range: " + parts[2] + "   delay: " + parts[3];
+                        break;
+                    case "SWITCH_VERSION":
+                        result = "change shell: " + parts[1];
+                        break;
+                    case "CHANG_FILE_NAME":
+                        result = "change file name: " + parts[1] + " -> " + parts[2];
+                        break;
+                    case "CHANG_FILE_TIME":
+                        result = "change file time: " + parts[1] + " -> " + parts[2];
+                        break;
+                    case "GET_JITTER":
+                        result = "change jitter: " + parts[1];
+                        break;
+                }
+
+                return taskId ? result + "   taskid: " + taskId : result;
+            }
+
+            function createMessageItem({
+                text,
+                index = null,
+                rawMessage = "",
+                sourceIndex = null,
+                expandable = false,
+                onDelete = null,
+                withMove = false,
+                withCopy = false
+            }) {
+                const msgDiv = document.createElement("div");
+                msgDiv.className = "msg-item";
+
+                if (withMove) msgDiv.dataset.reorderable = "true";
+                if (rawMessage !== null && rawMessage !== undefined) msgDiv.dataset.rawMessage = rawMessage;
+                if (sourceIndex !== null && sourceIndex !== undefined) msgDiv.dataset.sourceIndex = String(sourceIndex);
+
+                msgDiv.style.display = "flex";
+                msgDiv.style.justifyContent = "space-between";
+                msgDiv.style.alignItems = "center";
+                msgDiv.style.gap = "8px";
+
+                const left = document.createElement("div");
+                left.style.display = "flex";
+                left.style.alignItems = "center";
+                left.style.gap = "8px";
+                left.style.flex = "1";
+
+                if (withMove) {
+                    const handle = document.createElement("button");
+                    handle.type = "button";
+                    handle.className = "msg-drag-handle";
+                    handle.textContent = "⋮⋮";
+                    handle.title = "Drag to reorder";
+                    handle.addEventListener("pointerdown", function (event) {
+                        startMessageDrag(msgDiv, handle, event);
                     });
-                }
-                function renderMsgText(rawMsg) {
-				    let taskId = "";
-				    let msgContent = rawMsg;
-				    // 鎻愬彇 taskid
-				    const colonIndex = rawMsg.indexOf(":");
-				    if (colonIndex >= 0) {
-				        taskId = rawMsg.substring(0, colonIndex).trim();
-				        msgContent = rawMsg.substring(colonIndex + 1).trim();
-				    }
-				    const parts = msgContent.split("*//*");
-				    let result;
-				    switch (parts[0]) {
-				        case "GET_U_FRIENDS":
-				            result = "scan: " + parts[1] + 
-				                     "   range: " + parts[2] + 
-				                     "   delay: " + parts[3];
-				            break;
-				        case "GET_DELAY":
-				            result = "change delay: " + parts[1] + " seconds";
-				            break;
-				        case "GET_U_FILE":
-				            result = "File: " + parts[1] + 
-				                     "   Size: " + parts[2] + " bytes";
-				            break;
-				        case "LOAD_U_FILE":
-				            result = "File: " + parts[1];
-				            break;
-				
-				        case "LOOK_UP_FILE":
-				            result = "lookDir: " + parts[1];
-				            break;
-				        case "GET_PORTS":
-				            result = "sniff: " + parts[1] + 
-				                     "   range: " + parts[2] + 
-				                     "   delay: " + parts[3];
-				            break;
-				        case "SWITCH_VERSION":
-				            result = "change shell: " + parts[1];
-				            break;
-				        case "CHANG_FILE_NAME":
-				            result = "change file name: " + parts[1] + " -> " + parts[2];
-				            break;
-				        case "CHANG_FILE_TIME":
-				            result = "change file time: " + parts[1] + " -> " + parts[2];
-				            break;
-				        case "GET_JITTER":
-				            result = "change jitter: " + parts[1];
-				            break;
-				        default:
-				            result = msgContent;
-				    }
-				
-				    // 缁熶竴鍦ㄨ繖閲屾嫾鍥� taskid
-				    return taskId ? result + "   taskid: " + taskId : result;
-				}
-                function createMessageItem({
-                    text,
-                    index = null,
-                    rawMessage = "",
-                    sourceIndex = null,
-                    expandable = false,
-                    onDelete = null,
-                    withMove = false,
-                    withCopy = false
-                }) {
-                    const msgDiv = document.createElement("div");
-                    msgDiv.className = "msg-item";
-                    if (withMove) {
-                        msgDiv.dataset.reorderable = "true";
-                    }
-                    if (rawMessage !== null && rawMessage !== undefined) {
-                        msgDiv.dataset.rawMessage = rawMessage;
-                    }
-                    if (sourceIndex !== null && sourceIndex !== undefined) {
-                        msgDiv.dataset.sourceIndex = String(sourceIndex);
-                    }
-                    msgDiv.style.display = "flex";
-                    msgDiv.style.justifyContent = "space-between";
-                    msgDiv.style.alignItems = "center";
-                    msgDiv.style.gap = "8px";
-                
-                    const left = document.createElement("div");
-                    left.style.display = "flex";
-                    left.style.alignItems = "center";
-                    left.style.gap = "8px";
-                    left.style.flex = "1";
-                
-                    if (withMove) {
-                        const handle = document.createElement("button");
-                        handle.type = "button";
-                        handle.className = "msg-drag-handle";
-                        handle.textContent = "⋮⋮";
-                        handle.title = "Drag to reorder";
-                        handle.addEventListener("pointerdown", function(event) {
-                            startMessageDrag(msgDiv, handle, event);
-                        });
-                        left.appendChild(handle);
-                    }
-                
-                    if (index !== null) {
-                        const idx = document.createElement("span");
-                        idx.className = "msg-index";
-                        idx.textContent = "[" + String(index).padStart(2, "0") + "] ";
-                        left.appendChild(idx);
-                    }
-                
-                    const span = document.createElement("span");
-                    let expanded = false;
-                
-                    if (expandable && text.length > 10) {
-                        const shortText = text.slice(0, 10) + "鈥�";
-                        span.textContent = shortText;
-                        span.style.cursor = "pointer";
-                        span.onclick = () => {
-                            expanded = !expanded;
-                            span.textContent = expanded ? text : shortText;
-                        };
-                    } else {
-                        span.textContent = text;
-                    }
-                
-                    left.appendChild(span);
-                    msgDiv.appendChild(left);
-                
-                    const btnGroup = document.createElement("div");
-                    btnGroup.style.display = "flex";
-                    btnGroup.style.gap = "4px";
-                
-                    if (withCopy) {
-                        const copy = document.createElement("button");
-                        copy.textContent = "📋";
-                        copy.onclick = () => {
-                            navigator.clipboard.writeText(text).then(() => {
-                                copy.textContent = "✔️";
-                                setTimeout(() => copy.textContent = "📋", 1000);
-                            });
-                        };
-                        btnGroup.appendChild(copy);
-                    }
-                
-                    if (onDelete) {
-                        const del = document.createElement("button");
-                        del.textContent = "🗑️";
-                        del.onclick = () => onDelete(msgDiv);
-                        btnGroup.appendChild(del);
-                    }
-                
-                    msgDiv.appendChild(btnGroup);
-                    return msgDiv;
+                    left.appendChild(handle);
                 }
 
-                function getRequestList() {
-                    return dialog.querySelector("#msg-request-list");
+                if (index !== null) {
+                    const idx = document.createElement("span");
+                    idx.className = "msg-index";
+                    idx.textContent = "[" + String(index).padStart(2, "0") + "] ";
+                    left.appendChild(idx);
                 }
 
-                function getReorderItems() {
-                    const requestList = getRequestList();
-                    if (!requestList) {
-                        return [];
-                    }
-                    return Array.from(
-                        requestList.querySelectorAll('.msg-item[data-reorderable="true"]')
-                    );
-                }
+                const span = document.createElement("span");
+                let expanded = false;
 
-                function refreshMessageIndexes() {
-                    getReorderItems().forEach(function(item, index) {
-                        const idx = item.querySelector(".msg-index");
-                        if (idx) {
-                            idx.textContent = "[" + String(index).padStart(2, "0") + "] ";
-                        }
-                        item.dataset.sourceIndex = String(index);
-                    });
-                    msgQueues[uid] = getReorderItems().map(function(item) {
-                        return item.dataset.rawMessage || "";
-                    });
-                }
-
-                function startMessageDrag(msgDiv, handle, event) {
-                    const requestList = getRequestList();
-                    const items = getReorderItems();
-                    if (!requestList || items.length <= 1 || activeMessageDrag) {
-                        return;
-                    }
-                    event.preventDefault();
-                    event.stopPropagation();
-
-                    const rect = msgDiv.getBoundingClientRect();
-                    const placeholder = document.createElement("div");
-                    placeholder.className = "msg-drop-placeholder";
-                    placeholder.style.height = rect.height + "px";
-
-                    const startIndex = items.indexOf(msgDiv);
-                    // 记录原始位置，用于失败时还原
-                    const originalNextSibling = msgDiv.nextElementSibling;
-                    requestList.insertBefore(placeholder, msgDiv.nextSibling);
-                    document.body.appendChild(msgDiv);
-                    msgDiv.classList.add("msg-item-dragging");
-                    msgDiv.style.position = "fixed";
-                    msgDiv.style.left = rect.left + "px";
-                    msgDiv.style.top = rect.top + "px";
-                    msgDiv.style.width = rect.width + "px";
-                    msgDiv.style.pointerEvents = "none";
-
-                    activeMessageDrag = {
-                        item: msgDiv,
-                        handle: handle,
-                        placeholder: placeholder,
-                        requestList: requestList,
-                        startIndex: startIndex,
-                        originalNextSibling: originalNextSibling,
-                        offsetX: event.clientX - rect.left,
-                        offsetY: event.clientY - rect.top,
+                if (expandable && text.length > 10) {
+                    const shortText = text.slice(0, 10) + "…";
+                    span.textContent = shortText;
+                    span.style.cursor = "pointer";
+                    span.onclick = () => {
+                        expanded = !expanded;
+                        span.textContent = expanded ? text : shortText;
                     };
-
-                    document.addEventListener("pointermove", onMessageDragMove);
-                    document.addEventListener("pointerup", stopMessageDrag);
-                    document.body.style.userSelect = "none";
+                } else {
+                    span.textContent = text;
                 }
 
-                function onMessageDragMove(event) {
-                    if (!activeMessageDrag) {
-                        return;
-                    }
-                    event.preventDefault();
-                    const drag = activeMessageDrag;
-                    drag.item.style.left = (event.clientX - drag.offsetX) + "px";
-                    drag.item.style.top = (event.clientY - drag.offsetY) + "px";
+                left.appendChild(span);
+                msgDiv.appendChild(left);
 
-                    const siblings = Array.from(
-                        drag.requestList.querySelectorAll('.msg-item[data-reorderable="true"]')
-                    );
-                    let inserted = false;
-                    for (const sibling of siblings) {
-                        const rect = sibling.getBoundingClientRect();
-                        if (event.clientY < rect.top + rect.height / 2) {
-                            drag.requestList.insertBefore(drag.placeholder, sibling);
-                            inserted = true;
-                            break;
-                        }
-                    }
-                    if (!inserted) {
-                        drag.requestList.appendChild(drag.placeholder);
-                    }
+                const btnGroup = document.createElement("div");
+                btnGroup.style.display = "flex";
+                btnGroup.style.gap = "4px";
+
+                if (withCopy) {
+                    const copy = document.createElement("button");
+                    copy.textContent = "📋";
+                    copy.onclick = () => {
+                        navigator.clipboard.writeText(text).then(() => {
+                            copy.textContent = "✔️";
+                            setTimeout(() => copy.textContent = "📋", 1000);
+                        });
+                    };
+                    btnGroup.appendChild(copy);
                 }
 
-                async function stopMessageDrag() {
-                    if (!activeMessageDrag) {
-                        return;
+                if (onDelete) {
+                    const del = document.createElement("button");
+                    del.textContent = "🗑️";
+                    del.onclick = () => onDelete(msgDiv);
+                    btnGroup.appendChild(del);
+                }
+
+                msgDiv.appendChild(btnGroup);
+                return msgDiv;
+            }
+
+            function getRequestList() {
+                return dialog.querySelector("#msg-request-list");
+            }
+
+            function getReorderItems() {
+                const requestList = getRequestList();
+                return requestList ? Array.from(requestList.querySelectorAll('.msg-item[data-reorderable="true"]')) : [];
+            }
+
+            function refreshMessageIndexes() {
+                getReorderItems().forEach(function (item, index) {
+                    const idx = item.querySelector(".msg-index");
+                    if (idx) idx.textContent = "[" + String(index).padStart(2, "0") + "] ";
+                    item.dataset.sourceIndex = String(index);
+                });
+                msgQueues[uid] = getReorderItems().map(function (item) {
+                    return item.dataset.rawMessage || "";
+                });
+            }
+
+            function startMessageDrag(msgDiv, handle, event) {
+                const requestList = getRequestList();
+                const items = getReorderItems();
+                if (!requestList || items.length <= 1 || activeMessageDrag) return;
+
+                event.preventDefault();
+                event.stopPropagation();
+
+                const rect = msgDiv.getBoundingClientRect();
+                const placeholder = document.createElement("div");
+                placeholder.className = "msg-drop-placeholder";
+                placeholder.style.height = rect.height + "px";
+
+                const startIndex = items.indexOf(msgDiv);
+                const originalNextSibling = msgDiv.nextElementSibling;
+
+                requestList.insertBefore(placeholder, msgDiv.nextSibling);
+                document.body.appendChild(msgDiv);
+                msgDiv.classList.add("msg-item-dragging");
+                msgDiv.style.position = "fixed";
+                msgDiv.style.left = rect.left + "px";
+                msgDiv.style.top = rect.top + "px";
+                msgDiv.style.width = rect.width + "px";
+                msgDiv.style.pointerEvents = "none";
+
+                activeMessageDrag = {
+                    item: msgDiv,
+                    handle: handle,
+                    placeholder: placeholder,
+                    requestList: requestList,
+                    startIndex: startIndex,
+                    originalNextSibling: originalNextSibling,
+                    offsetX: event.clientX - rect.left,
+                    offsetY: event.clientY - rect.top
+                };
+
+                document.addEventListener("pointermove", onMessageDragMove);
+                document.addEventListener("pointerup", stopMessageDrag);
+                document.body.style.userSelect = "none";
+            }
+
+            function onMessageDragMove(event) {
+                if (!activeMessageDrag) return;
+                event.preventDefault();
+
+                const drag = activeMessageDrag;
+                drag.item.style.left = (event.clientX - drag.offsetX) + "px";
+                drag.item.style.top = (event.clientY - drag.offsetY) + "px";
+
+                const siblings = Array.from(drag.requestList.querySelectorAll('.msg-item[data-reorderable="true"]'));
+                let inserted = false;
+                for (const sibling of siblings) {
+                    const rect = sibling.getBoundingClientRect();
+                    if (event.clientY < rect.top + rect.height / 2) {
+                        drag.requestList.insertBefore(drag.placeholder, sibling);
+                        inserted = true;
+                        break;
                     }
+                }
+                if (!inserted) drag.requestList.appendChild(drag.placeholder);
+            }
 
-                    const drag = activeMessageDrag;
-                    activeMessageDrag = null;
-                    document.removeEventListener("pointermove", onMessageDragMove);
-                    document.removeEventListener("pointerup", stopMessageDrag);
-                    document.body.style.userSelect = "";
+            async function stopMessageDrag() {
+                if (!activeMessageDrag) return;
 
-                    const requestChildren = Array.from(drag.requestList.children);
-                    const placeholderIndex = requestChildren.indexOf(drag.placeholder);
-                    const prevItem = drag.placeholder.previousElementSibling;
-                    const nextItem = drag.placeholder.nextElementSibling;
+                const drag = activeMessageDrag;
+                activeMessageDrag = null;
+                document.removeEventListener("pointermove", onMessageDragMove);
+                document.removeEventListener("pointerup", stopMessageDrag);
+                document.body.style.userSelect = "";
 
-                    // 先把拖拽样式清掉
-                    drag.item.classList.remove("msg-item-dragging");
-                    drag.item.style.position = "";
-                    drag.item.style.left = "";
-                    drag.item.style.top = "";
-                    drag.item.style.width = "";
-                    drag.item.style.pointerEvents = "";
+                const requestChildren = Array.from(drag.requestList.children);
+                const placeholderIndex = requestChildren.indexOf(drag.placeholder);
+                const prevItem = drag.placeholder.previousElementSibling;
+                const nextItem = drag.placeholder.nextElementSibling;
 
-                    try {
-                        if (placeholderIndex !== drag.startIndex) {
-                            let targetSourceIndex = -1;
-                            let mode = "";
+                drag.item.classList.remove("msg-item-dragging");
+                drag.item.style.position = "";
+                drag.item.style.left = "";
+                drag.item.style.top = "";
+                drag.item.style.width = "";
+                drag.item.style.pointerEvents = "";
 
-                            if (nextItem && nextItem.dataset.reorderable === "true") {
-                                targetSourceIndex = Number(nextItem.dataset.sourceIndex || "0");
-                                mode = "before";
-                            } else if (prevItem && prevItem.dataset.reorderable === "true") {
-                                targetSourceIndex = Number(prevItem.dataset.sourceIndex || "0");
-                                mode = "after";
-                            }
-
-                            // 先按占位符位置把前端 DOM 落位
-                            drag.requestList.insertBefore(drag.item, drag.placeholder);
-                            drag.placeholder.remove();
-
-                            if (targetSourceIndex !== -1) {
-                                await sendReorderByIndex(drag.startIndex, targetSourceIndex, mode);
-                            }
-
-                            refreshMessageIndexes();
-                        } else {
-                            // 没有实际换位置，恢复原位
-                            if (drag.originalNextSibling && drag.originalNextSibling.parentNode === drag.requestList) {
-                                drag.requestList.insertBefore(drag.item, drag.originalNextSibling);
-                            } else {
-                                drag.requestList.appendChild(drag.item);
-                            }
-                            drag.placeholder.remove();
-                            refreshMessageIndexes();
+                try {
+                    if (placeholderIndex !== drag.startIndex) {
+                        let targetSourceIndex = -1;
+                        let mode = "";
+                        if (nextItem && nextItem.dataset.reorderable === "true") {
+                            targetSourceIndex = Number(nextItem.dataset.sourceIndex || "0");
+                            mode = "before";
+                        } else if (prevItem && prevItem.dataset.reorderable === "true") {
+                            targetSourceIndex = Number(prevItem.dataset.sourceIndex || "0");
+                            mode = "after";
                         }
-                    } catch (err) {
-                        console.error("drag reorder failed:", err);
 
-                        // 失败后先尽量恢复原位
+                        drag.requestList.insertBefore(drag.item, drag.placeholder);
+                        drag.placeholder.remove();
+
+                        if (targetSourceIndex !== -1) {
+                            await sendReorderByIndex(drag.startIndex, targetSourceIndex, mode);
+                        }
+
+                        refreshMessageIndexes();
+                    } else {
                         if (drag.originalNextSibling && drag.originalNextSibling.parentNode === drag.requestList) {
                             drag.requestList.insertBefore(drag.item, drag.originalNextSibling);
                         } else {
                             drag.requestList.appendChild(drag.item);
                         }
-
-                        if (drag.placeholder.parentNode) {
-                            drag.placeholder.remove();
-                        }
-
+                        drag.placeholder.remove();
                         refreshMessageIndexes();
-                        loadMessages();
                     }
-                }
+                } catch (err) {
+                    console.error("drag reorder failed:", err);
 
-                // 鍒犻櫎
-                async function deleteMsg(msgDiv) {
-                    const requestList = getRequestList();
-                    const idx = requestList
-                        ? Array.from(requestList.children).indexOf(msgDiv)
-                        : -1;
-                    if (idx < 0) {
-                        return;
-                    }
-                    try {
-                        const responsePromise = webSocketClient.waitForMessage(
-                            (msg) => msg.path === "delMsgGet" && 
-                            msg.uid === uid &&
-                            msg.taskid === AgentTaskId,
-                            1000
-                        );
-                        const sent = await webSocketClient.send("delMsgGet", {
-                            uid: uid,
-                            index: String(idx),
-                            taskid: AgentTaskId
-                        });
-                        if (!sent) {
-                            throw new Error("failed to send delete request");
-                        }
-                        const data = await responsePromise;
-                        if (data && data.code === 200 && data.uid === uid && data.taskid === AgentTaskId) {
-                            msgDiv.remove();
-                            refreshMessageIndexes();
-                            customLog("Message deleted");
-                        } else {
-                            throw new Error(data?.message || "delete failed");
-                        }
-                    } catch (err) {
-                        console.error("delete msg error:", err);
-                    }
-                }
-                // 鍙戦€� reorder 璇锋眰锛堟敮鎸� before / after锛�
-                async function sendReorderByIndex(s_id, t_id, mode) {
-                    if (s_id === -1 || t_id === -1) {
-                        throw new Error("invalid dom index");
-                    }
-                    let pos;
-                    if (mode === "before") {
-                        pos = t_id;
+                    if (drag.originalNextSibling && drag.originalNextSibling.parentNode === drag.requestList) {
+                        drag.requestList.insertBefore(drag.item, drag.originalNextSibling);
                     } else {
-                        pos = t_id + 1;
+                        drag.requestList.appendChild(drag.item);
                     }
+
+                    if (drag.placeholder.parentNode) {
+                        drag.placeholder.remove();
+                    }
+
+                    refreshMessageIndexes();
+                    loadMessages();
+                }
+            }
+
+            async function deleteMsg(msgDiv) {
+                const requestList = getRequestList();
+                const idx = requestList ? Array.from(requestList.children).indexOf(msgDiv) : -1;
+                if (idx < 0) return;
+
+                try {
                     const responsePromise = webSocketClient.waitForMessage(
-                        (msg) => msg.path === "changeMsh" &&
-                         msg.uid === uid &&
-                         msg.taskid === AgentTaskId,
+                        (msg) => msg.path === "delMsgGet" && msg.uid === uid && msg.taskid === AgentTaskId,
                         1000
                     );
-                    const sent = await webSocketClient.send("changeMsh", {
+                    const sent = await webSocketClient.send("delMsgGet", {
                         uid: uid,
-                        s_id: String(s_id),
-                        pos: String(pos),
+                        index: String(idx),
                         taskid: AgentTaskId
                     });
-                    if (!sent) {
-                        throw new Error("failed to send reorder request");
-                    }
+                    if (!sent) throw new Error("failed to send delete request");
+
                     const data = await responsePromise;
-                    if (!data || data.code !== 200 || data.uid !== uid || data.taskid !== AgentTaskId) {
-                        throw new Error(data?.message || "reorder failed");
+                    if (data && data.code === 200 && data.uid === uid && data.taskid === AgentTaskId) {
+                        msgDiv.remove();
+                        refreshMessageIndexes();
+                        customLog("Message deleted");
+                    } else {
+                        throw new Error(data?.message || "delete failed");
                     }
-                    return data;
+                } catch (err) {
+                    console.error("delete msg error:", err);
+                }
+            }
+
+            async function sendReorderByIndex(s_id, t_id, mode) {
+                if (s_id === -1 || t_id === -1) throw new Error("invalid dom index");
+
+                const pos = mode === "before" ? t_id : t_id + 1;
+                const responsePromise = webSocketClient.waitForMessage(
+                    (msg) => msg.path === "changeMsh" && msg.uid === uid && msg.taskid === AgentTaskId,
+                    1000
+                );
+
+                const sent = await webSocketClient.send("changeMsh", {
+                    uid: uid,
+                    s_id: String(s_id),
+                    pos: String(pos),
+                    taskid: AgentTaskId
+                });
+                if (!sent) throw new Error("failed to send reorder request");
+
+                const data = await responsePromise;
+                if (!data || data.code !== 200 || data.uid !== uid || data.taskid !== AgentTaskId) {
+                    throw new Error(data?.message || "reorder failed");
+                }
+                return data;
+            }
+
+            async function loadMessages() {
+                if (dialog._msgClosed || !dialog.isConnected) return;
+
+                try {
+                    msgContainer.innerHTML = "";
+
+                    const requestList = document.createElement("div");
+                    requestList.id = "msg-request-list";
+                    msgContainer.appendChild(requestList);
+
+                    const listData = Array.isArray(msgQueues[uid]) ? msgQueues[uid] : [];
+                    listData.forEach((raw, i) => {
+                        requestList.appendChild(
+                            createMessageItem({
+                                text: renderMsgText(raw),
+                                index: i,
+                                rawMessage: raw,
+                                sourceIndex: i,
+                                withMove: true,
+                                onDelete: div => deleteMsg(div)
+                            })
+                        );
+                    });
+
+                    msgPostArray = Array.isArray(resultQueues[uid]) ? resultQueues[uid].slice() : [];
+                    if (msgPostArray.length === 0) return;
+
+                    const h2 = document.createElement("h2");
+                    h2.textContent = "result List";
+                    msgContainer.appendChild(h2);
+
+                    msgPostArray.forEach((raw, i) => {
+                        const div = createMessageItem({
+                            text: raw,
+                            expandable: true,
+                            withCopy: true,
+                            onDelete: async div => {
+                                const realIndex = Number(div.dataset.resultIndex || "-1");
+                                if (realIndex < 0 || realIndex >= msgPostArray.length) {
+                                    customLog("Result not found");
+                                    return;
+                                }
+                                try {
+                                    const responsePromise = webSocketClient.waitForMessage(
+                                        (msg) =>
+                                            msg.path === "delMsgMap" &&
+                                            msg.uid === uid &&
+                                            msg.index === String(realIndex) &&
+                                            msg.code === 200 &&
+                                            msg.taskid === AgentTaskId,
+                                        1000
+                                    );
+                                    const sent = await webSocketClient.send("delMsgMap", {
+                                        uid: uid,
+                                        index: String(realIndex),
+                                        taskid: AgentTaskId
+                                    });
+                                    if (!sent) {
+                                        customLog("Delete failed");
+                                        return;
+                                    }
+                                    const data = await responsePromise;
+                                    if (data && data.code === 200 && data.uid === uid && data.index === String(realIndex) && data.taskid === AgentTaskId) {
+                                        msgPostArray.splice(realIndex, 1);
+                                        div.remove();
+                                        refreshResultIndexes(msgContainer);
+                                        customLog("Result deleted");
+                                    } else {
+                                        customLog(data?.message || "Delete failed");
+                                    }
+                                } catch (err) {
+                                    console.error("delMsgMap error:", err);
+                                    customLog("Delete failed");
+                                }
+                            }
+                        });
+                        div.dataset.resultItem = "true";
+                        div.dataset.resultIndex = String(i);
+                        msgContainer.appendChild(div);
+                    });
+                } catch (err) {
+                    console.error("load messages error:", err);
+                }
+            }
+
+            async function fetchMsgQueue() {
+                const responsePromise = webSocketClient.waitForMessage(
+                    (msg) => msg.path === "getMsg" && msg.code === 200 && msg.uid === uid,
+                    1000
+                );
+                const ok = await webSocketClient.send("getMsg", { uid });
+                if (!ok) return;
+                const response = await responsePromise;
+                if (response?.data) msgQueues[uid] = response.data;
+            }
+
+            async function fetchResultQueue() {
+                const responsePromise = webSocketClient.waitForMessage(
+                    (msg) => msg.path === "getMsgMap" && msg.code === 200 && msg.uid === uid,
+                    1000
+                );
+                const ok = await webSocketClient.send("getMsgMap", { uid });
+                if (!ok) return;
+                const response = await responsePromise;
+                if (response?.data) resultQueues[uid] = response.data;
+            }
+
+            Promise.allSettled([fetchMsgQueue(), fetchResultQueue()]).then(() => {
+                if (!dialog._msgClosed && dialog.isConnected) {
+                    loadMessages();
+                }
+            });
+
+            dialog._msgInterval = setInterval(() => {
+                if (dialog._msgClosed || !dialog.isConnected) {
+                    stopLoadMessages();
+                    return;
                 }
                 loadMessages();
-                dialog._msgInterval = setInterval(loadMessages, 30000);
-                // 寮圭獥鍏抽棴鏃舵竻鐞嗗畾鏃跺櫒
-                dialog.querySelector("#msg-close-btn").addEventListener("click", function() {
-                    if (dialog._msgInterval) clearInterval(dialog._msgInterval);
-                });
-            }, 200);
+            }, 30000);
         }
         async saveInfo(uid) {
             const remarks = document.getElementById('remarks_' + uid).value;
