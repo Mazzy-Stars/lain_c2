@@ -2383,7 +2383,7 @@ class index{
 
             }, 200);
         }
-        function showMsgDialog(uid, host) {
+        showMsgDialog(uid, host) {
 		    const dialogId = "msg-dialog-" + uid;
 		    let dialog = document.getElementById(dialogId);
 		
