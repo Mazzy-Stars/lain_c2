@@ -1456,6 +1456,7 @@ func User_index() http.HandlerFunc {
 						clientWs.WriteJSON(map[string]interface{}{
 							"code": 404,
 							"path": "getMsg",
+							"uid":  uid,
 							"message": "no messages found",
 						})
 						continue
@@ -1473,6 +1474,7 @@ func User_index() http.HandlerFunc {
 						clientWs.WriteJSON(map[string]interface{}{
 							"code": 400,
 							"path": "getMsgMap",
+							"uid":  uid,
 							"message": "invalid uid",
 						})
 						continue
@@ -1482,6 +1484,7 @@ func User_index() http.HandlerFunc {
 						clientWs.WriteJSON(map[string]interface{}{
 							"code": 404,
 							"path": "getMsgMap",
+							"uid": uid,
 							"message": "no messages found",
 						})
 						continue
@@ -1490,6 +1493,7 @@ func User_index() http.HandlerFunc {
 						"code": 200,
 						"path": "getMsgMap",
 						"message": "success",
+						"uid": uid,
 						"data":    msgMap,
 					})
 				case "delMsgMap":
