@@ -2549,6 +2549,13 @@ class index{
                 let msgPostArray = [];
                 let activeMessageDrag = null;
 
+				const stopLoadMessages = () => {
+				    if (dialog._msgInterval) {
+				        clearInterval(dialog._msgInterval);
+				        dialog._msgInterval = null;
+				    }
+				};
+
                 async function loadMessages(){
                     try{
                         msgContainer.innerHTML="";
@@ -2638,10 +2645,15 @@ class index{
                     }
                 }
                 loadMessages();
+				stopLoadMessages();
                 setInterval(
                     loadMessages,
                     10000
                 );
+				dialog.querySelector("#msg-close-btn").onclick = function () {
+				    stopLoadMessages();
+				    dialog.remove();
+				};
                 function refreshResultIndexes(container) {
                     Array.from(container.querySelectorAll('[data-result-item="true"]')).forEach((el, idx) => {
                         el.dataset.resultIndex = String(idx);
