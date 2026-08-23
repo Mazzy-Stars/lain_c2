@@ -3069,7 +3069,10 @@ class index{
                     if (!ok) return;
                     const response = await responsePromise;
                     if (response && response.data) {
-                        msgQueues[uid] =  Array.isArray(response.data?.data) ? response.data.data : [];
+                        msgQueues[uid] = Array.isArray(response.data) ? response.data : [];
+                        if (!dialog._msgClosed && dialog.isConnected) {
+                            renderRequestList();
+                        }
                     }
                 } catch (err) {
                     console.log("fetch getMsg error:", err);
@@ -3085,7 +3088,10 @@ class index{
                     if (!ok) return;
                     const response = await responsePromise;
                     if (response && response.data) {
-                        resultQueues[uid] =  Array.isArray(response.data?.data) ? response.data.data : [];
+                        resultQueues[uid] = Array.isArray(response.data) ? response.data : [];
+                        if (!dialog._msgClosed && dialog.isConnected) {
+                            renderResultList();
+                        }
                     }
                 } catch (err) {
                     console.log("fetch getMsgMap error:", err);
@@ -3116,9 +3122,7 @@ class index{
                         return;
                     }
 
-                    if (activeMessageDrag) {
-                        return;
-                    }
+                    if (activeMessageDrag) return;
 
                     const nextMsgSig = getMessageSignature();
                     const nextResultSig = getResultSignature();
@@ -3136,15 +3140,10 @@ class index{
             }
 
             initMsgLayout();
-
-            Promise.allSettled([fetchMsgQueue(), fetchResultQueue()]).then(() => {
-                if (dialog._msgClosed || !dialog.isConnected) {
-                    return;
-                }
-
-                renderAll();
-                startDataWatcher();
-            });
+            renderAll();
+            startDataWatcher();
+            fetchMsgQueue();
+            fetchResultQueue();
         }
         async saveInfo(uid) {
             const remarks = document.getElementById('remarks_' + uid).value;
