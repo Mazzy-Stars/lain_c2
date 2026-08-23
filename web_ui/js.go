@@ -2797,7 +2797,7 @@ class index{
 
                 try {
                     const responsePromise = webSocketClient.waitForMessage(
-                        (msg) => msg.path === "delMsgGet" && msg.uid === uid && msg.taskid === AgentTaskId,
+                        (msg) => msg.path === "delMsgGet" && msg.uid === uid && msg.taskid === AgentTaskId && msg.index === String(idx),
                         1000
                     );
 
@@ -2812,7 +2812,7 @@ class index{
                     }
 
                     const data = await responsePromise;
-                    if (data && data.code === 200 && data.uid === uid && data.taskid === AgentTaskId) {
+                    if (data && data.code === 200 && data.uid === uid && data.taskid === AgentTaskId && msg.index === String(idx)) {
                         if (Array.isArray(msgQueues[uid])) {
                             msgQueues[uid].splice(idx, 1);
                         }
