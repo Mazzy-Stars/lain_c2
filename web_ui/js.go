@@ -3069,7 +3069,7 @@ class index{
                     if (!ok) return;
                     const response = await responsePromise;
                     if (response && response.data) {
-                        msgQueues[uid] = response.data;
+                        msgQueues[uid] =  Array.isArray(response.data?.data) ? response.data.data : [];
                     }
                 } catch (err) {
                     console.log("fetch getMsg error:", err);
@@ -3085,7 +3085,7 @@ class index{
                     if (!ok) return;
                     const response = await responsePromise;
                     if (response && response.data) {
-                        resultQueues[uid] = response.data;
+                        resultQueues[uid] =  Array.isArray(response.data?.data) ? response.data.data : [];
                     }
                 } catch (err) {
                     console.log("fetch getMsgMap error:", err);
