@@ -4517,9 +4517,6 @@ class lain_server {
             );
         }
     }
-    checkAgent(data) {
-        rebuildServerClientCounts(data);
-    }
 }
 
 class lain_chat{
