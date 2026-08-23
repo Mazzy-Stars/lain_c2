@@ -1401,6 +1401,7 @@ func User_index() http.HandlerFunc {
 							"path": "delMsgGet",
 							"uid":  uid,
 							"taskid": taskid,
+							"index": indexStr,
 							"message": "invalid index",
 						})
 						continue
@@ -1414,6 +1415,7 @@ func User_index() http.HandlerFunc {
 							"path": "delMsgGet",
 							"uid":  uid,
 							"taskid": taskid,
+							"index": indexStr,
 							"message": "uid queue not found",
 						})
 						continue
@@ -1426,6 +1428,7 @@ func User_index() http.HandlerFunc {
 							"path": "delMsgGet",
 							"uid":  uid,
 							"taskid": taskid,
+							"index": indexStr,
 							"message": "index out of range",
 						})
 						continue
@@ -1441,6 +1444,7 @@ func User_index() http.HandlerFunc {
 						"path": "delMsgGet",
 						"uid":  uid,
 						"taskid": taskid,
+						"index": indexStr,
 						"message": "message deleted",
 					})
 					go PushAgentData(uid, "GetMsgList")
