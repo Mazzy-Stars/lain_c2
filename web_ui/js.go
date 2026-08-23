@@ -1130,19 +1130,36 @@ class index{
             if (!confirmed) {
                 return false;
             }
-            const result = await webSocketClient.send(
+            const responsePromise = webSocketClient.waitForMessage(
+                (msg) => msg.path === "delIndex" &&
+                 msg.code === 200 &&
+                  msg.uid === String(index) &&
+                  msg.taskid === AgentTaskId,
+                1000
+            );
+            const sent = await webSocketClient.send(
                 "delIndex",
                 {
-                    uid: String(index),   // 如果后端还在读 body["uid"]，这里先继续用 uid 字段装索引
-                    info: info || ""
+                    uid: String(index),
+                    taskid: AgentTaskId
                 }
             );
-            if (!result) {
+            if (!sent) {
                 customLog("Delete agent failed");
                 return false;
             }
-            customLog("Agent removed");
-            return true;
+            try {
+                const result = await responsePromise;
+                if (result && result.code === 200 && result.uid === String(index) && result.taskid === AgentTaskId) {
+                    customLog("Agent removed");
+                    return true;
+                }
+                customLog("Delete agent failed:", result);
+                return false;
+            } catch (err) {
+                customLog("Delete agent error:", err.message);
+                return false;
+            }
         }
     }
       
@@ -1187,7 +1204,7 @@ class index{
                         "getResults",
                         {
                             uid: uid,
-                            Taskid: taskid
+                            taskid: taskid
                         },
                         taskid
                     );
@@ -1279,7 +1296,7 @@ class index{
                     {
                         uid:this.uid,
                         msg:command,
-                        Taskid:taskid
+                        taskid:taskid
                     }
                 );
                 if(result){
@@ -1369,7 +1386,7 @@ class index{
                 {
                     uid:this.uid,
                     msg:powershell,
-                    Taskid:AgentTaskId
+                    taskid:AgentTaskId
                 }
             );
             return true;
@@ -1389,136 +1406,157 @@ class index{
                 {
                     uid:this.uid,
                     msg:powershell,
-                    Taskid:AgentTaskId
+                    taskid:AgentTaskId
                 }
             );
         }
         renderFileList(fileContent, shell_dir) {
-		    const div_file = this.getDialogNode('#file_resp');
-            if (!div_file) {
-                return;
+            const div_file = this.getDialogNode('#file_resp') || document.querySelector('#file_resp');
+            if (!div_file) return false;
+
+            let cur_dir_p = document.getElementById('cur_dir');
+            if (cur_dir_p) {
+                cur_dir_p.textContent = shell_dir;
             }
-		    div_file.innerHTML = '';
-		    const dir_list = fileContent.split("\n");
-		
-		    for (let i = 0; i < dir_list.length; i++) {
-		        let file = dir_list[i].trim();
-		        if (!file) continue;
-		
-		        let new_file = document.createElement('div');
-		        new_file.classList.add('directory');
-		
-		        let isDir = file.startsWith("dir ");
-		        let isFil = file.startsWith("fil ");
-		        let type = isDir ? "dir" : (isFil ? "fil" : null);
-		        if (!type) continue;
-		
-		        let match = file.match(/^(\w+)\s+(.+?)<([^<>]+)><([^<>]+)>$/);
-		        let matchFile = file.match(/^(\w+)\s+(.+?)<([^<>]+)><([^<>]+)><([^<>]+)>$/);
-		
-		        let name = "", size = "", perm = "", mtime = "";
-		        if (matchFile && type === "fil") {
-		            name = matchFile[2];
-		            size = matchFile[3];
-		            perm = matchFile[4];
-		            mtime = matchFile[5];
-		        } else if (match && type === "dir") {
-		            name = match[2];
-		            perm = match[3];
-		            mtime = match[4];
-		        } else {
-		            continue;
-		        }
-		
-		        let full_path = shell_dir ? (shell_dir + "/" + name) : name;
-		        new_file.dataset.path = full_path; 
-		
-		        let renameBtn = "<button class='rename-btn' style='margin-left:5px;'>✏️</button>";
-		        let timeBtn   = "<button class='time-btn' style='margin-left:5px;'>⏰</button>";
-		
-		        if (type === "dir") {
-		            new_file.classList.add('dir');
-		            new_file.innerHTML =
-		                '<span class="icon-dir">📁</span>' +
-		                '<span class="filename">' + name + '</span>' +
-		                '<span class="fileperm">&lt;' + perm + '&gt;</span>' +
-		                '<span class="filetime">&lt;' + mtime + '&gt;</span>' +
-		                renameBtn + timeBtn;
-		
-		            new_file.onclick = () => {
-		                this.move_file(0, name);
-		            };
-		        } else {
-		            new_file.classList.add('file');
-		            new_file.innerHTML =
-		                '<span class="icon-file">📄</span>' +
-		                '<span class="filename">' + name + '</span>' +
-		                '<span class="filesize">&lt;' + size + '&gt;</span>' +
-		                '<span class="fileperm">&lt;' + perm + '&gt;</span>' +
-		                '<span class="filetime">&lt;' + mtime + '&gt;</span>' +
-		                '<span class="icon-download" style="cursor:pointer;">⬇️</span>' +
-		                renameBtn + timeBtn;
-		            new_file.addEventListener('click', () => {
-		                this.getFile(new_file.dataset.path);
-		            });
-		            new_file.querySelector('.icon-download')?.addEventListener('click', (e) => {
-		                e.stopPropagation();
-		                this.getFile(new_file.dataset.path);
-		            });
-		        }
-		
-		        // === 閲嶅懡鍚� ===
-		        new_file.querySelector('.rename-btn')?.addEventListener('click', (e) => {
-		            e.stopPropagation();
-		            const filenameSpan = new_file.querySelector('.filename');
-		            const oldName = filenameSpan.innerText;
-		            const oldPath = new_file.dataset.path;
-		
-		            const newName = prompt("Enter the new name:", oldName);
-		            if (!newName || newName === oldName) return;
-		
-		            const lastSlash = oldPath.lastIndexOf('/');
-		            const dirPath = lastSlash >= 0 ? oldPath.substring(0, lastSlash) : '';
-		            const newPath = dirPath ? (dirPath + '/' + newName) : newName;
+
+            if (Array.isArray(fileContent)) {
+                fileContent = fileContent.join("\n");
+            } else if (fileContent && typeof fileContent === "object") {
+                fileContent = fileContent.data ?? fileContent.text ?? "";
+            }
+
+            if (typeof fileContent !== "string") {
+                console.warn("renderFileList bad data:", fileContent);
+                return false;
+            }
+
+            const dir_list = fileContent.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+            if (dir_list.length === 0) {
+                return false;
+            }
+
+            const fragment = document.createDocumentFragment();
+            let renderedCount = 0;
+
+            for (let i = 0; i < dir_list.length; i++) {
+                let file = dir_list[i];
+
+                let new_file = document.createElement('div');
+                new_file.classList.add('directory');
+
+                let isDir = file.startsWith("dir ");
+                let isFil = file.startsWith("fil ");
+                let type = isDir ? "dir" : (isFil ? "fil" : null);
+                if (!type) {
+                    continue;
+                }
+
+                let match = file.match(/^(\w+)\s+(.+?)<([^<>]+)><([^<>]+)>$/);
+                let matchFile = file.match(/^(\w+)\s+(.+?)<([^<>]+)><([^<>]+)><([^<>]+)>$/);
+
+                let name = "", size = "", perm = "", mtime = "";
+                if (matchFile && type === "fil") {
+                    name = matchFile[2];
+                    size = matchFile[3];
+                    perm = matchFile[4];
+                    mtime = matchFile[5];
+                } else if (match && type === "dir") {
+                    name = match[2];
+                    perm = match[3];
+                    mtime = match[4];
+                } else {
+                    continue;
+                }
+
+                let full_path = shell_dir ? (shell_dir + "/" + name) : name;
+                new_file.dataset.path = full_path;
+
+                let renameBtn = "<button class='rename-btn' style='margin-left:5px;'>✏️</button>";
+                let timeBtn = "<button class='time-btn' style='margin-left:5px;'>⏰</button>";
+
+                if (type === "dir") {
+                    new_file.classList.add('dir');
+                    new_file.innerHTML =
+                        '<span class="icon-dir">📁</span>' +
+                        '<span class="filename">' + name + '</span>' +
+                        '<span class="fileperm">&lt;' + perm + '&gt;</span>' +
+                        '<span class="filetime">&lt;' + mtime + '&gt;</span>' +
+                        renameBtn + timeBtn;
+
+                    new_file.onclick = () => {
+                        this.move_file(0, name);
+                    };
+                } else {
+                    new_file.classList.add('file');
+                    new_file.innerHTML =
+                        '<span class="icon-file">📄</span>' +
+                        '<span class="filename">' + name + '</span>' +
+                        '<span class="filesize">&lt;' + size + '&gt;</span>' +
+                        '<span class="fileperm">&lt;' + perm + '&gt;</span>' +
+                        '<span class="filetime">&lt;' + mtime + '&gt;</span>' +
+                        '<span class="icon-download" style="cursor:pointer;">⬇️</span>' +
+                        renameBtn + timeBtn;
+
+                    new_file.addEventListener('click', () => {
+                        this.getFile(new_file.dataset.path);
+                    });
+                    new_file.querySelector('.icon-download')?.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        this.getFile(new_file.dataset.path);
+                    });
+                }
+
+                new_file.querySelector('.rename-btn')?.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const filenameSpan = new_file.querySelector('.filename');
+                    const oldName = filenameSpan.innerText;
+                    const oldPath = new_file.dataset.path;
+
+                    const newName = prompt("Enter the new name:", oldName);
+                    if (!newName || newName === oldName) return;
+
+                    const lastSlash = oldPath.lastIndexOf('/');
+                    const dirPath = lastSlash >= 0 ? oldPath.substring(0, lastSlash) : '';
+                    const newPath = dirPath ? (dirPath + '/' + newName) : newName;
                     const cmd = "CHANG_FILE_NAME*//*" + oldPath + "*//*" + newName;
-                    webSocketClient.send(
-                        
-                        "msg",
-                        {
-                            uid:this.uid,
-                            msg:cmd,
-                            Taskid:AgentTaskId
-                        }
-                    );
-		            filenameSpan.innerText = newName;
-		            new_file.dataset.path = newPath; // 猸� 鐘舵€佸悓姝�
-		        });
-		
-		        // === 淇敼鏃堕棿 ===
-		        new_file.querySelector('.time-btn')?.addEventListener('click', (e) => {
-		            e.stopPropagation();
-		
-		            const currentPath = new_file.dataset.path;
-		            const newTime = prompt("Enter the new modified time (format: YYYY-MM-DD HH:mm:ss):");
-		            if (!newTime) return;
-		
-		            const cmd = "CHANG_FILE_TIME*//*" + currentPath + "*//*" + newTime;
-                    webSocketClient.send(
-                        
-                        "msg",
-                        {
-                            uid:this.uid,
-                            msg:cmd,
-                            Taskid:AgentTaskId
-                        }
-                    );
-		
-		            new_file.querySelector('.filetime').innerText = "<" + newTime + ">";
-		        });
-		
-		        div_file.appendChild(new_file);
-		    }
-		}
+                    webSocketClient.send("msg", {
+                        uid: this.uid,
+                        msg: cmd,
+                        taskid: AgentTaskId
+                    });
+                    filenameSpan.innerText = newName;
+                    new_file.dataset.path = newPath;
+                });
+
+                new_file.querySelector('.time-btn')?.addEventListener('click', (e) => {
+                    e.stopPropagation();
+
+                    const currentPath = new_file.dataset.path;
+                    const newTime = prompt("Enter the new modified time (format: YYYY-MM-DD HH:mm:ss):");
+                    if (!newTime) return;
+
+                    const cmd = "CHANG_FILE_TIME*//*" + currentPath + "*//*" + newTime;
+                    webSocketClient.send("msg", {
+                        uid: this.uid,
+                        msg: cmd,
+                        taskid: AgentTaskId
+                    });
+
+                    new_file.querySelector('.filetime').innerText = "<" + newTime + ">";
+                });
+
+                fragment.appendChild(new_file);
+                renderedCount++;
+            }
+
+            if (renderedCount === 0) {
+                return false;
+            }
+
+            div_file.innerHTML = '';
+            div_file.appendChild(fragment);
+            return true;
+        }
         async history_file(uid) {
             uid = uid || this.uid;
             const historyParent = this.getDialogNode('#history');
@@ -1546,28 +1584,45 @@ class index{
                         delBtn.className = 'history-delete-btn';
                         delBtn.textContent='🗑';
                         delBtn.title='delete';
-                        delBtn.onclick=async(e)=>{
+                        delBtn.onclick = async (e) => {
                             e.stopPropagation();
                             const index = Array.from(historyParent.children).indexOf(listDiv);
-                            const res = await webSocketClient.send(
-                                
-                                "delFileList",
-                                {
-                                    uid:uid,
-                                    index:String(index)
-                                }
-                            );
-                            if(res !== false){
-                                if (Array.isArray(fileQueues[uid])) {
-                                    fileQueues[uid].splice(index, 1);
-                                }
-                                listDiv.remove();
-                                customLog("History deleted");
-                            }else{
-                                console.log(
-                                    "delete failed:",
-                                    res.message
+                            if (index < 0) {
+                                customLog("History not found");
+                                return;
+                            }
+                            try {
+                                const responsePromise = webSocketClient.waitForMessage(
+                                    (msg) =>
+                                        msg.path === "delFileList" &&
+                                        msg.uid === uid &&
+                                        msg.index === String(index) &&
+                                        msg.code === 200 &&
+                                        msg.taskid === AgentTaskId,
+                                    1000
                                 );
+                                const sent = await webSocketClient.send("delFileList", {
+                                    uid: uid,
+                                    index: String(index),
+                                    taskid: AgentTaskId
+                                });
+                                if (!sent) {
+                                    customLog("Delete failed");
+                                    return;
+                                }
+                                const data = await responsePromise;
+                                if (data && data.code === 200 && data.uid === uid && data.index === String(index) && data.taskid === AgentTaskId) {
+                                    if (Array.isArray(fileQueues[uid])) {
+                                        fileQueues[uid].splice(index, 1);
+                                    }
+                                    listDiv.remove();
+                                    customLog("History deleted");
+                                } else {
+                                    customLog(data?.message || "Delete failed");
+                                }
+                            } catch (err) {
+                                console.error("delFileList error:", err);
+                                customLog("Delete failed");
                             }
                         };
                         listDiv.appendChild(labelSpan);
@@ -1577,16 +1632,17 @@ class index{
                 }
             }
         }
-        stopFileListPolling(taskId = "") {
-            if (taskId && this.fileListTaskId && this.fileListTaskId !== taskId) {
-                return;
-            }
+        stopFileListPolling(taskId = null) {
             if (this.fileListPollTimer) {
+                clearTimeout(this.fileListPollTimer);
                 clearInterval(this.fileListPollTimer);
                 this.fileListPollTimer = null;
             }
-            this.fileListTaskId = "";
-            this.fileListPendingDir = "";
+            this.fileListPollBusy = false;
+            if (!taskId || this.fileListTaskId === taskId) {
+                this.fileListTaskId = null;
+                this.fileListPendingDir = "";
+            }
         }
         canUseFileDialog(taskId = "") {
             if (!this.uid || !this.dialogEl || !this.dialogEl.isConnected) {
@@ -1599,92 +1655,116 @@ class index{
         }
         async look_file(dir) {
             dir = dir || this.shell_dir || "./";
-            if(!this.uid || !dir){
-                return false;
-            }
+            if (!this.uid || !dir) return false;
+
             this.stopFileListPolling();
+
             const powershell = "LOOK_UP_FILE*//*" + dir;
             const taskId = createRuntimeTaskId("filelist");
             this.fileListTaskId = taskId;
             this.fileListPendingDir = dir;
-            try {
-                const sent = await webSocketClient.send(
-                    "msg",
-                    {
-                        uid:this.uid,
-                        msg:powershell,
-                        Taskid:taskId
-                    }
-                );
-                if(!sent){
-                    this.stopFileListPolling(taskId);
+            this.fileListPollBusy = false;
+
+            const pollOnce = async () => {
+                if (!this.canUseFileDialog(taskId) || this.fileListPollBusy) {
                     return false;
                 }
 
-                const responsePromise = webSocketClient.waitForMessage(
-                    (msg)=>{
-                        return this.canUseFileDialog(taskId) &&
-                            msg.path === "getFileList" &&
-                            msg.code === 200 &&
-                            msg.uid === this.uid &&
-                            msg.taskid === taskId;
-                    },
-                    0
-                );
+                this.fileListPollBusy = true;
+                try {
+                    const responsePromise = webSocketClient.waitForMessage(
+                        (msg) => {
+                            const sameTask = msg.taskid == null || String(msg.taskid) === String(taskId);
+                            return this.canUseFileDialog(taskId) &&
+                                msg.path === "getFileList" &&
+                                msg.code === 200 &&
+                                String(msg.uid) === String(this.uid) &&
+                                sameTask;
+                        },
+                        5000
+                    );
 
-                const sendListRequest = async () => {
+                    const sent = await webSocketClient.send("getFileList", {
+                        uid: this.uid,
+                        taskid: taskId
+                    });
+
+                    if (!sent) {
+                        return false;
+                    }
+
+                    const result = await responsePromise;
+                    if (!this.canUseFileDialog(taskId) || !result) {
+                        return false;
+                    }
+
+                    const payload =
+                        result.data ??
+                        result.content ??
+                        result.text ??
+                        result.fileContent ??
+                        result.list ??
+                        "";
+
+                    if (!String(payload || "").trim()) {
+                        return false;
+                    }
+
+                    this.shell_dir = dir;
+                    const rendered = this.renderFileList(payload, this.shell_dir);
+                    if (rendered) {
+                        this.history_file(this.uid);
+                        this.stopFileListPolling(taskId);
+                        return true;
+                    }
+
+                    return false;
+                } catch (err) {
                     if (!this.canUseFileDialog(taskId)) {
                         return false;
                     }
-                    return await webSocketClient.send(
-                        "getFileList",
-                        {
-                            uid:this.uid,
-                            Taskid:taskId
-                        }
-                    );
-                };
-
-                const firstSent = await sendListRequest();
-                if(!firstSent){
-                    this.stopFileListPolling(taskId);
+                    if (err?.message === "wait message timeout") {
+                        return false;
+                    }
                     return false;
+                } finally {
+                    this.fileListPollBusy = false;
                 }
+            };
 
-                this.fileListPollTimer = setInterval(() => {
-                    sendListRequest()
-                        .then((ok) => {
-                            if (!ok) {
-                                this.stopFileListPolling(taskId);
-                            }
-                        })
-                        .catch(() => {});
-                }, 1200);
-
-                const result = await responsePromise;
-                if (!this.canUseFileDialog(taskId)) {
-                    this.stopFileListPolling(taskId);
-                    return false;
+            const loop = async () => {
+                while (this.canUseFileDialog(taskId)) {
+                    const rendered = await pollOnce();
+                    if (rendered) {
+                        break;
+                    }
+                    if (!this.canUseFileDialog(taskId)) {
+                        break;
+                    }
+                    await new Promise(r => setTimeout(r, 1200));
                 }
-
                 this.stopFileListPolling(taskId);
-                if(result && result.data){
-                    this.shell_dir = dir;
-                    this.renderFileList(
-                        result.data,
-                        this.shell_dir
-                    );
-                    this.history_file(this.uid);
-                    return true;
-                }
-            } catch(err) {
-                console.error(err);
-            } finally {
-                if (this.fileListTaskId === taskId) {
+            };
+
+            try {
+                const sent = await webSocketClient.send("msg", {
+                    uid: this.uid,
+                    msg: powershell,
+                    taskid: taskId
+                });
+
+                if (!sent) {
                     this.stopFileListPolling(taskId);
+                    return false;
                 }
+
+                loop();
+                return true;
+            } catch (err) {
+                console.error(err);
+                this.stopFileListPolling(taskId);
+                return false;
             }
-            return false;
         }
          async move_file(num, cur_dir) {
             let cur_dir_p = this.getDialogNode("#cur_dir_p");
@@ -1743,7 +1823,7 @@ class index{
                 {
                     uid:this.uid,
                     msg:cmd,
-                    Taskid:AgentTaskId
+                    taskid:AgentTaskId
                 }
             );
         }
@@ -2308,7 +2388,7 @@ class index{
             (async (uid) => {
                 const responsePromise = webSocketClient.waitForMessage(
                     (msg) => msg.path === "getMsg" && msg.code === 200,
-                    3000
+                    1000
                 );
                 const ok = await webSocketClient.send("getMsg", { uid });
                 if (!ok) {
@@ -2328,7 +2408,7 @@ class index{
             (async (uid) => {
                 const responsePromise = webSocketClient.waitForMessage(
                     (msg) => msg.path === "getMsgMap" && msg.code === 200,
-                    3000
+                    1000
                 );
                 const ok = await webSocketClient.send("getMsgMap", { uid });
                 if (!ok) {
@@ -2502,33 +2582,52 @@ class index{
                         let h2=document.createElement("h2");
                         h2.textContent="result List";
                         msgContainer.appendChild(h2);
-                        postData.forEach(raw=>{
-                            const div=createMessageItem({
-                                text:raw,
-                                expandable:true,
-                                withCopy:true,
-                                onDelete:async div=>{
-                                    let realIndex = msgPostArray.indexOf(raw);
-                                    if(!msgPostArray[realIndex]){
+                        postData.forEach((raw, i) => {
+                            const div = createMessageItem({
+                                text: raw,
+                                expandable: true,
+                                withCopy: true,
+                                onDelete: async div => {
+                                    const realIndex = Number(div.dataset.resultIndex || "-1");
+                                    if (realIndex < 0 || realIndex >= msgPostArray.length) {
                                         customLog("Result not found");
                                         return;
                                     }
-                                    let req = await webSocketClient.send(
-                                        "delMsgMap",
-                                        {
-                                            uid:uid,
-                                            index:String(realIndex)
+                                    try {
+                                        const responsePromise = webSocketClient.waitForMessage(
+                                            (msg) =>
+                                                msg.path === "delMsgMap" &&
+                                                msg.uid === uid &&
+                                                msg.index === String(realIndex) &&
+                                                msg.code === 200 &&
+                                                msg.taskid === AgentTaskId,
+                                            1000);
+                                        const sent = await webSocketClient.send("delMsgMap", {
+                                            uid: uid,
+                                            index: String(realIndex),
+                                            taskid: AgentTaskId
+                                        });
+                                        if (!sent) {
+                                            customLog("Delete failed");
+                                            return;
                                         }
-                                    );
-                                    if(req !== false){
-                                        msgPostArray.splice(realIndex, 1);
-                                        div.remove();
-                                        customLog("Result deleted");
-                                    }else{
+                                        const data = await responsePromise;
+                                        if (data && data.code === 200 && data.uid === uid && data.index === String(realIndex) && data.taskid === AgentTaskId) {
+                                            msgPostArray.splice(realIndex, 1);
+                                            div.remove();
+                                            refreshResultIndexes(msgContainer);
+                                            customLog("Result deleted");
+                                        } else {
+                                            customLog(data?.message || "Delete failed");
+                                        }
+                                    } catch (err) {
+                                        console.error("delMsgMap error:", err);
                                         customLog("Delete failed");
                                     }
                                 }
                             });
+                            div.dataset.resultItem = "true";
+                            div.dataset.resultIndex = String(i);
                             msgContainer.appendChild(div);
                         });
                     }catch(err){
@@ -2543,6 +2642,11 @@ class index{
                     loadMessages,
                     10000
                 );
+                function refreshResultIndexes(container) {
+                    Array.from(container.querySelectorAll('[data-result-item="true"]')).forEach((el, idx) => {
+                        el.dataset.resultIndex = String(idx);
+                    });
+                }
                 function renderMsgText(rawMsg) {
 				    let taskId = "";
 				    let msgContent = rawMsg;
@@ -2736,6 +2840,8 @@ class index{
                     placeholder.style.height = rect.height + "px";
 
                     const startIndex = items.indexOf(msgDiv);
+                    // 记录原始位置，用于失败时还原
+                    const originalNextSibling = msgDiv.nextElementSibling;
                     requestList.insertBefore(placeholder, msgDiv.nextSibling);
                     document.body.appendChild(msgDiv);
                     msgDiv.classList.add("msg-item-dragging");
@@ -2751,6 +2857,7 @@ class index{
                         placeholder: placeholder,
                         requestList: requestList,
                         startIndex: startIndex,
+                        originalNextSibling: originalNextSibling,
                         offsetX: event.clientX - rect.left,
                         offsetY: event.clientY - rect.top,
                     };
@@ -2790,6 +2897,7 @@ class index{
                     if (!activeMessageDrag) {
                         return;
                     }
+
                     const drag = activeMessageDrag;
                     activeMessageDrag = null;
                     document.removeEventListener("pointermove", onMessageDragMove);
@@ -2801,8 +2909,7 @@ class index{
                     const prevItem = drag.placeholder.previousElementSibling;
                     const nextItem = drag.placeholder.nextElementSibling;
 
-                    drag.requestList.insertBefore(drag.item, drag.placeholder);
-                    drag.placeholder.remove();
+                    // 先把拖拽样式清掉
                     drag.item.classList.remove("msg-item-dragging");
                     drag.item.style.position = "";
                     drag.item.style.left = "";
@@ -2812,23 +2919,51 @@ class index{
 
                     try {
                         if (placeholderIndex !== drag.startIndex) {
+                            let targetSourceIndex = -1;
+                            let mode = "";
+
                             if (nextItem && nextItem.dataset.reorderable === "true") {
-                                await sendReorderByIndex(
-                                    drag.startIndex,
-                                    Number(nextItem.dataset.sourceIndex || "0"),
-                                    "before"
-                                );
+                                targetSourceIndex = Number(nextItem.dataset.sourceIndex || "0");
+                                mode = "before";
                             } else if (prevItem && prevItem.dataset.reorderable === "true") {
-                                await sendReorderByIndex(
-                                    drag.startIndex,
-                                    Number(prevItem.dataset.sourceIndex || "0"),
-                                    "after"
-                                );
+                                targetSourceIndex = Number(prevItem.dataset.sourceIndex || "0");
+                                mode = "after";
                             }
+
+                            // 先按占位符位置把前端 DOM 落位
+                            drag.requestList.insertBefore(drag.item, drag.placeholder);
+                            drag.placeholder.remove();
+
+                            if (targetSourceIndex !== -1) {
+                                await sendReorderByIndex(drag.startIndex, targetSourceIndex, mode);
+                            }
+
+                            refreshMessageIndexes();
+                        } else {
+                            // 没有实际换位置，恢复原位
+                            if (drag.originalNextSibling && drag.originalNextSibling.parentNode === drag.requestList) {
+                                drag.requestList.insertBefore(drag.item, drag.originalNextSibling);
+                            } else {
+                                drag.requestList.appendChild(drag.item);
+                            }
+                            drag.placeholder.remove();
+                            refreshMessageIndexes();
                         }
-                        refreshMessageIndexes();
                     } catch (err) {
                         console.error("drag reorder failed:", err);
+
+                        // 失败后先尽量恢复原位
+                        if (drag.originalNextSibling && drag.originalNextSibling.parentNode === drag.requestList) {
+                            drag.requestList.insertBefore(drag.item, drag.originalNextSibling);
+                        } else {
+                            drag.requestList.appendChild(drag.item);
+                        }
+
+                        if (drag.placeholder.parentNode) {
+                            drag.placeholder.remove();
+                        }
+
+                        refreshMessageIndexes();
                         loadMessages();
                     }
                 }
@@ -2836,60 +2971,70 @@ class index{
                 // 鍒犻櫎
                 async function deleteMsg(msgDiv) {
                     const requestList = getRequestList();
-                    const idx = requestList ?
-                        Array.from(requestList.children).indexOf(msgDiv) :
-                        -1;
-                    if(idx < 0){
+                    const idx = requestList
+                        ? Array.from(requestList.children).indexOf(msgDiv)
+                        : -1;
+                    if (idx < 0) {
                         return;
                     }
-                    try{
-                        let rqe = await webSocketClient.send(
-                                
-                                "delMsgGet",
-                                {
-                                    uid: uid,
-                                    index: String(idx)
-                                }
-                            );
-                        if (rqe !== false) {
+                    try {
+                        const responsePromise = webSocketClient.waitForMessage(
+                            (msg) => msg.path === "delMsgGet" && 
+                            msg.uid === uid &&
+                            msg.taskid === AgentTaskId,
+                            1000
+                        );
+                        const sent = await webSocketClient.send("delMsgGet", {
+                            uid: uid,
+                            index: String(idx),
+                            taskid: AgentTaskId
+                        });
+                        if (!sent) {
+                            throw new Error("failed to send delete request");
+                        }
+                        const data = await responsePromise;
+                        if (data && data.code === 200 && data.uid === uid && data.taskid === AgentTaskId) {
                             msgDiv.remove();
                             refreshMessageIndexes();
                             customLog("Message deleted");
+                        } else {
+                            throw new Error(data?.message || "delete failed");
                         }
-                    }catch(err){
-                        console.error("delete msg error:",err);
+                    } catch (err) {
+                        console.error("delete msg error:", err);
                     }
                 }
                 // 鍙戦€� reorder 璇锋眰锛堟敮鎸� before / after锛�
-                async function sendReorderByIndex(s_id,t_id,mode){
-                    if(
-                        s_id === -1 ||
-                        t_id === -1
-                    ){
+                async function sendReorderByIndex(s_id, t_id, mode) {
+                    if (s_id === -1 || t_id === -1) {
                         throw new Error("invalid dom index");
                     }
                     let pos;
-                    if(mode==="before"){
-                        pos=t_id;
-                    }else{
-                        pos=t_id+1;
+                    if (mode === "before") {
+                        pos = t_id;
+                    } else {
+                        pos = t_id + 1;
                     }
-                    try{
-                        let data =
-                            await webSocketClient.send(
-                                
-                                "changeMsh",
-                                {
-                                    uid:uid,
-                                    s_id:String(s_id),
-                                    pos:String(pos)
-                                }
-                            );
-                        return data;
-                    }catch(err){
-                        console.error("reorder failed:",err);
-                        throw err;
+                    const responsePromise = webSocketClient.waitForMessage(
+                        (msg) => msg.path === "changeMsh" &&
+                         msg.uid === uid &&
+                         msg.taskid === AgentTaskId,
+                        1000
+                    );
+                    const sent = await webSocketClient.send("changeMsh", {
+                        uid: uid,
+                        s_id: String(s_id),
+                        pos: String(pos),
+                        taskid: AgentTaskId
+                    });
+                    if (!sent) {
+                        throw new Error("failed to send reorder request");
                     }
+                    const data = await responsePromise;
+                    if (!data || data.code !== 200 || data.uid !== uid || data.taskid !== AgentTaskId) {
+                        throw new Error(data?.message || "reorder failed");
+                    }
+                    return data;
                 }
                 loadMessages();
                 dialog._msgInterval = setInterval(loadMessages, 30000);
@@ -3022,20 +3167,43 @@ class index{
 		}
 		
         async del(uid){
-            let right = await customConfirm("confirm?");
-            if(right){
-                document
-                .getElementById("container-"+uid)
-                ?.remove();
-				msgQueues[uid] = [];
-                resultQueues[uid] = [];
-                fileQueues[uid] = [];
-                webSocketClient.send(
-                    "delInfo",
-                    {
-                        uid: uid
-                    }
-                );
+            const right = await customConfirm("confirm?");
+            if(!right){
+                return false;
+            }
+            const responsePromise = webSocketClient.waitForMessage(
+                (msg) => msg.path === "delInfo" &&
+                 msg.code === 200 && 
+                 msg.uid === uid &&
+                 msg.taskid === AgentTaskId,
+                1000
+            );
+            const sent = await webSocketClient.send(
+                "delInfo",
+                {
+                    uid: uid,
+                    taskid: AgentTaskId
+                }
+            );
+            if(!sent){
+                customLog("Delete agent failed");
+                return false;
+            }
+            try {
+                const result = await responsePromise;
+                if(result && result.code === 200 && result.uid === uid && result.taskid === AgentTaskId){
+                    document.getElementById("container-" + uid)?.remove();
+                    msgQueues[uid] = [];
+                    resultQueues[uid] = [];
+                    fileQueues[uid] = [];
+                    customLog("Agent removed");
+                    return true;
+                }
+                customLog("Delete agent failed:", result);
+                return false;
+            } catch(err) {
+                customLog("Delete agent error:", err.message);
+                return false;
             }
         }
     loothander(data){
@@ -3236,12 +3404,22 @@ class lain_net{
                 const button = document.createElement("button");
                 button.type = "button";
                 button.textContent = "remove";
-                button.onclick = () => {
-                    this.del_net(target, uid);
+                button.onclick = async () => {
+                    try {
+                        const result = await this.del_net(target, uid);
+                        // 后端返回 200 才真正删除元素
+                        if (result && result.code === 200 && result.uid === uid && result.taskid === AgentTaskId) {
+                            customLog("delete shell innet:"+result.target);
+                            row.remove();
+                        } else {
+                            customLog("delete shell innet failed:", result);
+                        }
+                    } catch (err) {
+                        customLog("del shell innet error:", err);
+                    }
                 };
                 row.appendChild(button);
             }
-
             netDiv.appendChild(row);
         });
     }
@@ -3281,7 +3459,7 @@ class lain_net{
             {
                 uid:uid,
                 msg:cmd,
-                Taskid:AgentTaskId
+                taskid:AgentTaskId
             }
         );
         if (!sent) {
@@ -3290,20 +3468,28 @@ class lain_net{
         }
         return true;
     }
-    async del_net(target, uid){
-        try {
-            let result = await webSocketClient.send(
-                
-                "delShellInnet",
-                {
-                    uid: uid,
-                    target: target
-                }
-            );
-            customLog("delete shell innet:",result);
-        } catch(err){
-            customLog("del shell innet error:",err);
+    async del_net(target, uid) {
+        const responsePromise = webSocketClient.waitForMessage(
+            (msg) =>
+                msg.path === "delShellInnet" &&
+                msg.target === target &&
+                msg.uid === uid &&
+                msg.taskid === AgentTaskId,
+            1000
+        );
+        const sent = await webSocketClient.send(
+            "delShellInnet",
+            {
+                uid: uid,
+                target: target,
+                taskid: AgentTaskId
+            }
+        );
+        if (!sent) {
+            throw new Error("send delShellInnet failed");
         }
+        const result = await responsePromise;
+        return result;
     }
     getshellip(shell_ip_data = null, uid = null){
         if (!uid) {
@@ -3614,15 +3800,19 @@ class lain_server {
 
                     const responsePromise = webSocketClient.waitForMessage(
                         (msg) => {
-                            return msg.path === "delserver";
+                            return msg.path === "delserver" &&
+                                msg.code === 200 &&
+                                msg.port === port &&
+                                msg.taskid === AgentTaskId;
                         },
-                        15000
+                        1000
                     );
 
                     const sent = await webSocketClient.send(
                         "delserver",
                         {
-                            port: port
+                            port: port,
+                            taskid: AgentTaskId
                         }
                     );
 
@@ -3632,7 +3822,7 @@ class lain_server {
                     }
 
                     const data = await responsePromise;
-                    if (!data || data.code !== 200) {
+                    if (!data || data.code !== 200 || data.port !== port || data.taskid !== AgentTaskId) {
                         customAlert(
                             (data && data.message) ||
                             "Delete server failed"
@@ -4026,24 +4216,33 @@ class lain_server {
         if (!confirmed) {
             return false;
         }
-        const sent = await webSocketClient.send(
-            "delPlugin",
-            {
+        try {
+            const responsePromise = webSocketClient.waitForMessage(
+                (msg) => msg.path === "delPlugin" && msg.remark === remark,
+                1000
+            );
+            const sent = await webSocketClient.send("delPlugin", {
                 remark: remark,
                 os: osName,
                 codeWords: codeWords
+            });
+            if (!sent) {
+                customAlert("delPlugin send failed");
+                return false;
             }
-        );
-        if (!sent) {
-            customAlert("delPlugin send failed");
+            const data = await responsePromise;
+            if (data && data.code === 200 && data.remark === remark) {
+                customLog("delPlugin success:", data);
+                return true;
+            } else {
+                customAlert(data?.message || "delPlugin failed");
+                return false;
+            }
+        } catch (err) {
+            console.error("delPlugin error:", err);
+            customAlert("delPlugin failed");
             return false;
         }
-        customLog("delPlugin sent:", {
-            remark: remark,
-            os: osName,
-            codeWords: codeWords
-        });
-        return true;
     }
 
     async modifyServerHeader(port) {
@@ -4126,12 +4325,12 @@ class lain_server {
                         }
                     );
                     if (!sent) {
-                        customAlert("Send failed");
+                        customLog("Send failed");
                         return;
                     }
                     const result = await responsePromise;
                     if (!result || result.code !== 200) {
-                        customAlert(
+                        customLog(
                             result && result.message ?
                                 result.message :
                                 "Modify response header failed"
@@ -4260,20 +4459,16 @@ class lain_chat{
         header.appendChild(usernameSpan);
     
         // 鍙湁鑷繁鐨勬秷鎭樉绀哄垹闄ゆ寜閽�
-        if (data.username === Username || data.username === "history fil") {
+        if (data.username === Username) {
             let delBtn = document.createElement("span");
             delBtn.innerText = "x";
-            delBtn.style.cssText =
-                "cursor:pointer;color:#888;margin-left:8px;";
-    
+            delBtn.style.cssText = "cursor:pointer;color:#888;margin-left:8px;";
             delBtn.title = "delete";
-    
             let currentChatId = data.chatid;
             let currentMessage = data.message;
             delBtn.onclick = () => {
-                this.deleteChat(currentChatId, currentMessage);
+                this.deleteChat(currentChatId, currentMessage, div);
             };
-    
             header.appendChild(delBtn);
         }
     
@@ -4335,21 +4530,38 @@ class lain_chat{
             );
         }
     }
-    async deleteChat(chatid, message) {
+    async deleteChat(chatid, message, chatDiv) {
         try {
-            webSocketClient.send(
-                "deleteChat",
-                {
-                    chatid: String(chatid),
-                    username: Username,
-                    message: message
+            const responsePromise = webSocketClient.waitForMessage(
+                (msg) =>
+                    msg.path === "deleteChat" &&
+                    String(msg.chatid) === String(chatid),
+                1000
+            );
+            const sent = await webSocketClient.send("deleteChat", {
+                chatid: String(chatid),
+                username: Username,
+                message: message
+            });
+            if (!sent) {
+                customLog("Delete failed");
+                return false;
+            }
+            const data = await responsePromise;
+            if (data && data.code === 200 && String(data.chatid) === String(chatid)) {
+                if (chatDiv) {
+                    chatDiv.remove();
                 }
-            );
-        }catch(error){
-            console.error(
-                "Error in deleteChat:",
-                error
-            );
+                customLog("Chat deleted");
+                return true;
+            } else {
+                customLog(data?.message || "Delete failed");
+                return false;
+            }
+        } catch (error) {
+            console.error("Error in deleteChat:", error);
+            customLog("Delete failed");
+            return false;
         }
     }
     async sendChatFile() {
@@ -4935,7 +5147,7 @@ function showPluginDialog(uid, os, paramDescList, codeword) {
                 {
                     uid: uid,
                     msg: msg,
-                    Taskid: taskid
+                    taskid: taskid
                 }
             );
             if (!result) {
