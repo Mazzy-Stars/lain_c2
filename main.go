@@ -695,12 +695,7 @@ func User_index() http.HandlerFunc {
 				case "insertKey":
 					uid, _ := body["uid"].(string)
 					shellname, _ := body["request"].(string)
-					go func() {
-						dataConnMu.Lock()
-						Insert_key(uid, shellname)
-						dataConnMu.Unlock()
-					}()
-
+					Insert_key(uid, shellname)
 					clientWs.WriteJSON(map[string]interface{}{
 						"code":    200,
 						"path":    "insertKey",
@@ -2761,9 +2756,9 @@ type ClientInfo struct {
 
 func Listen() string {
 	seen := make(map[string]bool)
-	clients := make([]ClientInfo, 0, len(data_conn.Conns))
 	dataConnMu.RLock()
 	defer dataConnMu.RUnlock()
+	clients := make([]ClientInfo, 0, len(data_conn.Conns))
 	for i := range data_conn.Conns {
 		client := &data_conn.Conns[i]
 		if client.Uid == "" {
@@ -3001,6 +2996,7 @@ func Insert_key(uid, shellname string) {
 	}
 	// 拼接完成的密钥
 	key := keyBuilder.String()
+	dataConnMu.Lock()
 	// 查找并更新对应的连接
 	for i := range data_conn.Conns {
 		conn := &data_conn.Conns[i]
@@ -3009,6 +3005,7 @@ func Insert_key(uid, shellname string) {
 			break
 		}
 	}
+	dataConnMu.Unlock()
 }
 
 func cleanupDeletedUID(uid string, delbase bool) {
