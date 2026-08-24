@@ -894,33 +894,69 @@ button:hover {
     background-color: #e0e0e0; /* 姒х姵鐖ｉ幃顒€浠犻弮鍓佹畱閼冲本娅欐０婊嗗 */
     cursor: pointer; /* 姒х姵鐖ｉ幃顒€浠犻弮鍓佹畱閸忓鐖ｉ弽宄扮础 */
 }
-.file-history{
+.file-dialog .file-history{
     width: 20%;
+    min-width: 80px;
+    max-width: 80vw;
     font-size: 14px;
     color: #555;
+    transition: width 0.1s;
 }
-.history-item {
+.file-dialog #file-drag-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 32px;
+    cursor: move;
+    background: rgba(0,0,0,0.05);
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    z-index: 10001;
+}
+.file-dialog .file-dialog-layout {
+    display: flex;
+    width: 100%;
+    margin-top: 32px;
+    position: relative;
+    height: calc(90vh - 48px);
+    overflow: hidden;
+}
+.file-dialog #file-history-resizer {
+    min-width: 6px;
+    cursor: col-resize;
+    background: #e0e0e0;
+    z-index: 10;
+}
+.file-dialog .file-dialog-toolbar-row {
+    display: flex;
+    align-items: center;
+}
+.file-dialog #hostname {
+    margin-right: 25px;
+}
+.file-dialog .history-item {
     padding: 8px;
     border-bottom: 1px solid #eee;
     cursor: pointer;
-    hight: 45px;
+    height: 45px;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 10px;
     transition: background-color 0.3s;
 }
-.history-item:hover {
+.file-dialog .history-item:hover {
     background-color: #f0f0f0;
 }
-.history-item-label {
+.file-dialog .history-item-label {
     flex: 1;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-.history-delete-btn {
+.file-dialog .history-delete-btn {
     flex-shrink: 0;
     border: none;
     background: transparent;
@@ -932,11 +968,11 @@ button:hover {
     border-radius: 6px;
     transition: background-color 0.2s ease, color 0.2s ease;
 }
-.history-delete-btn:hover {
+.file-dialog .history-delete-btn:hover {
     background: rgba(204, 90, 90, 0.08);
     color: #a93f3f;
 }
-.filecontainer {
+.file-dialog .filecontainer {
     width: 100%;
     margin: 0;
     padding: 15px;
@@ -946,31 +982,59 @@ button:hover {
     height: 92%;
     overflow-y: auto;
 }
-.file-manager {
+.file-dialog .file-manager {
     display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 10px;
-    margin-top: 20px;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    align-items: stretch;
+    gap: 6px;
+    margin-top: 12px;
     width: 100%;
-    min-hight: 100%;
+    min-height: 20px;
+    overflow-x: hidden;
 }
-.directory, .file {
+.file-dialog .directory,
+.file-dialog .file {
     display: flex;
     align-items: center;
-    padding: 10px;
+    gap: 8px;
+    padding: 8px 12px;
     width: 100%;
-    background-color: white;
-    border: 1px solid #ccc;
-    border-radius: 5px;
+    max-width: 100%;
+    line-height: 1.2;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fbfd 100%);
+    border: 1px solid #d8e1e8;
+    border-radius: 10px;
     cursor: pointer;
     text-decoration: none;
     color: inherit;
-    transition: box-shadow 0.3s, transform 0.3s;
+    box-sizing: border-box;
+    transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
-.directory:hover, .file:hover {
-    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-    transform: translateY(-2px);
+.file-dialog .directory > *,
+.file-dialog .file > * {
+    flex-shrink: 0;
+}
+.file-dialog .filename {
+    flex: 1 1 auto;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.file-dialog .filesize,
+.file-dialog .fileperm,
+.file-dialog .filetime {
+    font-size: 12px;
+    color: #666;
+    white-space: nowrap;
+}
+.file-dialog .directory:hover,
+.file-dialog .file:hover {
+    background: linear-gradient(180deg, #ffffff 0%, #f2f7fb 100%);
+    border-color: #bfd0dd;
+    box-shadow: 0 6px 16px rgba(56, 82, 104, 0.08);
 }
 .loot-list {
     max-width: 980px;
@@ -1041,12 +1105,30 @@ button:hover {
 .loot-download-btn:active {
     background: #e3e3e3;
 }
-.icon {
-    font-size: 1.5em;
-    margin-right: 10px;
+.file-dialog .icon {
+    font-size: 1.1em;
+    margin-right: 4px;
     color: #555;
 }
-.dir-btn {
+.file-dialog .icon-download {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    line-height: 1;
+}
+.file-dialog .rename-btn,
+.file-dialog .time-btn {
+    margin-left: 0;
+    padding: 2px 6px;
+    font-size: 12px;
+    line-height: 1;
+    border: 1px solid #d6dbe1;
+    background: #fff;
+    border-radius: 6px;
+    box-shadow: none;
+}
+.file-dialog .dir-btn {
     padding: 10px 20px;
     font-size: 1em;
     color: #fff;
@@ -1059,14 +1141,14 @@ button:hover {
     letter-spacing: 0.05em;
     margin-bottom: 1%;
 }
-.dir-btn:hover {
+.file-dialog .dir-btn:hover {
     background-color: #0056b3;
 }
-.dir-btn:active {
+.file-dialog .dir-btn:active {
     background-color: #004085;
     transform: translateY(2px);
 }
-#cur_dir {
+.file-dialog #cur_dir {
     background-color: #f9f9f9;
     border: 1px solid #e1e4e8;
     border-radius: 8px;
@@ -1074,10 +1156,10 @@ button:hover {
     margin: 20px 0;
     font-size: 16px;
 }
-#cur_dir_p{
+.file-dialog #cur_dir_p{
     margin-right: 2%;
 }
-#uploadForm {
+.file-dialog #uploadForm {
     margin-bottom: 20px;
     justify-content: center;
     align-items: center;
@@ -1085,13 +1167,13 @@ button:hover {
     flex-direction: column;  /* 閸ㄥ倻娲块幒鎺戝灙 */
     gap: 10px;
 }
-.fileinput{
+.file-dialog .fileinput{
     padding: 10px;
     border: 1px solid #ccc;
     border-radius: 5px;
     cursor: pointer;
 }
-#uploadForm input[type="submit"] {
+.file-dialog #uploadForm input[type="submit"] {
     padding: 10px 20px;
     font-size: 1em;
     color: #fff;
@@ -1101,20 +1183,20 @@ button:hover {
     cursor: pointer;
     transition: background-color 0.3s;
 }
-#uploadForm input[type="submit"]:hover {
+.file-dialog #uploadForm input[type="submit"]:hover {
     background-color: #0056b3;
 }
-#uploadForm input[type="submit"]:active {
+.file-dialog #uploadForm input[type="submit"]:active {
     background-color: #004085;
     transform: translateY(2px);
 }
-.dir-controls {
+.file-dialog .dir-controls {
     display: flex;       /* 娴ｈ法鏁lex鐢啫鐪?*/
     align-items: center; /* 閸ㄥ倻娲跨仦鍛厬鐎靛綊缍堢€涙劕鍘撶槐锟?*/
     margin-top: 20px;   /* 閺嶈宓侀棁鈧憰浣界殶閺佺繝绗傛潏纭呯獩 */
 }
     /* 鏉堟挸鍙嗗鍡樼壉瀵拷 */
-#directoryInput {
+.file-dialog #directoryInput {
     padding: 10px;
     border: 1px solid #ccc;
     border-radius: 5px;
@@ -1123,13 +1205,13 @@ button:hover {
     width: 200px; /* 鐠佸墽鐤嗘稉鈧稉顏勬値闁倻娈戠€硅棄瀹?*/
     transition: border-color 0.3s, box-shadow 0.3s;
 }
-#directoryInput:focus {
+.file-dialog #directoryInput:focus {
     border-color: #007bff;
     box-shadow: 0 0 8px rgba(0, 123, 255, 0.2);
     outline: none; /* 缁夊娅庢妯款吇閻ㄥ嫮鍔嶉悙纭呯枂瀵わ拷 */
 }
 /* 閹稿鎸抽弽宄扮础 */
-#moveDirButton {
+.file-dialog #moveDirButton {
     padding: 10px 20px;
     font-size: 16px;
     color: #fff;
@@ -1139,38 +1221,15 @@ button:hover {
     cursor: pointer;
     transition: background-color 0.3s, transform 0.3s;
 }
-#moveDirButton:hover {
+.file-dialog #moveDirButton:hover {
     background-color: #0056b3;
 }
-#moveDirButton:active {
+.file-dialog #moveDirButton:active {
     background-color: #004085;
     transform: translateY(2px);
 }
 /* 閸濆秴绨插蹇氼啎鐠侊拷 */
 @media (max-width: 768px) {
-    .directory, .file {
-        width: 100%;
-        font-size: 12px;
-        padding: 6px;
-    }
-    .file-history {
-        width: 60px !important;
-        overflow: auto;
-        margin-right: 12px;
-    }
-    .filecontainer {
-        width: 92%;
-        margin: 0;
-        padding: 15px;
-        background-color: white;
-        border-radius: 8px;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-        overflow-y: auto;
-    }
-    .file-manager {
-        margin-top: 10px;
-        width: 100%;
-    }
     .loot-list {
         max-width: 100%;
         margin-left: 0;
@@ -1199,6 +1258,94 @@ button:hover {
     display: flex; /* 娴ｈ法鏁?flexbox 鐢啫鐪?*/
     align-items: center; /* 閸ㄥ倻娲跨仦鍛厬鐎靛綊缍?*/
     top: 0;
+}
+.msg-item {
+    background: white;
+    border: 1px solid #ccc;
+    padding: 10px;
+    margin-bottom: 8px;
+    position: relative;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+}
+.msg-dialog #msg-drag-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 32px;
+    cursor: move;
+    background: rgba(0,0,0,0.05);
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    z-index: 10001;
+}
+.msg-dialog .msg-dialog-header {
+    display: flex;
+    align-items: center;
+    margin-top: 32px;
+}
+.msg-dialog .msg-dialog-hostname {
+    margin-left: 25px;
+}
+.msg-item-main {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+}
+.msg-item-text {
+    display: block;
+    min-width: 0;
+    flex: 1;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+}
+.msg-item span {
+    user-select: none;
+}
+.msg-item span[title] {
+    color: blue;
+    text-decoration: underline dotted;
+}
+.msg-item-dragging {
+    opacity: 0.92;
+    box-shadow: 0 14px 32px rgba(0,0,0,0.14);
+    z-index: 10020;
+}
+.msg-drag-handle {
+    margin-right: 6px;
+    padding: 2px 6px;
+    border: 1px solid #d7dde5;
+    background: #f7f9fc;
+    border-radius: 8px;
+    cursor: grab;
+    touch-action: none;
+    color: #6b7b8b;
+}
+.msg-drag-handle:active {
+    cursor: grabbing;
+}
+.msg-drop-placeholder {
+    border: 1px dashed #9eb3c7;
+    border-radius: 10px;
+    margin-bottom: 8px;
+    background: rgba(228,236,245,0.45);
+}
+.msg-item-actions {
+    position: absolute;
+    right: 10px;
+    top: 10px;
+    display: flex;
+    gap: 4px;
+}
+.msg-action-btn {
+    margin-left: 5px;
+    padding: 4px 6px;
+    font-size: 14px;
 }
 .terminal {
     width: 100%;
@@ -1771,6 +1918,300 @@ button:hover {
         width: 32px;
         height: 32px;
         font-size: 20px;
+    }
+}
+
+@media (max-width: 768px) {
+    .floating-dialog {
+        width: 94vw !important;
+        max-width: 94vw !important;
+        max-height: 92vh !important;
+        border-radius: 22px !important;
+        padding: 14px 12px 16px !important;
+        box-sizing: border-box;
+        overflow-x: hidden !important;
+    }
+
+    .terminal-dialog {
+        min-height: 78vh;
+    }
+
+    .terminal-dialog-toolbar {
+        flex-direction: column;
+        align-items: stretch !important;
+        gap: 10px !important;
+        padding: 10px 2px 14px !important;
+    }
+
+    .terminal-dialog .terminal-shell-select {
+        width: 100%;
+        min-width: 0 !important;
+    }
+
+    .terminal-dialog .terminal-hostname {
+        margin-left: 0 !important;
+        width: 100%;
+        text-align: left;
+    }
+
+    .terminal-dialog .terminal {
+        min-height: 56vh !important;
+        height: 60vh !important;
+        padding: 12px !important;
+        border-radius: 16px !important;
+    }
+
+    .file-dialog {
+        height: 92vh !important;
+        padding-bottom: 12px !important;
+    }
+
+    .file-dialog .file-dialog-layout {
+        flex-direction: column;
+        height: calc(92vh - 56px) !important;
+        overflow: hidden;
+    }
+
+    .file-dialog #file-history-resizer {
+        display: none;
+    }
+
+    .file-dialog .file-history {
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: none !important;
+        max-height: 132px;
+        margin-right: 0;
+        margin-bottom: 10px;
+        padding-right: 0;
+        border-right: none;
+        border-bottom: 1px solid #e6edf3;
+        background: linear-gradient(180deg, #fbfdff 0%, #f4f8fb 100%);
+    }
+
+    .file-dialog .filecontainer {
+        width: 100% !important;
+        height: auto;
+        flex: 1 1 auto;
+        padding: 12px !important;
+        border-radius: 18px 18px 0 0;
+        box-shadow: none;
+    }
+
+    .file-dialog .file-dialog-toolbar-row {
+        flex-direction: column;
+        align-items: stretch !important;
+        gap: 8px;
+    }
+
+    .file-dialog #hostname {
+        margin-right: 0 !important;
+    }
+
+    .file-dialog #splitSize,
+    .file-dialog #directoryInput,
+    .file-dialog #moveDirButton,
+    .file-dialog #uploadFile,
+    .file-dialog .fileinput {
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    .file-dialog .dir-controls {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .file-dialog .file-manager {
+        margin-top: 12px;
+        gap: 8px;
+        width: 100%;
+    }
+
+    .file-dialog .directory,
+    .file-dialog .file {
+        width: 100% !important;
+        max-width: 100% !important;
+        padding: 5px 8px !important;
+        gap: 5px !important;
+        align-items: flex-start;
+        flex-wrap: wrap;
+        line-height: 1.15;
+        font-size: 11px;
+    }
+
+    .file-dialog .icon,
+    .file-dialog .icon-file,
+    .file-dialog .icon-download {
+        font-size: 12px !important;
+        margin-right: 0 !important;
+    }
+
+    .file-dialog .filename {
+        flex: 1 1 calc(100% - 24px);
+        min-width: 0;
+        white-space: normal;
+        word-break: break-all;
+        overflow: hidden;
+        text-overflow: unset;
+        font-size: 11px;
+    }
+
+    .file-dialog .filesize,
+    .file-dialog .fileperm,
+    .file-dialog .filetime {
+        font-size: 10px;
+        line-height: 1.1;
+        white-space: normal;
+        word-break: break-all;
+        color: #708090;
+    }
+
+    .file-dialog .rename-btn,
+    .file-dialog .time-btn {
+        padding: 1px 5px !important;
+        font-size: 10px !important;
+        line-height: 1 !important;
+        min-height: 20px;
+        border-radius: 5px;
+    }
+
+    .msg-dialog {
+        width: 94vw !important;
+        max-width: 680px !important;
+        padding: 14px 10px 18px !important;
+        background: linear-gradient(180deg, #fbfdff 0%, #f4f7fb 100%) !important;
+        border: 1px solid rgba(148, 168, 186, 0.24) !important;
+        box-shadow: 0 18px 42px rgba(41, 61, 80, 0.18) !important;
+    }
+
+    .msg-dialog .msg-dialog-header {
+        flex-direction: column;
+        align-items: flex-start !important;
+        gap: 6px;
+        margin-top: 34px !important;
+        padding: 0 6px 12px;
+    }
+
+    .msg-dialog .msg-dialog-title {
+        margin: 0;
+        font-size: 20px;
+        line-height: 1.1;
+        letter-spacing: 0.01em;
+        color: #26384a;
+    }
+
+    .msg-dialog .msg-dialog-hostname {
+        margin: 0 !important;
+        font-size: 12px;
+        line-height: 1.4;
+        color: #708396;
+        word-break: break-all;
+    }
+
+    .msg-dialog .msg-dialog-body {
+        padding: 0 2px 8px;
+    }
+
+    .msg-dialog .msg-request-list,
+    .msg-dialog .msg-result-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .msg-dialog .msg-result-title {
+        margin: 16px 6px 10px;
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: #6f8294;
+    }
+
+    .msg-dialog .msg-item {
+        margin-bottom: 0 !important;
+        padding: 12px 12px 48px !important;
+        border: 1px solid rgba(160, 179, 194, 0.26) !important;
+        border-radius: 18px;
+        background: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(247,250,253,0.96) 100%);
+        box-shadow: 0 10px 24px rgba(67, 90, 111, 0.08);
+        overflow: hidden;
+    }
+
+    .msg-dialog .msg-item-main {
+        align-items: flex-start !important;
+        gap: 8px !important;
+        width: 100%;
+        min-width: 0;
+    }
+
+    .msg-dialog .msg-index {
+        flex-shrink: 0;
+        padding-top: 2px;
+        font-size: 12px;
+        color: #8294a5;
+    }
+
+    .msg-dialog .msg-item-text {
+        display: block;
+        min-width: 0;
+        line-height: 1.5;
+        color: #233445;
+        word-break: break-word;
+        overflow-wrap: anywhere;
+    }
+
+    .msg-dialog .msg-item-actions {
+        position: absolute;
+        right: 10px;
+        bottom: 10px;
+        top: auto !important;
+        gap: 8px !important;
+    }
+
+    .msg-dialog .msg-action-btn,
+    .msg-dialog .msg-drag-handle {
+        min-width: 34px;
+        min-height: 34px;
+        border-radius: 999px;
+        border: 1px solid rgba(154, 173, 188, 0.34);
+        background: rgba(255, 255, 255, 0.94);
+        box-shadow: 0 4px 10px rgba(65, 86, 103, 0.08);
+    }
+
+    .msg-dialog .msg-drag-handle {
+        margin-right: 2px;
+        padding: 2px 10px;
+        color: #607488;
+    }
+}
+
+@media (max-width: 480px) {
+    .floating-dialog {
+        width: 96vw !important;
+        max-width: 96vw !important;
+        max-height: 94vh !important;
+        border-radius: 20px !important;
+        padding: 12px 8px 14px !important;
+    }
+
+    .terminal-dialog .terminal {
+        min-height: 52vh !important;
+        height: 58vh !important;
+    }
+
+    .file-dialog .file-history {
+        max-height: 112px;
+    }
+
+    .msg-dialog .msg-dialog-title {
+        font-size: 18px;
+    }
+
+    .msg-dialog .msg-item {
+        padding: 11px 10px 46px !important;
+        border-radius: 16px;
     }
 }
 
