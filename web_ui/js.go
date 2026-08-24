@@ -3,7 +3,7 @@ import (
 	"net/http"
 	"fmt"
 )
-func Js(error_str,web_route,web_js,web_css string, sessionSlice []string) http.HandlerFunc {
+func Js(error_str,web_route,web_css string, sessionSlice []string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		//必须先登录
 		_, ok := CheckUserSession(r, sessionSlice, error_str)
