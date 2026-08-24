@@ -5,7 +5,7 @@ import (
 	"net/http"
 )
 
-func Lain(error_str, web_title, web_js, web_css, web_route string, sessionSlice []string) http.HandlerFunc {
+func Lain(error_str, web_title, web_js, web_css string, sessionSlice []string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
         //必须先登录
         _, ok := CheckUserSession(r, sessionSlice, error_str)
