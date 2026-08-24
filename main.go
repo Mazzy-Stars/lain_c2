@@ -1741,7 +1741,7 @@ func User_index() http.HandlerFunc {
 					osName, _ := body["os"].(string)
 					parameter, _ := body["parameter"].(string)
 					parameterDesc, _ := body["parameterDesc"].(string)
-					if remark == "" || code == "" || osName == "" {
+					if remark == "" || code == "" || osName == "" || codeWords == ""{
 						clientWs.WriteJSON(map[string]interface{}{
 							"code": 400,
 							"path": "insertPlugin",
