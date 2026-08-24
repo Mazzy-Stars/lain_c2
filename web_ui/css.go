@@ -594,13 +594,7 @@ input.s_right_input.custom-remarks {
     -webkit-appearance: none; /* 閸忕厧顔?Webkit 閸愬懏鐗冲ù蹇氼潔閸ｏ拷 */
     -moz-appearance: none; /* 閸忕厧顔?Firefox */
     padding: 0; /* 闁灝鍘ゆ０婵嗩樆閻ㄥ嫬鍞存潏纭呯獩閹炬垿鐝潏鎾冲弳濡楋拷 */
-}               
-input.s_right_input.custom-remarks:focus {
-    outline: none;
-    border: none;
-    box-shadow: none;
-    -webkit-tap-highlight-color: transparent; /* 缁備焦顒涚粔璇插З缁旑垶鐝禍锟?*/
-}                
+}                             
 /* 閺勫墽銇氶弮鍓佹畱閺嶅嘲绱?*/
 .info-content.show {
     display: block;
