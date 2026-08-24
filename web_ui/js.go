@@ -1930,6 +1930,7 @@ class index{
 		
 		    dialog = document.createElement("div");
 		    dialog.id = dialogId;
+		    dialog.className = "floating-dialog terminal-dialog";
 		    dialog.dataset.uid = uid;
 		    dialog.style.position = "fixed";
 		    dialog.style.top = "5%";
@@ -1956,7 +1957,7 @@ class index{
 		    dialog.innerHTML =
 		        '<div class="terminal-drag-bar" style="position:absolute;top:0;left:0;width:100%;height:36px;cursor:move;background:linear-gradient(90deg, rgba(230,236,243,0.95), rgba(243,247,251,0.9));border-top-left-radius:18px;border-top-right-radius:18px;z-index:10001;border-bottom:1px solid rgba(138,160,178,0.18);"></div>' +
 		        '<button class="dialog-close-btn terminal-close-btn" type="button">x</button>' +
-		        '<div class="shell-container" style="margin-top:34px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 4px 14px 4px;">' +
+		        '<div class="shell-container terminal-dialog-toolbar" style="margin-top:34px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 4px 14px 4px;">' +
 		        "<label for='options' style='color:#4f6477;font-size:13px;'>Select Shell:</label>" +
 		        "<select class='terminal-shell-select' name='options' style='min-width:150px;padding:8px 12px;border-radius:999px;border:1px solid rgba(138,160,178,0.35);background:#fff;color:#314657;'></select>" +
 		        "<p class='terminal-hostname' style='margin-left:auto;font-size:12px;color:#6a7f92;'>Host: " + host + "</p>" +
@@ -2134,39 +2135,38 @@ class index{
                 }
                 return;
             }
-            if (!dialog) {
-                dialog = document.createElement("div");
-                dialog.id = dialogId;
-                dialog.dataset.uid = uid;
-                dialog.style.position = "fixed";
-                dialog.style.top = "5%";
-                dialog.style.left = "50%";
-                dialog.style.transform = "translateX(-50%)";
-                dialog.style.background = "#fff";
-                dialog.style.zIndex = String((window.dialogZIndexCounter = (window.dialogZIndexCounter || 9999) + 1));
-                dialog.style.maxWidth = "1100px";
-                dialog.style.width = "95vw";
-                dialog.style.height = "85%";
-                dialog.style.overflow = "hidden";
-                dialog.style.border = "1px solid #ccc";
-                dialog.style.borderRadius = "8px";
-                dialog.style.boxShadow = "0 2px 8px rgba(0,0,0,0.2)";
-                dialog.style.userSelect = "none";
-                dialog.style.touchAction = "none";
-                document.body.appendChild(dialog);
-            }
+            dialog = document.createElement("div");
+            dialog.id = dialogId;
+            dialog.className = "floating-dialog file-dialog";
+            dialog.dataset.uid = uid;
+            dialog.style.position = "fixed";
+            dialog.style.top = "5%";
+            dialog.style.left = "50%";
+            dialog.style.transform = "translateX(-50%)";
+            dialog.style.background = "#fff";
+            dialog.style.zIndex = String((window.dialogZIndexCounter = (window.dialogZIndexCounter || 9999) + 1));
+            dialog.style.maxWidth = "1100px";
+            dialog.style.width = "95vw";
+            dialog.style.height = "85%";
+            dialog.style.overflow = "hidden";
+            dialog.style.border = "1px solid #ccc";
+            dialog.style.borderRadius = "8px";
+            dialog.style.boxShadow = "0 2px 8px rgba(0,0,0,0.2)";
+            dialog.style.userSelect = "none";
+            dialog.style.touchAction = "none";
+            document.body.appendChild(dialog);
 
             // 鎷栧姩鏉″拰鍐呭
             dialog.innerHTML =
-                '<div id="file-drag-bar" style="position:absolute;top:0;left:0;width:100%;height:32px;cursor:move;background:rgba(0,0,0,0.05);border-top-left-radius:8px;border-top-right-radius:8px;z-index:10001;"></div>' +
+                '<div id="file-drag-bar"></div>' +
                 '<button id="file-close-btn" class="dialog-close-btn" type="button">x</button>' +
-                '<div style="display:flex;width:100%;margin-top:32px;position:relative;height:calc(90vh - 48px);overflow:hidden;">' +
-                    '<div id="history" class="file-history" style="width:200px;min-width:80px;max-width:80vw;transition:width 0.1s;"></div>' +
-                    '<div id="file-history-resizer" style="min-width:6px;cursor:col-resize;background:#e0e0e0;z-index:10;"></div>' +
+                '<div class="file-dialog-layout">' +
+                    '<div id="history" class="file-history"></div>' +
+                    '<div id="file-history-resizer"></div>' +
                     '<div class="filecontainer">' +
-                        '<div>' +
-                            '<div style="display: flex; align-items: center;">' +
-                                "<p id='hostname' style='margin-right: 25px;'>Host:" + host + "</p>" +
+                        '<div class="file-dialog-toolbar">' +
+                            '<div class="file-dialog-toolbar-row">' +
+                                "<p id='hostname'>Host:" + host + "</p>" +
                                 '<label for="splitSize">Enter the split size (each part in MB): </label>' +
                                 '<input type="number" id="splitSize" min="1" placeholder="Enter part" />' +
                             '</div>' +
@@ -2257,19 +2257,6 @@ class index{
                 document.addEventListener("touchmove", onMove, {passive: false});
                 document.addEventListener("touchend", stopMove);
             });
-
-            // 鏍峰紡锛堝唴瀹瑰悗 append锛岄伩鍏嶈 innerHTML 瑕嗙洊锛�
-            const style = document.createElement("style");
-            style.textContent =
-                ".dir-btn{margin:10px 0;cursor:pointer;color:#007bff;}" +
-                ".dir-controls{margin:10px 0;display:flex;align-items:center;gap:8px;}" +
-                ".fileinput{margin-left:8px;}" +
-                ".directory,.file{padding:6px 0;border-bottom:1px solid #eee;display:flex;align-items:center;gap:8px;}" +
-                ".icon-dir,.icon-file{margin-right:4px;}" +
-                ".file-history{overflow:auto;background:#fafafa;border-right:1px solid #eee;}" +
-                ".filecontainer{background:#fff;}" +
-                ".file-manager{min-width:80px;}";
-            dialog.appendChild(style);
 
             // 鎷栧姩鏀瑰彉 file-history 鍜� filecontainer 瀹藉害锛堣仈鍔� file-manager锛�
             setTimeout(function () {
@@ -2428,6 +2415,7 @@ class index{
 
             dialog = document.createElement("div");
             dialog.id = dialogId;
+            dialog.className = "floating-dialog msg-dialog";
             dialog.dataset.uid = uid;
             dialog.style.position = "fixed";
             dialog.style.top = "10%";
@@ -2448,36 +2436,19 @@ class index{
             document.body.appendChild(dialog);
 
             dialog.innerHTML =
-                '<div id="msg-drag-bar" style="position:absolute;top:0;left:0;width:100%;height:32px;cursor:move;background:rgba(0,0,0,0.05);border-top-left-radius:8px;border-top-right-radius:8px;z-index:10001;"></div>' +
+                '<div id="msg-drag-bar"></div>' +
                 '<button id="msg-close-btn" class="dialog-close-btn" type="button">x</button>' +
-                '<div style="display:flex;align-items:center;margin-top:32px;">' +
-                    '<h2>Msg list</h2>' +
-                    "<p id='hostname' style='margin-left:25px;'>Host:" + host + "</p>" +
+                '<div class="msg-dialog-header">' +
+                    '<h2 class="msg-dialog-title">Msg list</h2>' +
+                    "<p id='hostname' class='msg-dialog-hostname'>Host:" + host + "</p>" +
                 '</div>' +
-                '<div id="msg-container">loading...</div>';
-
-            const style = document.getElementById("msg-dialog-style") || document.createElement("style");
-            style.id = "msg-dialog-style";
-            style.textContent =
-                ".msg-item {background:white;border:1px solid #ccc;padding:10px;margin-bottom:8px;position:relative;}" +
-                ".btn-group {position:absolute;right:10px;top:10px;}" +
-                ".move-btn, .del-btn {margin-left:5px;padding:4px 6px;font-size:14px;}" +
-                ".msg-item span {user-select:none;}" +
-                ".msg-item span[title] {color:blue;text-decoration:underline dotted;}" +
-                ".msg-item-dragging {opacity:0.92;box-shadow:0 14px 32px rgba(0,0,0,0.14);z-index:10020;}" +
-                ".msg-drag-handle {margin-right:6px;padding:2px 6px;border:1px solid #d7dde5;background:#f7f9fc;border-radius:8px;cursor:grab;touch-action:none;color:#6b7b8b;}" +
-                ".msg-drag-handle:active {cursor:grabbing;}" +
-                ".msg-drop-placeholder {border:1px dashed #9eb3c7;border-radius:10px;margin-bottom:8px;background:rgba(228,236,245,0.45);}";
-            if (!style.parentNode) {
-                document.head.appendChild(style);
-            }
+                '<div id="msg-container" class="msg-dialog-body">loading...</div>';
 
             const dragBar = dialog.querySelector("#msg-drag-bar");
             const msgContainer = dialog.querySelector("#msg-container");
 
             dialog._msgClosed = false;
             dialog._msgWatchTimer = null;
-            dialog._msgInterval = null;
 
             let msgPostArray = [];
             let activeMessageDrag = null;
@@ -2513,11 +2484,6 @@ class index{
                 if (dialog._msgWatchTimer) {
                     clearInterval(dialog._msgWatchTimer);
                     dialog._msgWatchTimer = null;
-                }
-
-                if (dialog._msgInterval) {
-                    clearInterval(dialog._msgInterval);
-                    dialog._msgInterval = null;
                 }
 
                 stopMove();
@@ -2643,16 +2609,8 @@ class index{
                 if (rawMessage !== null && rawMessage !== undefined) msgDiv.dataset.rawMessage = rawMessage;
                 if (sourceIndex !== null && sourceIndex !== undefined) msgDiv.dataset.sourceIndex = String(sourceIndex);
 
-                msgDiv.style.display = "flex";
-                msgDiv.style.justifyContent = "space-between";
-                msgDiv.style.alignItems = "center";
-                msgDiv.style.gap = "8px";
-
                 const left = document.createElement("div");
-                left.style.display = "flex";
-                left.style.alignItems = "center";
-                left.style.gap = "8px";
-                left.style.flex = "1";
+                left.className = "msg-item-main";
 
                 if (withMove) {
                     const handle = document.createElement("button");
@@ -2674,6 +2632,7 @@ class index{
                 }
 
                 const span = document.createElement("span");
+                span.className = "msg-item-text";
                 let expanded = false;
 
                 if (expandable && text.length > 10) {
@@ -2692,11 +2651,11 @@ class index{
                 msgDiv.appendChild(left);
 
                 const btnGroup = document.createElement("div");
-                btnGroup.style.display = "flex";
-                btnGroup.style.gap = "4px";
+                btnGroup.className = "msg-item-actions";
 
                 if (withCopy) {
                     const copy = document.createElement("button");
+                    copy.className = "msg-action-btn msg-copy-btn";
                     copy.textContent = "📋";
                     copy.onclick = () => {
                         navigator.clipboard.writeText(text).then(() => {
@@ -2711,6 +2670,7 @@ class index{
 
                 if (onDelete) {
                     const del = document.createElement("button");
+                    del.className = "msg-action-btn msg-delete-btn";
                     del.textContent = "🗑️";
                     del.onclick = () => onDelete(msgDiv);
                     btnGroup.appendChild(del);
@@ -2942,14 +2902,17 @@ class index{
 
                 const startIndex = items.indexOf(msgDiv);
                 const originalNextSibling = msgDiv.nextElementSibling;
+                const dragDialogZIndex = (window.dialogZIndexCounter = (window.dialogZIndexCounter || 9999) + 1);
 
                 requestList.insertBefore(placeholder, msgDiv.nextSibling);
+                dialog.style.zIndex = String(dragDialogZIndex);
                 document.body.appendChild(msgDiv);
                 msgDiv.classList.add("msg-item-dragging");
                 msgDiv.style.position = "fixed";
                 msgDiv.style.left = rect.left + "px";
                 msgDiv.style.top = rect.top + "px";
                 msgDiv.style.width = rect.width + "px";
+                msgDiv.style.zIndex = String(dragDialogZIndex + 1);
                 msgDiv.style.pointerEvents = "none";
 
                 activeMessageDrag = {
@@ -3046,6 +3009,7 @@ class index{
                 drag.item.style.left = "";
                 drag.item.style.top = "";
                 drag.item.style.width = "";
+                drag.item.style.zIndex = "";
                 drag.item.style.pointerEvents = "";
 
                 try {
