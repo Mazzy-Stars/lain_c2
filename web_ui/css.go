@@ -595,7 +595,7 @@ input.s_right_input.custom-remarks {
     -moz-appearance: none; /* 閸忕厧顔?Firefox */
     padding: 0; /* 闁灝鍘ゆ０婵嗩樆閻ㄥ嫬鍞存潏纭呯獩閹炬垿鐝潏鎾冲弳濡楋拷 */
 }               
-input.s_right_input.custom-remarks:focu {
+input.s_right_input.custom-remarks:focus {
     outline: none;
     border: none;
     box-shadow: none;
