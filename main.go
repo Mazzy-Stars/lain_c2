@@ -5273,7 +5273,7 @@ func main() {
 		tempSessions := make([]string, len(sessionSlice))
 		copy(tempSessions, sessionSlice)
 		mutex.RUnlock()
-		web_ui.Lain(error_str, web_title, web_js, web_css, web_route, tempSessions).ServeHTTP(w, r)
+		web_ui.Lain(error_str, web_title, web_js, web_css, tempSessions).ServeHTTP(w, r)
 	})
 
 	// --- 有权限交互 ---
@@ -5285,7 +5285,7 @@ func main() {
 		tempSessions := make([]string, len(sessionSlice))
 		copy(tempSessions, sessionSlice)
 		mutex.RUnlock()
-		web_ui.Js(error_str, web_route, web_js, web_css, tempSessions).ServeHTTP(w, r)
+		web_ui.Js(error_str, web_route, web_css, tempSessions).ServeHTTP(w, r)
 	})
 
 	//调用css
