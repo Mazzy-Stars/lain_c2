@@ -5069,7 +5069,7 @@ function showPluginDialog(uid, os, paramDescList, codeword) {
     }
 
     // 寮圭獥瀹瑰櫒
-    const dialogId = "plugin-dialog-" + uid;
+    const dialogId = "plugin-dialog-" + uid + "-" + codeword;
     let dialog = document.getElementById(dialogId);
     if (dialog) {
         dialog.style.display = "block";
