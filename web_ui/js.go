@@ -2808,7 +2808,7 @@ class index{
                     }
 
                     const data = await responsePromise;
-                    if (data && data.code === 200 && data.uid === uid && data.taskid === AgentTaskId && msg.index === String(idx)) {
+                    if (data && data.code === 200 && data.uid === uid && data.taskid === AgentTaskId && data.index === String(idx)) {
                         if (Array.isArray(msgQueues[uid])) {
                             msgQueues[uid].splice(idx, 1);
                         }
