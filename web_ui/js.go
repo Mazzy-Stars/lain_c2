@@ -2123,6 +2123,7 @@ class index{
             const dialogId = "file-dialog-" + uid;
             let dialog = document.getElementById(dialogId);
             let fileManager = window.fileManagerSessions ? window.fileManagerSessions[uid] : null;
+
             if (dialog) {
                 dialog.style.display = "block";
                 dialog.style.zIndex = String((window.dialogZIndexCounter = (window.dialogZIndexCounter || 9999) + 1));
@@ -2135,6 +2136,7 @@ class index{
                 }
                 return;
             }
+
             dialog = document.createElement("div");
             dialog.id = dialogId;
             dialog.className = "floating-dialog file-dialog";
@@ -2156,7 +2158,10 @@ class index{
             dialog.style.touchAction = "none";
             document.body.appendChild(dialog);
 
-            // 鎷栧姩鏉″拰鍐呭
+            dialog._fileClosed = false;
+            dialog._fileFocusHandler = null;
+            dialog._fileResizeCleanup = null;
+
             dialog.innerHTML =
                 '<div id="file-drag-bar"></div>' +
                 '<button id="file-close-btn" class="dialog-close-btn" type="button">x</button>' +
@@ -2186,23 +2191,10 @@ class index{
                 '</div>' +
                 '<link rel="stylesheet" href="/`+web_css+`">';
 
-            // 鍏抽棴鎸夐挳
-            dialog.querySelector("#file-close-btn").onclick = function () {
-                if (fileManager && typeof fileManager.stopFileListPolling === "function") {
-                    fileManager.stopFileListPolling();
-                }
-                if (window.fileManagerSessions) {
-                    delete window.fileManagerSessions[uid];
-                }
-                if (window.activeFileManager === fileManager) {
-                    window.activeFileManager = null;
-                }
-                dialog.remove();
-            };
-
-            // 鎷栧姩閫昏緫锛堝吋瀹筆C鍜岀Щ鍔ㄧ锛屼笖绐楀彛涓嶈兘绉诲嚭椤甸潰锛�
             const dragBar = dialog.querySelector("#file-drag-bar");
-            let isDragging = false, offsetX = 0, offsetY = 0;
+            let isDragging = false;
+            let offsetX = 0;
+            let offsetY = 0;
 
             function clamp(val, min, max) {
                 return Math.max(min, Math.min(val, max));
@@ -2213,21 +2205,25 @@ class index{
             }
 
             function onMove(e) {
-                if (!isDragging) return;
+                if (!isDragging || dialog._fileClosed) return;
+
                 let clientX = e.touches ? e.touches[0].clientX : e.clientX;
                 let clientY = e.touches ? e.touches[0].clientY : e.clientY;
                 let newLeft = clientX - offsetX;
                 let newTop = clientY - offsetY;
-                // 闄愬埗绐楀彛涓嶇Щ鍑洪〉闈�
+
                 const rect = getDialogRect();
-                const winW = window.innerWidth, winH = window.innerHeight;
+                const winW = window.innerWidth;
+                const winH = window.innerHeight;
                 const maxLeft = winW - rect.width;
                 const maxTop = winH - rect.height;
+
                 newLeft = clamp(newLeft, 0, maxLeft > 0 ? maxLeft : 0);
                 newTop = clamp(newTop, 0, maxTop > 0 ? maxTop : 0);
+
                 dialog.style.left = newLeft + "px";
                 dialog.style.top = newTop + "px";
-                dialog.style.transform = ""; // 鎷栧姩鍚庡彇娑堝眳涓�
+                dialog.style.transform = "";
             }
 
             function stopMove() {
@@ -2240,6 +2236,7 @@ class index{
             }
 
             dragBar.addEventListener("mousedown", function(e) {
+                if (dialog._fileClosed) return;
                 isDragging = true;
                 const rect = getDialogRect();
                 offsetX = e.clientX - rect.left;
@@ -2248,92 +2245,108 @@ class index{
                 document.addEventListener("mousemove", onMove);
                 document.addEventListener("mouseup", stopMove);
             });
+
             dragBar.addEventListener("touchstart", function(e) {
+                if (dialog._fileClosed) return;
                 isDragging = true;
                 const rect = getDialogRect();
                 offsetX = e.touches[0].clientX - rect.left;
                 offsetY = e.touches[0].clientY - rect.top;
                 document.body.style.userSelect = "none";
-                document.addEventListener("touchmove", onMove, {passive: false});
+                document.addEventListener("touchmove", onMove, { passive: false });
                 document.addEventListener("touchend", stopMove);
             });
 
-            // 鎷栧姩鏀瑰彉 file-history 鍜� filecontainer 瀹藉害锛堣仈鍔� file-manager锛�
-            setTimeout(function () {
-                const resizer = dialog.querySelector('#file-history-resizer');
-                const history = dialog.querySelector('#history');
-                const filecontainer = dialog.querySelector('.filecontainer');
-                const parent = resizer ? resizer.parentElement : null;
-                let resizing = false, startX = 0, startWidth = 0, parentWidth = 0, resizerWidth = 0;
+            const resizer = dialog.querySelector("#file-history-resizer");
+            const history = dialog.querySelector("#history");
+            const filecontainer = dialog.querySelector(".filecontainer");
+            const parent = resizer ? resizer.parentElement : null;
 
-                if (!resizer || !history || !filecontainer || !parent) {
-                    return;
+            if (resizer && history && filecontainer && parent) {
+                let resizing = false;
+                let startX = 0;
+                let startWidth = 0;
+                let parentWidth = 0;
+                let resizerWidth = 0;
+
+                function resize(e) {
+                    if (!resizing || dialog._fileClosed) return;
+                    let newWidth = startWidth + (e.clientX - startX);
+                    newWidth = Math.max(80, Math.min(newWidth, parentWidth - 80 - resizerWidth));
+                    history.style.width = newWidth + "px";
+                    filecontainer.style.width = (parentWidth - newWidth - resizerWidth) + "px";
+                    filecontainer.style.flex = "none";
                 }
 
-                resizer.addEventListener('mousedown', function(e) {
+                function stopResize() {
+                    resizing = false;
+                    document.body.style.cursor = "";
+                    document.removeEventListener("mousemove", resize);
+                    document.removeEventListener("mouseup", stopResize);
+                }
+
+                function startResize(e) {
+                    if (dialog._fileClosed) return;
                     resizing = true;
                     startX = e.clientX;
                     startWidth = history.offsetWidth;
                     parentWidth = parent.offsetWidth;
                     resizerWidth = resizer.offsetWidth;
-                    document.body.style.cursor = 'col-resize';
-                    document.addEventListener('mousemove', resize);
-                    document.addEventListener('mouseup', stopResize);
-                });
-
-                function resize(e) {
-                    if (!resizing) return;
-                    let newWidth = startWidth + (e.clientX - startX);
-                    // 闄愬埗鏈€灏忔渶澶у搴�
-                    newWidth = Math.max(80, Math.min(newWidth, parentWidth - 80 - resizerWidth));
-                    history.style.width = newWidth + 'px';
-                    filecontainer.style.width = (parentWidth - newWidth - resizerWidth) + 'px';
-                    filecontainer.style.flex = 'none';
+                    document.body.style.cursor = "col-resize";
+                    document.addEventListener("mousemove", resize);
+                    document.addEventListener("mouseup", stopResize);
                 }
 
-                function stopResize() {
-                    resizing = false;
-                    document.body.style.cursor = '';
-                    document.removeEventListener('mousemove', resize);
-                    document.removeEventListener('mouseup', stopResize);
-                }
-            }, 200);
+                resizer.addEventListener("mousedown", startResize);
 
-            // 閫昏緫
-            setTimeout(function () {
-                const fliemanage = new lain_terminal();
-                fileManager = fliemanage;
-                fliemanage.uid = uid;
-                fliemanage.dialogEl = dialog;
-                window.fileManagerSessions[uid] = fliemanage;
-                window.activeFileManager = fliemanage;
-                
-                let hostname = dialog.querySelector("#hostname");
-                if (hostname) {
-                    hostname.innerText = "Host:" + host;
-                }
+                dialog._fileResizeCleanup = function() {
+                    stopResize();
+                    resizer.removeEventListener("mousedown", startResize);
+                };
+            }
 
-                // 涓婁紶琛ㄥ崟
-                dialog.querySelector("#uploadForm").addEventListener("submit",
-                async function(event){
+            fileManager = new lain_terminal();
+            fileManager.uid = uid;
+            fileManager.dialogEl = dialog;
+            window.fileManagerSessions[uid] = fileManager;
+            window.activeFileManager = fileManager;
+
+            const hostname = dialog.querySelector("#hostname");
+            if (hostname) {
+                hostname.innerText = "Host:" + host;
+            }
+
+            const uploadForm = dialog.querySelector("#uploadForm");
+            if (uploadForm) {
+                uploadForm.addEventListener("submit", async function(event) {
                     event.preventDefault();
+
+                    if (dialog._fileClosed) {
+                        return;
+                    }
+
                     const fileInput = dialog.querySelector("#uploadFile");
                     const file = fileInput && fileInput.files ? fileInput.files[0] : null;
-                    if(!file){
+                    if (!file) {
                         customAlert("Please select a file");
                         return;
                     }
+
                     const splitSizeInput = dialog.querySelector("#splitSize");
-                    const splitSize = splitSizeInput && splitSizeInput.value ? parseFloat(splitSizeInput.value) * 1024 * 1024 : 0;
-                    const file_name = fliemanage.shell_dir + "/" + file.name;
+                    const splitSize = splitSizeInput && splitSizeInput.value
+                        ? parseFloat(splitSizeInput.value) * 1024 * 1024
+                        : 0;
+
+                    const file_name = fileManager.shell_dir + "/" + file.name;
                     const toastId = createTransferToastId("upload-file");
-                    try{
+
+                    try {
                         await webSocketClient.sendFile(
                             "uploadFile",
                             {
-                                uid:fliemanage.uid,
-                                filename:file_name,
-                                splitSize:String(splitSize)
+                                uid: fileManager.uid,
+                                filename: file_name,
+                                splitSize: String(splitSize)
                             },
                             file,
                             32 * 1024,
@@ -2349,6 +2362,7 @@ class index{
                                 });
                             }
                         );
+
                         customTransferToast(toastId, {
                             title: "Upload " + file.name,
                             percent: 100,
@@ -2356,16 +2370,11 @@ class index{
                             detail: file_name,
                             removeAfter: 1200,
                         });
-                        console.log(file_name,"File uploaded successfully");
-                        fliemanage.loadFile(
-                            file_name,
-                            file.size
-                        );
-                    }catch(err){
-                        console.error(
-                            "upload error:",
-                            err
-                        );
+
+                        console.log(file_name, "File uploaded successfully");
+                        fileManager.loadFile(file_name, file.size);
+                    } catch (err) {
+                        console.error("upload error:", err);
                         customTransferToast(toastId, {
                             title: "Upload " + file.name,
                             percent: 0,
@@ -2376,32 +2385,69 @@ class index{
                         customLog("Upload failed");
                     }
                 });
+            }
 
-                // 杩斿洖涓婄骇鐩綍
-                const dirBtn = dialog.querySelector("#dir-btn");
-                if (dirBtn) {
-                    dirBtn.addEventListener("click", function() {
-                        fliemanage.move_file(1, "no");
-                    });
-                }
-
-                // 璺宠浆鐩綍
-                const btn = dialog.querySelector("#moveDirButton");
-                if (btn) {
-                btn.addEventListener("click", () => fliemanage.move_dir());
-                }
-
-                dialog.addEventListener("mousedown", function() {
-                    window.activeFileManager = fliemanage;
-                    dialog.style.zIndex = String((window.dialogZIndexCounter = (window.dialogZIndexCounter || 9999) + 1));
+            const dirBtn = dialog.querySelector("#dir-btn");
+            if (dirBtn) {
+                dirBtn.addEventListener("click", function() {
+                    if (dialog._fileClosed) return;
+                    fileManager.move_file(1, "no");
                 });
+            }
 
-                // 鍒濆鍖�
-                fliemanage.shell_dir = dir || "./";
-                fliemanage.history_file(uid);
-                fliemanage.look_file(fliemanage.shell_dir);
+            const moveDirButton = dialog.querySelector("#moveDirButton");
+            if (moveDirButton) {
+                moveDirButton.addEventListener("click", function() {
+                    if (dialog._fileClosed) return;
+                    fileManager.move_dir();
+                });
+            }
 
-            }, 200);
+            dialog._fileFocusHandler = function() {
+                if (dialog._fileClosed) {
+                    return;
+                }
+                window.activeFileManager = fileManager;
+                dialog.style.zIndex = String((window.dialogZIndexCounter = (window.dialogZIndexCounter || 9999) + 1));
+            };
+            dialog.addEventListener("mousedown", dialog._fileFocusHandler);
+
+            dialog.querySelector("#file-close-btn").onclick = function() {
+                if (dialog._fileClosed) {
+                    return;
+                }
+
+                dialog._fileClosed = true;
+                stopMove();
+
+                if (dialog._fileResizeCleanup) {
+                    dialog._fileResizeCleanup();
+                    dialog._fileResizeCleanup = null;
+                }
+
+                if (dialog._fileFocusHandler) {
+                    dialog.removeEventListener("mousedown", dialog._fileFocusHandler);
+                    dialog._fileFocusHandler = null;
+                }
+
+                if (fileManager && typeof fileManager.stopFileListPolling === "function") {
+                    fileManager.stopFileListPolling();
+                }
+
+                if (window.fileManagerSessions) {
+                    delete window.fileManagerSessions[uid];
+                }
+
+                if (window.activeFileManager === fileManager) {
+                    window.activeFileManager = null;
+                }
+
+                dialog.remove();
+            };
+
+            fileManager.shell_dir = dir || "./";
+            fileManager.history_file(uid);
+            fileManager.look_file(fileManager.shell_dir);
         }
         showMsgDialog(uid, host) {
             const dialogId = "msg-dialog-" + uid;
