@@ -1911,177 +1911,213 @@ class index{
             });
         }
         showTerminalDialog(uid, host, os) {
-            const dialogId = "terminal-dialog-" + uid;
-            let dialog = document.getElementById(dialogId);
-            let terminal = null;
-            if (dialog) {
-                dialog.style.display = "block";
-                dialog.style.zIndex = String((window.dialogZIndexCounter = (window.dialogZIndexCounter || 9999) + 1));
-                terminal = window.terminalSessions ? window.terminalSessions[uid] : null;
-                if (terminal) {
-                    window.activeTerminal = terminal;
-                    if (terminal.currentInput && terminal.currentInput.isConnected) {
-                        terminal.currentInput.focus();
-                    }
-                }
-                return;
-            }
-            dialog = document.createElement("div");
-            dialog.id = dialogId;
-            dialog.dataset.uid = uid;
-            dialog.style.position = "fixed";
-            dialog.style.top = "5%";
-            dialog.style.left = "50%";
-            dialog.style.transform = "translateX(-50%)";
-            dialog.style.background = "linear-gradient(180deg, #fbfdff 0%, #f2f6fb 100%)";
-            dialog.style.zIndex = String((window.dialogZIndexCounter = (window.dialogZIndexCounter || 9999) + 1));
-            dialog.style.maxWidth = "900px";
-            dialog.style.width = "90vw";
-            dialog.style.maxHeight = "90vh";
-            dialog.style.overflow = "auto";
-            dialog.style.border = "1px solid rgba(138, 160, 178, 0.25)";
-            dialog.style.borderRadius = "18px";
-            dialog.style.boxShadow = "0 24px 60px rgba(44, 72, 98, 0.18)";
-            dialog.style.padding = "18px";
-            dialog.style.userSelect = "none";
-            dialog.style.touchAction = "none";
-            dialog.style.backdropFilter = "blur(10px)";
-            document.body.appendChild(dialog);
-
-            // 鎷栧姩鏉″拰鍐呭
-            dialog.innerHTML =
-                '<div class="terminal-drag-bar" style="position:absolute;top:0;left:0;width:100%;height:36px;cursor:move;background:linear-gradient(90deg, rgba(230,236,243,0.95), rgba(243,247,251,0.9));border-top-left-radius:18px;border-top-right-radius:18px;z-index:10001;border-bottom:1px solid rgba(138,160,178,0.18);"></div>' +
-                '<button class="dialog-close-btn terminal-close-btn" type="button">x</button>' +
-                '<div class="shell-container" style="margin-top:34px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 4px 14px 4px;">' +
-                "<label for='options' style='color:#4f6477;font-size:13px;'>Select Shell:</label>" +
-                "<select class='terminal-shell-select' name='options' style='min-width:150px;padding:8px 12px;border-radius:999px;border:1px solid rgba(138,160,178,0.35);background:#fff;color:#314657;'></select>" +
-                "<p class='terminal-hostname' style='margin-left:auto;font-size:12px;color:#6a7f92;'>Host: " + host + "</p>" +
-                '</div>' +
-                '<div class="terminal" style="background:#f8fbff;border-radius:16px;border:1px solid rgba(160,176,194,0.32);padding:16px;min-height:420px;color:#000000;box-shadow:inset 0 1px 0 rgba(255,255,255,0.72);">' +
-                '<div class="input-container"></div>' +
-                '</div>' +
-                '<link rel="stylesheet" href="/`+web_css+`">';
-
-            // 鍏抽棴鎸夐挳
-            dialog.querySelector(".terminal-close-btn").onclick = function () {
-                if (terminal) {
-                    terminal.stopAllResultsForUid(uid);
-                    if (window.terminalSessions) {
-                        delete window.terminalSessions[uid];
-                    }
-                    if (window.activeTerminal === terminal) {
-                        window.activeTerminal = null;
-                    }
-                }
-                dialog.remove();
-            };
-
-            // 鎷栧姩閫昏緫锛堝吋瀹筆C鍜岀Щ鍔ㄧ锛屼笖绐楀彛涓嶈兘绉诲嚭椤甸潰锛�
-            const dragBar = dialog.querySelector(".terminal-drag-bar");
-            let isDragging = false, offsetX = 0, offsetY = 0, startX = 0, startY = 0;
-
-            function clamp(val, min, max) {
-                return Math.max(min, Math.min(val, max));
-            }
-
-            function getDialogRect() {
-                return dialog.getBoundingClientRect();
-            }
-
-            function onMove(e) {
-                if (!isDragging) return;
-                let clientX = e.touches ? e.touches[0].clientX : e.clientX;
-                let clientY = e.touches ? e.touches[0].clientY : e.clientY;
-                let newLeft = clientX - offsetX;
-                let newTop = clientY - offsetY;
-                // 闄愬埗绐楀彛涓嶇Щ鍑洪〉闈�
-                const rect = getDialogRect();
-                const winW = window.innerWidth, winH = window.innerHeight;
-                const maxLeft = winW - rect.width;
-                const maxTop = winH - rect.height;
-                newLeft = clamp(newLeft, 0, maxLeft > 0 ? maxLeft : 0);
-                newTop = clamp(newTop, 0, maxTop > 0 ? maxTop : 0);
-                dialog.style.left = newLeft + "px";
-                dialog.style.top = newTop + "px";
-                dialog.style.transform = ""; // 鎷栧姩鍚庡彇娑堝眳涓�
-            }
-
-            function stopMove() {
-                isDragging = false;
-                document.body.style.userSelect = "";
-                document.removeEventListener("mousemove", onMove);
-                document.removeEventListener("mouseup", stopMove);
-                document.removeEventListener("touchmove", onMove);
-                document.removeEventListener("touchend", stopMove);
-            }
-
-            dragBar.addEventListener("mousedown", function(e) {
-                isDragging = true;
-                const rect = getDialogRect();
-                offsetX = e.clientX - rect.left;
-                offsetY = e.clientY - rect.top;
-                document.body.style.userSelect = "none";
-                document.addEventListener("mousemove", onMove);
-                document.addEventListener("mouseup", stopMove);
-            });
-            dragBar.addEventListener("touchstart", function(e) {
-                isDragging = true;
-                const rect = getDialogRect();
-                offsetX = e.touches[0].clientX - rect.left;
-                offsetY = e.touches[0].clientY - rect.top;
-                document.body.style.userSelect = "none";
-                document.addEventListener("touchmove", onMove, {passive: false});
-                document.addEventListener("touchend", stopMove);
-            });
-
-            setTimeout(() => {
-                // 鍒濆鍖� shell 閫夐」
-                const optionsElement = dialog.querySelector(".terminal-shell-select");
-                if (os == "win") {
-                    optionsElement.innerHTML = "<option>Shell</option><option value='cmd.exe'>cmd</option><option value='powershell.exe'>powershell</option><option value='custom'>customize shell</option>";
-                } else if (os == "linux" || os == "macos") {
-                    optionsElement.innerHTML = "<option>Shell</option><option value='bash'>bash</option><option value='sh'>sh</option><option value='custom'>customize shell</option>";
-                } else if (os == "android") {
-                    optionsElement.innerHTML = "<option>Shell</option><option value='/system/bin/bash'>/system/bin/bash</option><option value='/system/bin/sh'>/system/bin/sh</option><option value='custom'>customize shell</option>";
-                }
-
-                // 鍒涘缓 terminal 瀹炰緥骞跺垵濮嬪寲
-                terminal = new lain_terminal();
-                terminal.uid = uid;
-                terminal.dialogEl = dialog;
-
-                // 璁� terminal 鍐呴儴绠＄悊杈撳叆妗嗗拰浜嬩欢
-                terminal.inputContainer = dialog.querySelector(".terminal .input-container");
-                terminal.terminalEl = dialog.querySelector(".terminal");
-                window.terminalSessions[uid] = terminal;
-                window.activeTerminal = terminal;
-                terminal.createInput();
-                dialog.addEventListener("mousedown", function() {
-                    window.activeTerminal = terminal;
-                    dialog.style.zIndex = String((window.dialogZIndexCounter = (window.dialogZIndexCounter || 9999) + 1));
-                });
-
-                // shell鍒囨崲
-                optionsElement.addEventListener("change", function () {
-                    const selectedValue = this.value;
-                    if (selectedValue === "custom") {
-                        const customEnv = prompt("Enter a shell:");
-                        if (customEnv) {
-                            const newOption = document.createElement("option");
-                            newOption.value = customEnv;
-                            newOption.textContent = customEnv;
-                            this.insertBefore(newOption, this.querySelector("option[value='custom']"));
-                            this.value = customEnv;
-                            terminal.switchVer(customEnv);
-                        } else {
-                            this.value = "Shell";
-                        }
-                    } else {
-                        terminal.switchVer(selectedValue);
-                    }
-                });
-            }, 200);
-        }
+		    const dialogId = "terminal-dialog-" + uid;
+		    let dialog = document.getElementById(dialogId);
+		    let terminal = null;
+		
+		    if (dialog) {
+		        dialog.style.display = "block";
+		        dialog.style.zIndex = String((window.dialogZIndexCounter = (window.dialogZIndexCounter || 9999) + 1));
+		        terminal = window.terminalSessions ? window.terminalSessions[uid] : null;
+		        if (terminal) {
+		            window.activeTerminal = terminal;
+		            if (terminal.currentInput && terminal.currentInput.isConnected) {
+		                terminal.currentInput.focus();
+		            }
+		        }
+		        return;
+		    }
+		
+		    dialog = document.createElement("div");
+		    dialog.id = dialogId;
+		    dialog.dataset.uid = uid;
+		    dialog.style.position = "fixed";
+		    dialog.style.top = "5%";
+		    dialog.style.left = "50%";
+		    dialog.style.transform = "translateX(-50%)";
+		    dialog.style.background = "linear-gradient(180deg, #fbfdff 0%, #f2f6fb 100%)";
+		    dialog.style.zIndex = String((window.dialogZIndexCounter = (window.dialogZIndexCounter || 9999) + 1));
+		    dialog.style.maxWidth = "900px";
+		    dialog.style.width = "90vw";
+		    dialog.style.maxHeight = "90vh";
+		    dialog.style.overflow = "auto";
+		    dialog.style.border = "1px solid rgba(138, 160, 178, 0.25)";
+		    dialog.style.borderRadius = "18px";
+		    dialog.style.boxShadow = "0 24px 60px rgba(44, 72, 98, 0.18)";
+		    dialog.style.padding = "18px";
+		    dialog.style.userSelect = "none";
+		    dialog.style.touchAction = "none";
+		    dialog.style.backdropFilter = "blur(10px)";
+		    document.body.appendChild(dialog);
+		
+		    dialog._terminalClosed = false;
+		    dialog._terminalFocusHandler = null;
+		
+		    dialog.innerHTML =
+		        '<div class="terminal-drag-bar" style="position:absolute;top:0;left:0;width:100%;height:36px;cursor:move;background:linear-gradient(90deg, rgba(230,236,243,0.95), rgba(243,247,251,0.9));border-top-left-radius:18px;border-top-right-radius:18px;z-index:10001;border-bottom:1px solid rgba(138,160,178,0.18);"></div>' +
+		        '<button class="dialog-close-btn terminal-close-btn" type="button">x</button>' +
+		        '<div class="shell-container" style="margin-top:34px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 4px 14px 4px;">' +
+		        "<label for='options' style='color:#4f6477;font-size:13px;'>Select Shell:</label>" +
+		        "<select class='terminal-shell-select' name='options' style='min-width:150px;padding:8px 12px;border-radius:999px;border:1px solid rgba(138,160,178,0.35);background:#fff;color:#314657;'></select>" +
+		        "<p class='terminal-hostname' style='margin-left:auto;font-size:12px;color:#6a7f92;'>Host: " + host + "</p>" +
+		        '</div>' +
+		        '<div class="terminal" style="background:#f8fbff;border-radius:16px;border:1px solid rgba(160,176,194,0.32);padding:16px;min-height:420px;color:#000000;box-shadow:inset 0 1px 0 rgba(255,255,255,0.72);">' +
+		        '<div class="input-container"></div>' +
+		        '</div>' +
+		        '<link rel="stylesheet" href="/`+web_css+`">';
+		
+		    const dragBar = dialog.querySelector(".terminal-drag-bar");
+		    let isDragging = false;
+		    let offsetX = 0;
+		    let offsetY = 0;
+		
+		    function clamp(val, min, max) {
+		        return Math.max(min, Math.min(val, max));
+		    }
+		
+		    function getDialogRect() {
+		        return dialog.getBoundingClientRect();
+		    }
+		
+		    function onMove(e) {
+		        if (!isDragging || dialog._terminalClosed) return;
+		        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+		        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+		        let newLeft = clientX - offsetX;
+		        let newTop = clientY - offsetY;
+		        const rect = getDialogRect();
+		        const winW = window.innerWidth;
+		        const winH = window.innerHeight;
+		        const maxLeft = winW - rect.width;
+		        const maxTop = winH - rect.height;
+		        newLeft = clamp(newLeft, 0, maxLeft > 0 ? maxLeft : 0);
+		        newTop = clamp(newTop, 0, maxTop > 0 ? maxTop : 0);
+		        dialog.style.left = newLeft + "px";
+		        dialog.style.top = newTop + "px";
+		        dialog.style.transform = "";
+		    }
+		
+		    function stopMove() {
+		        isDragging = false;
+		        document.body.style.userSelect = "";
+		        document.removeEventListener("mousemove", onMove);
+		        document.removeEventListener("mouseup", stopMove);
+		        document.removeEventListener("touchmove", onMove);
+		        document.removeEventListener("touchend", stopMove);
+		    }
+		
+		    dragBar.addEventListener("mousedown", function (e) {
+		        if (dialog._terminalClosed) return;
+		        isDragging = true;
+		        const rect = getDialogRect();
+		        offsetX = e.clientX - rect.left;
+		        offsetY = e.clientY - rect.top;
+		        document.body.style.userSelect = "none";
+		        document.addEventListener("mousemove", onMove);
+		        document.addEventListener("mouseup", stopMove);
+		    });
+		
+		    dragBar.addEventListener("touchstart", function (e) {
+		        if (dialog._terminalClosed) return;
+		        isDragging = true;
+		        const rect = getDialogRect();
+		        offsetX = e.touches[0].clientX - rect.left;
+		        offsetY = e.touches[0].clientY - rect.top;
+		        document.body.style.userSelect = "none";
+		        document.addEventListener("touchmove", onMove, { passive: false });
+		        document.addEventListener("touchend", stopMove);
+		    });
+		
+		    dialog.querySelector(".terminal-close-btn").onclick = function () {
+		        if (dialog._terminalClosed) {
+		            return;
+		        }
+		
+		        dialog._terminalClosed = true;
+		        stopMove();
+		
+		        if (dialog._terminalFocusHandler) {
+		            dialog.removeEventListener("mousedown", dialog._terminalFocusHandler);
+		            dialog._terminalFocusHandler = null;
+		        }
+		
+		        const currentTerminal =
+		            terminal ||
+		            (window.terminalSessions ? window.terminalSessions[uid] : null);
+		
+		        if (currentTerminal) {
+		            currentTerminal.stopAllResultsForUid(uid);
+		            if (window.activeTerminal === currentTerminal) {
+		                window.activeTerminal = null;
+		            }
+		        }
+		
+		        if (window.terminalSessions) {
+		            delete window.terminalSessions[uid];
+		        }
+		
+		        dialog.remove();
+		    };
+		
+		    const optionsElement = dialog.querySelector(".terminal-shell-select");
+		    if (!optionsElement || dialog._terminalClosed || !dialog.isConnected) {
+		        return;
+		    }
+		
+		    if (os === "win") {
+		        optionsElement.innerHTML = "<option>Shell</option><option value='cmd.exe'>cmd</option><option value='powershell.exe'>powershell</option><option value='custom'>customize shell</option>";
+		    } else if (os === "linux" || os === "macos") {
+		        optionsElement.innerHTML = "<option>Shell</option><option value='bash'>bash</option><option value='sh'>sh</option><option value='custom'>customize shell</option>";
+		    } else if (os === "android") {
+		        optionsElement.innerHTML = "<option>Shell</option><option value='/system/bin/bash'>/system/bin/bash</option><option value='/system/bin/sh'>/system/bin/sh</option><option value='custom'>customize shell</option>";
+		    }
+		
+		    terminal = new lain_terminal();
+		    terminal.uid = uid;
+		    terminal.dialogEl = dialog;
+		    terminal.inputContainer = dialog.querySelector(".terminal .input-container");
+		    terminal.terminalEl = dialog.querySelector(".terminal");
+		
+		    if (!terminal.inputContainer || !terminal.terminalEl || dialog._terminalClosed || !dialog.isConnected) {
+		        return;
+		    }
+		
+		    window.terminalSessions[uid] = terminal;
+		    window.activeTerminal = terminal;
+		    terminal.createInput();
+		
+		    dialog._terminalFocusHandler = function () {
+		        if (dialog._terminalClosed) {
+		            return;
+		        }
+		        window.activeTerminal = terminal;
+		        dialog.style.zIndex = String((window.dialogZIndexCounter = (window.dialogZIndexCounter || 9999) + 1));
+		    };
+		    dialog.addEventListener("mousedown", dialog._terminalFocusHandler);
+		
+		    optionsElement.addEventListener("change", function () {
+		        if (dialog._terminalClosed || !terminal) {
+		            return;
+		        }
+		
+		        const selectedValue = this.value;
+		        if (selectedValue === "custom") {
+		            const customEnv = prompt("Enter a shell:");
+		            if (customEnv) {
+		                const newOption = document.createElement("option");
+		                newOption.value = customEnv;
+		                newOption.textContent = customEnv;
+		                this.insertBefore(newOption, this.querySelector("option[value='custom']"));
+		                this.value = customEnv;
+		                terminal.switchVer(customEnv);
+		            } else {
+		                this.value = "Shell";
+		            }
+		        } else {
+		            terminal.switchVer(selectedValue);
+		        }
+		    });
+		}
         showFileDialog(uid, host, dir) {
             const dialogId = "file-dialog-" + uid;
             let dialog = document.getElementById(dialogId);
