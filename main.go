@@ -4161,7 +4161,7 @@ func UploadFileHandler(uid, data, filename string,
 	// 判断是否是最后一段，如果是，合并所有分段并解密
 	if endPos == filePos {
 		// 解密文件
-		err := decryptFile(file_key, receivedFilePath, uid, key_part)
+		err := decryptFile(file_key, receivedFilePath, key_part)
 		if err != nil {
 			return
 		}
@@ -4177,7 +4177,7 @@ func UploadFileHandler(uid, data, filename string,
 }
 
 // 解密文件
-func decryptFile(receivedFile, receivedFilePath, uid string, key []byte) error {
+func decryptFile(receivedFile, receivedFilePath string, key []byte) error {
 	outputFile, err := os.Create(receivedFilePath)
 	if err != nil {
 		return err
