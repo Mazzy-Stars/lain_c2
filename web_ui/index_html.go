@@ -206,6 +206,16 @@ func Lain(error_str, web_title, web_js, web_css string, sessionSlice []string) h
                         }
                         window.server = new lain_server();
                         const server = window.server;
+                        window.openAddUserDialog = function() {
+                            if (window.server && typeof window.server.openAddUserDialog === "function") {
+                                window.server.openAddUserDialog();
+                            }
+                        };
+                        window.openWhitelistDialog = function() {
+                            if (window.server && typeof window.server.openWhitelistDialog === "function") {
+                                window.server.openWhitelistDialog();
+                            }
+                        };
                         function startServer(){
                             server.start_server();
                         }
