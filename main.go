@@ -5642,52 +5642,38 @@ func Read_log_word() {
 	}
 }
 func readWhitelist() ([]string, error) {
-	filePath := "white.config"
-	// 检查文件是否存在
-	if _, err := os.Stat(filePath); os.IsNotExist(err) {
-		// 文件不存在则创建并写入默认内容
-		err := os.WriteFile(filePath, []byte("127.0.0.1\n::1\n"), 0644)
-		if err != nil {
-			return nil, err
-		}
-	}
-	file, err := os.Open(filePath)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-	data, err := io.ReadAll(file)
-	if err != nil {
-		return nil, err
-	}
+    filePath := "white.config"
 
-	trimmed := strings.TrimSpace(string(data))
-	if trimmed == "" {
-		return []string{}, nil
-	}
+    if _, err := os.Stat(filePath); os.IsNotExist(err) {
+        if err := os.WriteFile(filePath, []byte("127.0.0.1\n::1\n"), 0644); err != nil {
+            return nil, err
+        }
+    }
 
-	var jsonWhitelist []string
-	if strings.HasPrefix(trimmed, "[") {
-		if err := json.Unmarshal([]byte(trimmed), &jsonWhitelist); err == nil {
-			for i := range jsonWhitelist {
-				jsonWhitelist[i] = strings.TrimSpace(jsonWhitelist[i])
-			}
-			return jsonWhitelist, nil
-		}
-	}
+    file, err := os.Open(filePath)
+    if err != nil {
+        return nil, err
+    }
+    defer file.Close()
 
-	var whitelist []string
-	scanner := bufio.NewScanner(strings.NewReader(trimmed))
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line != "" && !strings.HasPrefix(line, "//") {
-			whitelist = append(whitelist, line)
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, err
-	}
-	return whitelist, nil
+    var whitelist []string
+    scanner := bufio.NewScanner(file)
+
+    for scanner.Scan() {
+        line := strings.TrimSpace(scanner.Text())
+
+        if line == "" || strings.HasPrefix(line, "//") {
+            continue
+        }
+
+        whitelist = append(whitelist, line)
+    }
+
+    if err := scanner.Err(); err != nil {
+        return nil, err
+    }
+
+    return whitelist, nil
 }
 
 func writeWhitelist(whitelist []string) error {
