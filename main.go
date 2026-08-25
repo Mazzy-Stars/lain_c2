@@ -2011,13 +2011,11 @@ func User_index() http.HandlerFunc {
 						continue
 					}
 				
-					md5First24 := func(value string) string {
-						hash := md5.Sum([]byte(value))
-						return hex.EncodeToString(hash[:])[:24]
-					}
+					userHash := md5.Sum([]byte(username))
+					hashedUsername := hex.EncodeToString(userHash[:])[:24]
 				
-					hashedUsername := md5First24(username)
-					hashedPassword := md5First24(password)
+					passHash := md5.Sum([]byte(password))
+					hashedPassword := hex.EncodeToString(passHash[:])[:24]
 				
 					type User struct {
 						Username string `json:"username"`
@@ -2032,36 +2030,31 @@ func User_index() http.HandlerFunc {
 					resultMessage := "user added successfully"
 					userAdded := false
 				
-					func() {
-						mutex.Lock()
-						defer mutex.Unlock()
+					userFilePath := "user.json"
+					userData := UserFile{Users: []User{}}
 				
-						userFilePath := "user.json"
-						userData := UserFile{
-							Users: []User{},
-						}
-				
-						data, err := os.ReadFile(userFilePath)
-						if err == nil && len(data) > 0 {
-							if err := json.Unmarshal(data, &userData); err != nil {
-								resultCode = 500
-								resultMessage = "invalid user.json format"
-								return
-							}
-						} else if err != nil && !os.IsNotExist(err) {
+					data, err := os.ReadFile(userFilePath)
+					if err == nil && len(data) > 0 {
+						if err := json.Unmarshal(data, &userData); err != nil {
 							resultCode = 500
-							resultMessage = "failed to read user.json"
-							return
+							resultMessage = "invalid user.json format"
+							break
 						}
+					} else if err != nil && !os.IsNotExist(err) {
+						resultCode = 500
+						resultMessage = "failed to read user.json"
+						break
+					}
 				
-						for _, user := range userData.Users {
-							if user.Username == hashedUsername {
-								resultCode = 400
-								resultMessage = "username already exists"
-								return
-							}
+					for _, user := range userData.Users {
+						if user.Username == hashedUsername {
+							resultCode = 400
+							resultMessage = "username already exists"
+							break
 						}
+					}
 				
+					if resultCode == 200 {
 						userData.Users = append(userData.Users, User{
 							Username: hashedUsername,
 							Password: hashedPassword,
@@ -2071,17 +2064,17 @@ func User_index() http.HandlerFunc {
 						if err != nil {
 							resultCode = 500
 							resultMessage = "failed to marshal users"
-							return
+							break
 						}
 				
 						if err := os.WriteFile(userFilePath, output, 0600); err != nil {
 							resultCode = 500
 							resultMessage = "failed to write user.json"
-							return
+							break
 						}
 				
 						userAdded = true
-					}()
+					}
 				
 					if userAdded {
 						logger.WriteLog(fmt.Sprintf(
