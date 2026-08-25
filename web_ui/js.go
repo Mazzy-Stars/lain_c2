@@ -3936,9 +3936,6 @@ class lain_server {
             dialog.style.display = "none";
         };
         dialog.querySelector("#add-user-close").addEventListener("click", close);
-        dialog.addEventListener("click", (event) => {
-            if (event.target === dialog) close();
-        });
         dialog.querySelector("#add-user-form").addEventListener("submit", async (event) => {
             event.preventDefault();
             const username = dialog.querySelector("#add-user-username").value.trim();
@@ -3996,9 +3993,6 @@ class lain_server {
                 dialog.style.display = "none";
             };
             dialog.querySelector("#whitelist-close").addEventListener("click", close);
-            dialog.addEventListener("click", (event) => {
-                if (event.target === dialog) close();
-            });
             dialog.querySelector("#whitelist-form").addEventListener("submit", async (event) => {
                 event.preventDefault();
                 await this.saveWhitelist();
