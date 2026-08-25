@@ -1413,11 +1413,6 @@ class index{
             const div_file = this.getDialogNode('#file_resp') || document.querySelector('#file_resp');
             if (!div_file) return false;
 
-            let cur_dir_p = document.getElementById('cur_dir');
-            if (cur_dir_p) {
-                cur_dir_p.textContent = shell_dir;
-            }
-
             if (Array.isArray(fileContent)) {
                 fileContent = fileContent.join("\n");
             } else if (fileContent && typeof fileContent === "object") {
@@ -1426,10 +1421,13 @@ class index{
 
             if (typeof fileContent !== "string") {
                 console.warn("renderFileList bad data:", fileContent);
+                div_file.innerHTML = "";
                 return false;
             }
 
             const dir_list = fileContent.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+
+            div_file.innerHTML = "";
             if (dir_list.length === 0) {
                 return false;
             }
@@ -1446,9 +1444,7 @@ class index{
                 let isDir = file.startsWith("dir ");
                 let isFil = file.startsWith("fil ");
                 let type = isDir ? "dir" : (isFil ? "fil" : null);
-                if (!type) {
-                    continue;
-                }
+                if (!type) continue;
 
                 let match = file.match(/^(\w+)\s+(.+?)<([^<>]+)><([^<>]+)>$/);
                 let matchFile = file.match(/^(\w+)\s+(.+?)<([^<>]+)><([^<>]+)><([^<>]+)>$/);
@@ -1548,11 +1544,8 @@ class index{
                 renderedCount++;
             }
 
-            if (renderedCount === 0) {
-                return false;
-            }
+            if (renderedCount === 0) return false;
 
-            div_file.innerHTML = '';
             div_file.appendChild(fragment);
             return true;
         }
