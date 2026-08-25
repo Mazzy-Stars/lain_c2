@@ -2172,9 +2172,6 @@ button:hover {
         border: 1px solid rgba(154, 173, 188, 0.34);
         background: rgba(255, 255, 255, 0.94);
         box-shadow: 0 4px 10px rgba(65, 86, 103, 0.08);
-    }
-
-    .msg-dialog .msg-drag-handle {
         margin-right: 2px;
         padding: 2px 10px;
         color: #607488;
