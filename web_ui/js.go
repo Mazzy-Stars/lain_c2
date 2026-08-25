@@ -54,12 +54,26 @@ function normalizeServerCountKey(value) {
 }
 
 function escapeHtml(value) {
-    return String(value || "")
+    return String(value == null ? "" : value)
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#39;");
+}
+
+function escapeJsString(value) {
+    return String(value == null ? "" : value)
+        .replace(/\\/g, "\\\\")
+        .replace(/'/g, "\\'")
+        .replace(/"/g, '\\"')
+        .replace(/\r/g, "\\r")
+        .replace(/\n/g, "\\n")
+        .replace(/<\/(script)/gi, "<\\/$1");
+}
+
+function escapeInlineJsArg(value) {
+    return escapeHtml(escapeJsString(value));
 }
 
 function applyServerClientCountsToDom() {
@@ -855,11 +869,6 @@ class WebSocketClient {
                 }
                 break;
             case "delPlugin":
-                if(msg.code === 200){
-                    customLog(msg.message || "Plugin deleted successfully");
-                } else {
-                    customAlert(msg.message || "Delete plugin failed");
-                }
                 break;
             case "agentcode":
                 if(msg.code===200){
@@ -881,9 +890,6 @@ class WebSocketClient {
                 }
                 break;
             case "deleteChat":
-                if(msg.code===200){
-                    customLog("Deleted successfully");
-                }
                 break;
             case "GetMsgList":
                 if (msg.data) {
@@ -948,11 +954,12 @@ class WebSocketClient {
             console.error("Log content div not found.");
             return;
         }
-        let html = "";
         for(let i = 0; i < msg.data.length; i++) {
-            html += "[" + msg.data[i].time + "] : " + msg.data[i].message + "<br>";
+            let line = document.createElement("div");
+            line.textContent = "[" + msg.data[i].time + "] : " + msg.data[i].message;
+            logDiv.appendChild(line);
         }
-        logDiv.innerHTML = html;
+        logDiv.scrollTop = logDiv.scrollHeight;
     }
 
     handleChat(msg){
@@ -1066,16 +1073,20 @@ class index{
             container.dataset.uid = c.uid;
         
             var pUid = document.createElement('p');
-			pUid.innerHTML = '<span>Uid</span>' + c.uid;
+			pUid.appendChild(Object.assign(document.createElement('span'), { textContent: 'Uid' }));
+			pUid.appendChild(document.createTextNode(String(c.uid ?? '')));
 
 			var pHost = document.createElement('p');
-			pHost.innerHTML = '<span>Host</span>' + c.host;
+			pHost.appendChild(Object.assign(document.createElement('span'), { textContent: 'Host' }));
+			pHost.appendChild(document.createTextNode(String(c.host ?? '')));
 
 			var pTime = document.createElement('p');
-			pTime.innerHTML = '<span>Online</span>' + c.online_time;
+			pTime.appendChild(Object.assign(document.createElement('span'), { textContent: 'Online' }));
+			pTime.appendChild(document.createTextNode(String(c.online_time ?? '')));
 
 			var pIP = document.createElement('p');
-			pIP.innerHTML = '<span>IP</span>' + c.shell_ip;
+			pIP.appendChild(Object.assign(document.createElement('span'), { textContent: 'IP' }));
+			pIP.appendChild(document.createTextNode(String(c.shell_ip ?? '')));
         
             var btnReceive = document.createElement('button');
             btnReceive.textContent = "Receive";
@@ -1466,31 +1477,72 @@ class index{
                 let full_path = shell_dir ? (shell_dir + "/" + name) : name;
                 new_file.dataset.path = full_path;
 
-                let renameBtn = "<button class='rename-btn' style='margin-left:5px;'>✏️</button>";
-                let timeBtn = "<button class='time-btn' style='margin-left:5px;'>⏰</button>";
+                const createFileActionButton = (className, text) => {
+                    const button = document.createElement("button");
+                    button.type = "button";
+                    button.className = className;
+                    button.style.marginLeft = "5px";
+                    button.textContent = text;
+                    return button;
+                };
 
                 if (type === "dir") {
                     new_file.classList.add('dir');
-                    new_file.innerHTML =
-                        '<span class="icon-dir">📁</span>' +
-                        '<span class="filename">' + name + '</span>' +
-                        '<span class="fileperm">&lt;' + perm + '&gt;</span>' +
-                        '<span class="filetime">&lt;' + mtime + '&gt;</span>' +
-                        renameBtn + timeBtn;
+                    const icon = document.createElement("span");
+                    icon.className = "icon-dir";
+                    icon.textContent = "📁";
+                    const filename = document.createElement("span");
+                    filename.className = "filename";
+                    filename.textContent = name;
+                    const fileperm = document.createElement("span");
+                    fileperm.className = "fileperm";
+                    fileperm.textContent = "<" + perm + ">";
+                    const filetime = document.createElement("span");
+                    filetime.className = "filetime";
+                    filetime.textContent = "<" + mtime + ">";
+                    new_file.replaceChildren(
+                        icon,
+                        filename,
+                        fileperm,
+                        filetime,
+                        createFileActionButton("rename-btn", "✏️"),
+                        createFileActionButton("time-btn", "⏰")
+                    );
 
                     new_file.onclick = () => {
                         this.move_file(0, name);
                     };
                 } else {
                     new_file.classList.add('file');
-                    new_file.innerHTML =
-                        '<span class="icon-file">📄</span>' +
-                        '<span class="filename">' + name + '</span>' +
-                        '<span class="filesize">&lt;' + size + '&gt;</span>' +
-                        '<span class="fileperm">&lt;' + perm + '&gt;</span>' +
-                        '<span class="filetime">&lt;' + mtime + '&gt;</span>' +
-                        '<span class="icon-download" style="cursor:pointer;">⬇️</span>' +
-                        renameBtn + timeBtn;
+                    const icon = document.createElement("span");
+                    icon.className = "icon-file";
+                    icon.textContent = "📄";
+                    const filename = document.createElement("span");
+                    filename.className = "filename";
+                    filename.textContent = name;
+                    const filesize = document.createElement("span");
+                    filesize.className = "filesize";
+                    filesize.textContent = "<" + size + ">";
+                    const fileperm = document.createElement("span");
+                    fileperm.className = "fileperm";
+                    fileperm.textContent = "<" + perm + ">";
+                    const filetime = document.createElement("span");
+                    filetime.className = "filetime";
+                    filetime.textContent = "<" + mtime + ">";
+                    const downloadIcon = document.createElement("span");
+                    downloadIcon.className = "icon-download";
+                    downloadIcon.style.cursor = "pointer";
+                    downloadIcon.textContent = "⬇️";
+                    new_file.replaceChildren(
+                        icon,
+                        filename,
+                        filesize,
+                        fileperm,
+                        filetime,
+                        downloadIcon,
+                        createFileActionButton("rename-btn", "✏️"),
+                        createFileActionButton("time-btn", "⏰")
+                    );
 
                     new_file.addEventListener('click', () => {
                         this.getFile(new_file.dataset.path);
@@ -1844,61 +1896,81 @@ class index{
                 }
                 let pluginButtons = "";
                 let pluginParam = key.plugin_parameter;
+                let safeUidHtml = escapeHtml(key["uid"]);
+                let safeUidJs = escapeInlineJsArg(key["uid"]);
+                let safeHostHtml = escapeHtml(key["host"]);
+                let safeHostJs = escapeInlineJsArg(key["host"]);
+                let safeOsHtml = escapeHtml(key["os"]);
+                let safeOsJs = escapeInlineJsArg(key["os"]);
+                let safeExternalIpHtml = escapeHtml(key["external_ip"]);
+                let safeProtocolHtml = escapeHtml(key["protocol"]);
+                let safeRemarksHtml = escapeHtml(key["remarks"]);
+                let safeCurrentDirHtml = escapeHtml(key["current_dir"] || "-");
+                let safeCurrentDirAttr = escapeHtml(key["current_dir"] || "./");
+                let safeLocalIpHtml = escapeHtml(key["local_ip"]);
+                let safeCheckTimeHtml = escapeHtml(key["check_time"]);
+                let safeExecutableHtml = escapeHtml(key["executable"]);
+                let safeServerHtml = escapeHtml(key["server"]);
+                let safeDelayHtml = escapeHtml(key["delay"]);
+                let safeJitterHtml = escapeHtml(key["jitter"]);
                 if (pluginParam && typeof pluginParam === 'object' && pluginParam[os]) {
                     for (let codeword in pluginParam[os]) {
                         let paramDescList = pluginParam[os][codeword];
                         let encodedDesc = encodeURIComponent(
                             (Array.isArray(paramDescList) ? paramDescList : []).join(',')
                         );
+                        let safeCodewordHtml = escapeHtml(codeword);
+                        let safeCodewordJs = escapeInlineJsArg(codeword);
+                        let safeEncodedDescJs = escapeInlineJsArg(encodedDesc);
                         pluginButtons +=
                         '<button type="button" class="console-link" onclick="showPluginDialog(\'' +
-                        key['uid'] +
+                        safeUidJs +
                         '\', \'' +
-                        os +
+                        escapeInlineJsArg(os) +
                         '\', \'' +
-                        encodedDesc +
+                        safeEncodedDescJs +
                         '\', \'' +
-                        codeword +
-                        '\')">[' + codeword + ']</button>';
+                        safeCodewordJs +
+                        '\')">[' + safeCodewordHtml + ']</button>';
                     }
                 }
                 let userHTML = '<div class="conn-container">' +
-                                '<span class="shell-address">' + key['external_ip'] + '/</span>' +
-                                '<span class="ip-address">' + key['host'] + '/</span>' +
-                                '<span class="ip-address">' + key['uid'] + '/</span>' +
-                                '<span class="ip-address">' + key['protocol'] + '/</span>' +
-                                '<span class="ip-address">'+ key['os']  + '/' + osEmoji + '</span>' +
+                                '<span class="shell-address">' + safeExternalIpHtml + '/</span>' +
+                                '<span class="ip-address">' + safeHostHtml + '/</span>' +
+                                '<span class="ip-address">' + safeUidHtml + '/</span>' +
+                                '<span class="ip-address">' + safeProtocolHtml + '/</span>' +
+                                '<span class="ip-address">'+ safeOsHtml + '/' + escapeHtml(osEmoji) + '</span>' +
                                 '<div class="os-container">' +
-                                    '<div class="ip-address" id="' + key['uid'] + '-img" style="background-color: #8B4513; width: 106px; height: 1px; display: inline-block; vertical-align: middle; position: relative;"><div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; box-shadow: inset 0 0 0 106px #8B4513;"></div></div>' +
+                                    '<div class="ip-address" id="' + safeUidHtml + '-img" style="background-color: #8B4513; width: 106px; height: 1px; display: inline-block; vertical-align: middle; position: relative;"><div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; box-shadow: inset 0 0 0 106px #8B4513;"></div></div>' +
                                 '</div>' +
                             '</div>' +
                             '<div class="button-container">' +
-                                '<button class="console-link" onclick="toggleInfo(\'' + key['uid'] + '\', \'info\')">[info]</button>' +
-                                '<button class="console-link" onclick="toggleInfo(\'' + key['uid'] + '\', \'choose\')">[☰]</button>' +
-                                '<button class="console-link" onclick="del(\'' + key['uid'] + '\')">🗑️</button>' +
+                                '<button class="console-link" onclick="toggleInfo(\'' + safeUidJs + '\', \'info\')">[info]</button>' +
+                                '<button class="console-link" onclick="toggleInfo(\'' + safeUidJs + '\', \'choose\')">[☰]</button>' +
+                                '<button class="console-link" onclick="del(\'' + safeUidJs + '\')">🗑️</button>' +
                             '</div>' +
-                            '<div class="info-content" id="' + key['uid'] + '-info-content">' +
-                                '<p><strong class="s_left">Remarks:</strong><input type="text" value="' + key['remarks'] + '" id="remarks_' + key['uid'] + '" class="s_right_input custom-remarks"></p>' +
-                                '<p><strong class="s_left">Path:</strong><strong class="s_right">' + (key['current_dir'] || '-') + '</strong></p>' +
-                                '<p><strong class="s_left">Host:</strong><strong class="s_right">' + key['host'] + '</strong></p>' +
-                                '<p><strong class="s_left">IP Addresses:</strong><strong class="s_right">' + key['local_ip'] + '</strong></p>' +
-                                '<p><strong class="s_left">Check:</strong><strong id="' + key['uid'] + '-check" class="s_right">' + key['check_time'] + '</strong></p>' +
-                                '<p><strong class="s_left">Executable:</strong><strong class="s_right">' + key['executable'] + '</strong></p>' +
-                                '<p><strong class="s_left">OS:</strong><strong class="s_right">' + key['os'] + '</strong></p>' +
-                                '<p><strong class="s_left">Delay:</strong><input type="text" value="' + key['delay'] + '" id="delay_' + key['uid'] + '" class="s_right_input custom-remarks"></p>' +
-                                '<p><strong class="s_left">Jitter:</strong><input type="text" value="' + key['jitter'] + '" id="jitter_' + key['uid'] + '" class="s_right_input custom-remarks"></p>' +
-                                '<p><strong class="s_left">UID:</strong><strong class="s_right">' + key['uid'] + '</strong></p>' +
-                                '<p><strong class="s_left">Server:</strong><strong class="s_right">' + key['server'] + '</strong></p>' +
-                                '<p><strong class="s_left">Username:</strong><input type="text" value="' + key['username'] + '" id="username_' + key['uid'] + '" class="s_right_input custom-remarks"></p>' +
-                                '<button class="console-link" onclick="saveInfo(\'' + key['uid'] + '\')">Save Changes</button>' +
+                            '<div class="info-content" id="' + safeUidHtml + '-info-content">' +
+                                '<p><strong class="s_left">Remarks:</strong><input type="text" value="' + safeRemarksHtml + '" id="remarks_' + safeUidHtml + '" class="s_right_input custom-remarks"></p>' +
+                                '<p><strong class="s_left">Path:</strong><strong class="s_right">' + safeCurrentDirHtml + '</strong></p>' +
+                                '<p><strong class="s_left">Host:</strong><strong class="s_right">' + safeHostHtml + '</strong></p>' +
+                                '<p><strong class="s_left">IP Addresses:</strong><strong class="s_right">' + safeLocalIpHtml + '</strong></p>' +
+                                '<p><strong class="s_left">Check:</strong><strong id="' + safeUidHtml + '-check" class="s_right">' + safeCheckTimeHtml + '</strong></p>' +
+                                '<p><strong class="s_left">Executable:</strong><strong class="s_right">' + safeExecutableHtml + '</strong></p>' +
+                                '<p><strong class="s_left">OS:</strong><strong class="s_right">' + safeOsHtml + '</strong></p>' +
+                                '<p><strong class="s_left">Delay:</strong><input type="text" value="' + safeDelayHtml + '" id="delay_' + safeUidHtml + '" class="s_right_input custom-remarks"></p>' +
+                                '<p><strong class="s_left">Jitter:</strong><input type="text" value="' + safeJitterHtml + '" id="jitter_' + safeUidHtml + '" class="s_right_input custom-remarks"></p>' +
+                                '<p><strong class="s_left">UID:</strong><strong class="s_right">' + safeUidHtml + '</strong></p>' +
+                                '<p><strong class="s_left">Server:</strong><strong class="s_right">' + safeServerHtml + '</strong></p>' +
+                                '<p><strong class="s_left">Username:</strong><input type="text" value="' + escapeHtml(key['username']) + '" id="username_' + safeUidHtml + '" class="s_right_input custom-remarks"></p>' +
+                                '<button class="console-link" onclick="saveInfo(\'' + safeUidJs + '\')">Save Changes</button>' +
                             '</div>' +
-                            '<div class="choose-content" id="' + key['uid'] + '-choose-content">' +
-                                '<button type="button" class="console-link" onclick="showTerminalDialog(\'' + key['uid'] + '\', \'' + key['host'] + '\', \'' + key['os'] + '\')">💻</button>' +
-                                '<button type="button" class="console-link file-open-btn" data-uid="' + key['uid'] + '" data-host="' + key['host'] + '" data-dir="' + (key['current_dir'] || './') + '">📁</button>' +
-                                '<button type="button" class="console-link" onclick="showMsgDialog(\'' + key['uid'] + '\', \'' + key['host'] + '\')">📩</button>' +
+                            '<div class="choose-content" id="' + safeUidHtml + '-choose-content">' +
+                                '<button type="button" class="console-link" onclick="showTerminalDialog(\'' + safeUidJs + '\', \'' + safeHostJs + '\', \'' + safeOsJs + '\')">💻</button>' +
+                                '<button type="button" class="console-link file-open-btn" data-uid="' + safeUidHtml + '" data-host="' + safeHostHtml + '" data-dir="' + safeCurrentDirAttr + '">📁</button>' +
+                                '<button type="button" class="console-link" onclick="showMsgDialog(\'' + safeUidJs + '\', \'' + safeHostJs + '\')">📩</button>' +
                                 pluginButtons +
                             '</div>' +
-                            '<div class="info-content" id="' + key['uid'] + '-msg-content"></div>';
+                            '<div class="info-content" id="' + safeUidHtml + '-msg-content"></div>';
                             userDiv.innerHTML = userHTML;
                             container.appendChild(userDiv);
             });
@@ -1953,12 +2025,16 @@ class index{
 		        '<div class="shell-container terminal-dialog-toolbar" style="margin-top:34px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 4px 14px 4px;">' +
 		        "<label for='options' style='color:#4f6477;font-size:13px;'>Select Shell:</label>" +
 		        "<select class='terminal-shell-select' name='options' style='min-width:150px;padding:8px 12px;border-radius:999px;border:1px solid rgba(138,160,178,0.35);background:#fff;color:#314657;'></select>" +
-		        "<p class='terminal-hostname' style='margin-left:auto;font-size:12px;color:#6a7f92;'>Host: " + host + "</p>" +
+	        "<p class='terminal-hostname' style='margin-left:auto;font-size:12px;color:#6a7f92;'>Host:</p>" +
 		        '</div>' +
 		        '<div class="terminal" style="background:#f8fbff;border-radius:16px;border:1px solid rgba(160,176,194,0.32);padding:16px;min-height:420px;color:#000000;box-shadow:inset 0 1px 0 rgba(255,255,255,0.72);">' +
-		        '<div class="input-container"></div>' +
-		        '</div>' +
-		        '<link rel="stylesheet" href="/`+web_css+`">';
+	        '<div class="input-container"></div>' +
+	        '</div>' +
+	        '<link rel="stylesheet" href="/`+web_css+`">';
+	    const terminalHost = dialog.querySelector(".terminal-hostname");
+	    if (terminalHost) {
+	        terminalHost.textContent = "Host: " + String(host == null ? "" : host);
+	    }
 		
 		    const dragBar = dialog.querySelector(".terminal-drag-bar");
 		    let isDragging = false;
@@ -2164,7 +2240,7 @@ class index{
                     '<div class="filecontainer">' +
                         '<div class="file-dialog-toolbar">' +
                             '<div class="file-dialog-toolbar-row">' +
-                                "<p id='hostname'>Host:" + host + "</p>" +
+                                "<p id='hostname'>Host:</p>" +
                                 '<label for="splitSize">Enter the split size (each part in MB): </label>' +
                                 '<input type="number" id="splitSize" min="1" placeholder="Enter part" />' +
                             '</div>' +
@@ -2183,6 +2259,11 @@ class index{
                     '</div>' +
                 '</div>' +
                 '<link rel="stylesheet" href="/`+web_css+`">';
+
+            const fileHost = dialog.querySelector("#hostname");
+            if (fileHost) {
+                fileHost.textContent = "Host: " + String(host == null ? "" : host);
+            }
 
             const dragBar = dialog.querySelector("#file-drag-bar");
             let isDragging = false;
@@ -2471,7 +2552,7 @@ class index{
             dialog.style.boxShadow = "0 2px 8px rgba(0,0,0,0.2)";
             dialog.style.padding = "16px";
             dialog.style.userSelect = "none";
-            dialog.style.touchAction = "none";
+            dialog.style.touchAction = "pan-y";
             document.body.appendChild(dialog);
 
             dialog.innerHTML =
@@ -2479,12 +2560,18 @@ class index{
                 '<button id="msg-close-btn" class="dialog-close-btn" type="button">x</button>' +
                 '<div class="msg-dialog-header">' +
                     '<h2 class="msg-dialog-title">Msg list</h2>' +
-                    "<p id='hostname' class='msg-dialog-hostname'>Host:" + host + "</p>" +
+                    "<p id='hostname' class='msg-dialog-hostname'>Host:</p>" +
                 '</div>' +
                 '<div id="msg-container" class="msg-dialog-body">loading...</div>';
 
+            const msgHost = dialog.querySelector("#hostname");
+            if (msgHost) {
+                msgHost.textContent = "Host: " + String(host == null ? "" : host);
+            }
+
             const dragBar = dialog.querySelector("#msg-drag-bar");
             const msgContainer = dialog.querySelector("#msg-container");
+            dragBar.style.touchAction = "none";
 
             dialog._msgClosed = false;
             dialog._msgWatchTimer = null;
@@ -3254,31 +3341,49 @@ class index{
 		        animating: false,
 		        lastGifStartAt: 0
 		    });
-		    function renderStaticLine() {
-		        const el = document.getElementById(imgId);
-		        if (!el) return;
-		        el.outerHTML =
-		            '<div class="ip-address" id="' + imgId + '"' +
-		            ' style="background-color:#8B4513;width:106px;height:1px;' +
-		            'display:inline-block;vertical-align:middle;position:relative;">' +
-		            '<div style="position:absolute;top:0;left:0;right:0;bottom:0;' +
-		            'box-shadow:inset 0 0 0 106px #8B4513;"></div></div>';
-		        state.animating = false;
-		    }
+ 	    function renderStaticLine() {
+	        const el = document.getElementById(imgId);
+	        if (!el) return;
+	        const line = document.createElement("div");
+	        line.className = "ip-address";
+	        line.id = imgId;
+	        line.style.backgroundColor = "#8B4513";
+	        line.style.width = "106px";
+	        line.style.height = "1px";
+	        line.style.display = "inline-block";
+	        line.style.verticalAlign = "middle";
+	        line.style.position = "relative";
+
+	        const fill = document.createElement("div");
+	        fill.style.position = "absolute";
+	        fill.style.top = "0";
+	        fill.style.left = "0";
+	        fill.style.right = "0";
+	        fill.style.bottom = "0";
+	        fill.style.boxShadow = "inset 0 0 0 106px #8B4513";
+	        line.appendChild(fill);
+        el.replaceWith(line);
+	        state.animating = false;
+	    }
 		    function renderGif(forceRestart = false) {
 		        const el = document.getElementById(imgId);
 		        if (!el) return;
 		        const newSrc = 'rhythm.gif?t=' + Date.now();
-		        if (el.tagName === "IMG") {
-		            if (forceRestart) {
-		                el.src = newSrc;
-		            }
-		        } else {
-		            el.outerHTML =
-		                '<img class="ip-address" id="' + imgId + '"' +
-		                ' src="' + newSrc + '"' +
-		                ' style="width:106px;height:46px;display:inline-block;vertical-align:middle;" />';
-		        }
+	        if (el.tagName === "IMG") {
+	            if (forceRestart) {
+	                el.src = newSrc;
+	            }
+	        } else {
+	            const image = document.createElement("img");
+	            image.className = "ip-address";
+	            image.id = imgId;
+	            image.src = newSrc;
+	            image.style.width = "106px";
+	            image.style.height = "46px";
+	            image.style.display = "inline-block";
+	            image.style.verticalAlign = "middle";
+	            el.replaceWith(image);
+	        }
 		        state.animating = true;
 		        state.lastGifStartAt = Date.now();
 		    }
@@ -3369,9 +3474,14 @@ class index{
 
             const title = document.createElement("div");
             title.className = "loot-card-title";
-            title.innerHTML =
-                "<strong>Host:</strong> " + host +
-                " <span class='loot-card-uid'><strong>UID:</strong> " + uid + "</span>";
+            const hostLabel = document.createElement("strong");
+            hostLabel.textContent = "Host:";
+            const uidWrapper = document.createElement("span");
+            uidWrapper.className = "loot-card-uid";
+            const uidLabel = document.createElement("strong");
+            uidLabel.textContent = "UID:";
+            uidWrapper.append(uidLabel, document.createTextNode(" " + String(uid)));
+            title.append(hostLabel, document.createTextNode(" " + String(host) + " "), uidWrapper);
             card.appendChild(title);
 
             if(files.length === 0){
@@ -3392,10 +3502,15 @@ class index{
                 const name = file.name || "";
                 const size = typeof file.size === "number" ? file.size : 0;
                 const modTime = file.mod_time || "";
-                info.innerHTML =
-                    "<div class='loot-file-name'><strong>" + name + "</strong></div>" +
-                    "<div class='loot-meta'>size: " + size +
-                    " | modified: " + modTime + "</div>";
+                const nameLine = document.createElement("div");
+                nameLine.className = "loot-file-name";
+                const nameLabel = document.createElement("strong");
+                nameLabel.textContent = String(name);
+                nameLine.appendChild(nameLabel);
+                const metaLine = document.createElement("div");
+                metaLine.className = "loot-meta";
+                metaLine.textContent = "size: " + String(size) + " | modified: " + String(modTime);
+                info.append(nameLine, metaLine);
 
                 const btn = document.createElement("button");
                 btn.type = "button";
@@ -3707,6 +3822,8 @@ class lain_server {
                 "</div>" +
                 "<div class='online-teammates-toolbar'>" +
                     "<button type='button' class='online-teammates-action online-teammates-action-strong' onclick='openStartServerDialog()'>Start server</button>" +
+                    "<button type='button' class='online-teammates-action' onclick='openAddUserDialog()'>Add user</button>" +
+                    "<button type='button' class='online-teammates-action' onclick='openWhitelistDialog()'>Whitelist</button>" +
                     "<button type='button' class='online-teammates-action' onclick='clearMemory()'>Clear memory</button>" +
                     "<button type='button' class='online-teammates-action' onclick='downLog()'>Download log</button>" +
                 "</div>" +
@@ -3792,6 +3909,157 @@ class lain_server {
             );
         }
     }
+    openAddUserDialog() {
+        let dialog = document.getElementById("addUserDialog");
+        if (dialog) {
+            dialog.style.display = "block";
+            return;
+        }
+
+        dialog = document.createElement("div");
+        dialog.id = "addUserDialog";
+        dialog.className = "serverDialog";
+        dialog.style.display = "block";
+        dialog.innerHTML =
+            '<div class="server-dialog">' +
+                '<button type="button" class="close-x" id="add-user-close">x</button>' +
+                '<div class="server-header"><h3>Add user</h3></div>' +
+                '<form id="add-user-form" class="server-form">' +
+                    '<input id="add-user-username" name="username" type="text" placeholder="Username" autocomplete="off" required>' +
+                    '<input id="add-user-password" name="password" type="password" placeholder="Password" autocomplete="new-password" required>' +
+                    '<div class="server-buttons"><button type="submit">Add user</button></div>' +
+                '</form>' +
+            '</div>';
+        document.body.appendChild(dialog);
+
+        const close = () => {
+            dialog.style.display = "none";
+        };
+        dialog.querySelector("#add-user-close").addEventListener("click", close);
+        dialog.addEventListener("click", (event) => {
+            if (event.target === dialog) close();
+        });
+        dialog.querySelector("#add-user-form").addEventListener("submit", async (event) => {
+            event.preventDefault();
+            const username = dialog.querySelector("#add-user-username").value.trim();
+            const password = dialog.querySelector("#add-user-password").value;
+            if (!username || !password) {
+                customAlert("Username and password cannot be empty");
+                return;
+            }
+
+            try {
+                const responsePromise = webSocketClient.waitForMessage(
+                    (msg) => msg.path === "addteamment"
+                );
+                const sent = await webSocketClient.send("addteamment", {
+                    username: username,
+                    password: password
+                });
+                if (!sent) {
+                    customAlert("Add user send failed");
+                    return;
+                }
+                const result = await responsePromise;
+                if (!result || result.code !== 200) {
+                    customAlert((result && result.message) || "Add user failed");
+                    return;
+                }
+                customLog(result.message || "User added successfully");
+                dialog.querySelector("#add-user-form").reset();
+                close();
+            } catch (error) {
+                console.error("add user error:", error);
+                customAlert("Add user failed");
+            }
+        });
+    }
+    async openWhitelistDialog() {
+        let dialog = document.getElementById("whitelistDialog");
+        if (!dialog) {
+            dialog = document.createElement("div");
+            dialog.id = "whitelistDialog";
+            dialog.className = "serverDialog";
+            dialog.style.display = "block";
+            dialog.innerHTML =
+                '<div class="server-dialog">' +
+                    '<button type="button" class="close-x" id="whitelist-close">x</button>' +
+                    '<div class="server-header"><h3>Whitelist</h3></div>' +
+                    '<form id="whitelist-form" class="server-form">' +
+                        '<textarea id="whitelist-input" rows="10" placeholder="One IP or rule per line"></textarea>' +
+                        '<div class="server-buttons"><button type="submit">Save whitelist</button></div>' +
+                    '</form>' +
+                '</div>';
+            document.body.appendChild(dialog);
+
+            const close = () => {
+                dialog.style.display = "none";
+            };
+            dialog.querySelector("#whitelist-close").addEventListener("click", close);
+            dialog.addEventListener("click", (event) => {
+                if (event.target === dialog) close();
+            });
+            dialog.querySelector("#whitelist-form").addEventListener("submit", async (event) => {
+                event.preventDefault();
+                await this.saveWhitelist();
+            });
+        } else {
+            dialog.style.display = "block";
+        }
+
+        const textarea = dialog.querySelector("#whitelist-input");
+        textarea.disabled = true;
+        try {
+            const responsePromise = webSocketClient.waitForMessage(
+                (msg) => msg.path === "getWhitelist"
+            );
+            const sent = await webSocketClient.send("getWhitelist", {});
+            if (!sent) {
+                customAlert("Get whitelist send failed");
+                return;
+            }
+            const result = await responsePromise;
+            if (!result || result.code !== 200) {
+                customAlert((result && result.message) || "Get whitelist failed");
+                return;
+            }
+            const entries = Array.isArray(result.data) ? result.data : [];
+            textarea.value = entries.join("\n");
+        } catch (error) {
+            console.error("get whitelist error:", error);
+            customAlert("Get whitelist failed");
+        } finally {
+            textarea.disabled = false;
+        }
+    }
+    async saveWhitelist() {
+        const textarea = document.getElementById("whitelist-input");
+        if (!textarea) return false;
+        const text = textarea.value.replace(/\r\n/g, "\n");
+        try {
+            const responsePromise = webSocketClient.waitForMessage(
+                (msg) => msg.path === "saveWhitelist"
+            );
+            const sent = await webSocketClient.send("saveWhitelist", { text: text });
+            if (!sent) {
+                customAlert("Save whitelist send failed");
+                return false;
+            }
+            const result = await responsePromise;
+            if (!result || result.code !== 200) {
+                customAlert((result && result.message) || "Save whitelist failed");
+                return false;
+            }
+            customLog(result.message || "Whitelist saved successfully");
+            const dialog = document.getElementById("whitelistDialog");
+            if (dialog) dialog.style.display = "none";
+            return true;
+        } catch (error) {
+            console.error("save whitelist error:", error);
+            customAlert("Save whitelist failed");
+            return false;
+        }
+    }
     async start_server() {
         const form = document.getElementById("serverForm");
         if (!form) {
@@ -3856,52 +4124,57 @@ class lain_server {
         this.renderOnlineTeammatesCard();
         const serverIndexDiv = document.getElementById('server_index');
         if (!serverIndexDiv) return;
+
         let htmlContent = "";
         for (const server of server_data) {
+            const portRaw = String(server.port || "");
+            const safePort = escapeHtml(portRaw);
             const keyPathRaw = String(server.keyPath || "");
             const certPathRaw = String(server.certPath || "");
             const key_path = keyPathRaw.length > 22 ? keyPathRaw.substring(0, 22) + "..." : keyPathRaw;
             const cert_path = certPathRaw.length > 22 ? certPathRaw.substring(0, 22) + "..." : certPathRaw;
-            const clientCount = serverClientCounts[String(server.port)] || 0;
-            htmlContent += "<article id='" + escapeHtml(server.port) + "-info' class='server-card'>";
-                htmlContent += "<div class='server-card-head'>";
-                    htmlContent += "<div class='server-card-copy'>";
-                        htmlContent += "<div class='server-card-title'>" + escapeHtml(server.remark || "Unnamed server") + "</div>";
-                        htmlContent += "<div class='server-card-subtitle'>" + escapeHtml(server.path || "/") + "</div>";
-                    htmlContent += "</div>";
-                    htmlContent += "<div class='server-card-badges'>";
-                        htmlContent += "<span class='server-badge'>" + escapeHtml(String(server.protocol || "").toUpperCase()) + "</span>";
-                        htmlContent += "<span class='server-badge server-badge-accent'><span id='" + escapeHtml(server.port) + "'>" + clientCount + "</span> agents</span>";
-                    htmlContent += "</div>";
-                htmlContent += "</div>";
-                htmlContent += "<div class='server-meta-grid'>";
-                    htmlContent += "<div class='server-meta-item'><span class='server-meta-label'>Port</span><span class='server-meta-value'>" + escapeHtml(server.port) + "</span></div>";
-                    htmlContent += "<div class='server-meta-item'><span class='server-meta-label'>User</span><span class='server-meta-value'>" + escapeHtml(server.username) + "</span></div>";
-                    htmlContent += "<div class='server-meta-item'><span class='server-meta-label'>Cert</span><span class='server-meta-value'>" + escapeHtml(cert_path || "-") + "</span></div>";
-                    htmlContent += "<div class='server-meta-item'><span class='server-meta-label'>Key</span><span class='server-meta-value'>" + escapeHtml(key_path || "-") + "</span></div>";
-                htmlContent += "</div>";
-                htmlContent += "<div class='server-action-groups'>";
-                    htmlContent += "<div class='server-action-row'>";
-                if (server.windows_pro === "group_pro") {
-                    htmlContent += "<a class='server-action-pill agent-link' href='javascript:void(0)' data-os='win' data-port='" + server.port + "'>Win agent</a>";
-                } else {
-                    htmlContent += "<a class='server-action-pill agent-link' href='javascript:void(0)' data-os='win' data-port='" + server.port + "'>Win agent</a>";
-                    htmlContent += "<a class='server-action-pill agent-link' href='javascript:void(0)' data-os='linux' data-port='" + server.port + "'>Linux agent</a>";
-                    htmlContent += "<a class='server-action-pill agent-link' href='javascript:void(0)' data-os='macos' data-port='" + server.port + "'>macOS agent</a>";
-                    htmlContent += "<a class='server-action-pill agent-link' href='javascript:void(0)' data-os='android' data-port='" + server.port + "'>Android agent</a>";
-                }
-                    htmlContent += "</div>";
-                    htmlContent += "<div class='server-action-row server-action-row-secondary'>";
-                        htmlContent += "<a class='server-action-pill server-action-pill-secondary download-config' href='javascript:void(0)' data-port='" + server.port + "'>Download config</a>";
-                        htmlContent += "<a class='server-action-pill server-action-pill-secondary modifyServerHeader' href='javascript:void(0)' data-port='" + server.port + "'>Headers</a>";
-                        htmlContent += "<a class='server-action-pill server-action-pill-secondary plugin' href='javascript:void(0)' data-port='" + server.port + "' style='top: 30%;'>Plugins</a>";
-                        htmlContent += "<a class='server-action-pill server-action-pill-danger delete-server' href='javascript:void(0)' data-port='" + server.port + "'>Delete</a>";
-                    htmlContent += "</div>";
-                htmlContent += "</div>";
+            const clientCount = serverClientCounts[portRaw] || 0;
+
+            htmlContent += "<article id='" + safePort + "-info' class='server-card'>";
+            htmlContent += "<div class='server-card-head'>";
+            htmlContent += "<div class='server-card-copy'>";
+            htmlContent += "<div class='server-card-title'>" + escapeHtml(server.remark || "Unnamed server") + "</div>";
+            htmlContent += "<div class='server-card-subtitle'>" + escapeHtml(server.path || "/") + "</div>";
+            htmlContent += "</div>";
+            htmlContent += "<div class='server-card-badges'>";
+            htmlContent += "<span class='server-badge'>" + escapeHtml(String(server.protocol || "").toUpperCase()) + "</span>";
+            htmlContent += "<span class='server-badge server-badge-accent'><span id='" + safePort + "'>" + clientCount + "</span> agents</span>";
+            htmlContent += "</div>";
+            htmlContent += "</div>";
+            htmlContent += "<div class='server-meta-grid'>";
+            htmlContent += "<div class='server-meta-item'><span class='server-meta-label'>Port</span><span class='server-meta-value'>" + safePort + "</span></div>";
+            htmlContent += "<div class='server-meta-item'><span class='server-meta-label'>User</span><span class='server-meta-value'>" + escapeHtml(server.username) + "</span></div>";
+            htmlContent += "<div class='server-meta-item'><span class='server-meta-label'>Cert</span><span class='server-meta-value'>" + escapeHtml(cert_path || "-") + "</span></div>";
+            htmlContent += "<div class='server-meta-item'><span class='server-meta-label'>Key</span><span class='server-meta-value'>" + escapeHtml(key_path || "-") + "</span></div>";
+            htmlContent += "</div>";
+            htmlContent += "<div class='server-action-groups'>";
+            htmlContent += "<div class='server-action-row'>";
+            if (server.windows_pro === "group_pro") {
+                htmlContent += "<a class='server-action-pill agent-link' href='javascript:void(0)' data-os='win' data-port='" + safePort + "'>Win agent</a>";
+            } else {
+                htmlContent += "<a class='server-action-pill agent-link' href='javascript:void(0)' data-os='win' data-port='" + safePort + "'>Win agent</a>";
+                htmlContent += "<a class='server-action-pill agent-link' href='javascript:void(0)' data-os='linux' data-port='" + safePort + "'>Linux agent</a>";
+                htmlContent += "<a class='server-action-pill agent-link' href='javascript:void(0)' data-os='macos' data-port='" + safePort + "'>macOS agent</a>";
+                htmlContent += "<a class='server-action-pill agent-link' href='javascript:void(0)' data-os='android' data-port='" + safePort + "'>Android agent</a>";
+            }
+            htmlContent += "</div>";
+            htmlContent += "<div class='server-action-row server-action-row-secondary'>";
+            htmlContent += "<a class='server-action-pill server-action-pill-secondary download-config' href='javascript:void(0)' data-port='" + safePort + "'>Download config</a>";
+            htmlContent += "<a class='server-action-pill server-action-pill-secondary modifyServerHeader' href='javascript:void(0)' data-port='" + safePort + "'>Headers</a>";
+            htmlContent += "<a class='server-action-pill server-action-pill-secondary plugin' href='javascript:void(0)' data-port='" + safePort + "' style='top: 30%;'>Plugins</a>";
+            htmlContent += "<a class='server-action-pill server-action-pill-danger delete-server' href='javascript:void(0)' data-port='" + safePort + "'>Delete</a>";
+            htmlContent += "</div>";
+            htmlContent += "</div>";
             htmlContent += "</article>";
         }
         serverIndexDiv.innerHTML = htmlContent;
     }
+
     async initServerIndexClickHandler() {
         const serverPage = document.getElementById('server');
         if (!serverPage) return;
@@ -4066,7 +4339,7 @@ class lain_server {
 
                     dialog.innerHTML =
                         "<div class='plugin-dialog-header'>" +
-                            "<button type='button' class='plugin-close-btn' onclick='closePluginDialog()' aria-label='close plugin dialog'>x</button>" +
+                            "<button type='button' class='close-x' onclick='closePluginDialog()' aria-label='close plugin dialog'>x</button>" +
                             "<h3>plugin</h3>" +
                         "</div>" +
                         "<form id='pluginForm' method='POST' class='plugin-form'>" +
@@ -4399,7 +4672,7 @@ class lain_server {
             dialog.id = "modify-server-dialog";
             const closeButton = document.createElement("button");
             closeButton.type = "button";
-            closeButton.className = "dialog-close-btn modify-server-close-btn";
+            closeButton.className = "close-x";
             closeButton.textContent = "x";
             closeButton.setAttribute("aria-label", "Close response header dialog");
             closeButton.onclick = () => {
@@ -4584,14 +4857,14 @@ class lain_chat{
         header.style.alignItems = "center";
     
         let usernameSpan = document.createElement("strong");
-        usernameSpan.innerText = data.username;
+        usernameSpan.textContent = data.username;
     
         header.appendChild(usernameSpan);
     
         // 鍙湁鑷繁鐨勬秷鎭樉绀哄垹闄ゆ寜閽�
         if (data.username === Username) {
             let delBtn = document.createElement("span");
-            delBtn.innerText = "x";
+            delBtn.textContent = "x";
             delBtn.style.cssText = "cursor:pointer;color:#888;margin-left:8px;";
             delBtn.title = "delete";
             let currentChatId = data.chatid;
@@ -4608,7 +4881,7 @@ class lain_chat{
             let link = document.createElement("a");
             link.href = "javascript:void(0);";
             link.className = "file_link";
-            link.innerText = "📎" + data.message;
+            link.textContent = "📎" + data.message;
     
             link.style.color = "#007BFF";
             link.style.textDecoration = "none";
@@ -4622,13 +4895,13 @@ class lain_chat{
         } else {
             let msgDiv = document.createElement("div");
             msgDiv.style.marginTop = "4px";
-            msgDiv.innerText = data.message;
+            msgDiv.textContent = data.message;
             div.appendChild(msgDiv);
         }
         // 鏃堕棿
         let timeSpan = document.createElement("span");
         timeSpan.className = "chat_time";
-        timeSpan.innerText = data.time;
+        timeSpan.textContent = data.time;
         div.appendChild(timeSpan);
         chat_div.appendChild(div);
         // 鑷姩婊氬埌搴曢儴
@@ -5084,10 +5357,10 @@ document.addEventListener('DOMContentLoaded', function () {
         const sidebar = document.getElementById("tle-sidebar");
         if (sidebar.style.display === "none" || sidebar.style.display === "") {
             sidebar.style.display = "block";
-            this.textContent = "Close";
+            this.textContent = "x";
         } else {
             sidebar.style.display = "none";
-            this.textContent = "Menu";
+            this.textContent = "[+]";
         }
     });
 });
