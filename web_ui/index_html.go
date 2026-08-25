@@ -79,7 +79,6 @@ func Lain(error_str, web_title, web_js, web_css string, sessionSlice []string) h
                                 const dialog = document.getElementById("serverDialog");
                                 dialog.style.display = "block";
                                 requestAnimationFrame(() => {
-                                    dialog.style.transform = "translateX(-50%) scaleY(1)";
                                     dialog.style.opacity = "1";
                                 });
                                 return;
@@ -172,10 +171,8 @@ func Lain(error_str, web_title, web_js, web_css string, sessionSlice []string) h
                             dialog.innerHTML = formHtml;
                             var container = document.getElementById("server_index");
                             container.appendChild(dialog);
-                            dialog.style.transform = "translateX(-50%) scaleY(0)";
                             dialog.style.opacity = "0";
                             requestAnimationFrame(function () {
-                                dialog.style.transform = "translateX(-50%) scaleY(1)";
                                 dialog.style.opacity = "1";
                             });
 
@@ -197,7 +194,6 @@ func Lain(error_str, web_title, web_js, web_css string, sessionSlice []string) h
                         function closeStartServerDialog() {
                             var dialog = document.getElementById("serverDialog");
                             if (dialog) {
-                                dialog.style.transform = "translateX(-50%) scaleY(0)";
                                 dialog.style.opacity = "0";
                                 setTimeout(function () {
                                     dialog.parentNode.removeChild(dialog);
