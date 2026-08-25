@@ -106,7 +106,6 @@ html, body {
 .sidebar-title {
     font-size: 20px;
     font-weight: bold;
-    margin-bottom: 10px;
     color: #000;
     text-align: center;
     font-family: 'Arial', sans-serif;
@@ -1352,7 +1351,6 @@ button:hover {
 }
 #terminal .shell-input  {
     width: 95%;
-    border: none;
     background: transparent;
     border: 1px solid #ddd;
     color: #000;
