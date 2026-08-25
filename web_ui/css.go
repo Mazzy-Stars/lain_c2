@@ -1275,6 +1275,7 @@ button:hover {
     border-top-left-radius: 8px;
     border-top-right-radius: 8px;
     z-index: 10001;
+    touch-action: none;
 }
 .msg-dialog .msg-dialog-header {
     display: flex;
@@ -2073,10 +2074,14 @@ button:hover {
     .msg-dialog {
         width: 94vw !important;
         max-width: 680px !important;
+        max-height: calc(100dvh - 20px) !important;
         padding: 14px 10px 18px !important;
         background: linear-gradient(180deg, #fbfdff 0%, #f4f7fb 100%) !important;
         border: 1px solid rgba(148, 168, 186, 0.24) !important;
         box-shadow: 0 18px 42px rgba(41, 61, 80, 0.18) !important;
+        overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior: contain;
     }
 
     .msg-dialog .msg-dialog-header {
@@ -2465,24 +2470,42 @@ button:hover {
 
 .online-teammates-action {
     border: 1px solid #c9d8e6;
-    background: #ffffff;
+    min-height: 38px;
+    padding: 9px 16px;
+    background: linear-gradient(180deg, #ffffff 0%, #f4f8fb 100%);
     color: #2e536f;
     border-radius: 999px;
-    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: 0.01em;
     cursor: pointer;
-    transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+    box-shadow: 0 5px 14px rgba(63, 93, 116, 0.08);
+    transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 .online-teammates-action:hover {
-    background: #f3f8fc;
+    background: linear-gradient(180deg, #ffffff 0%, #eaf3f9 100%);
     border-color: #aac0d4;
     color: #183b56;
+    transform: translateY(-1px);
+    box-shadow: 0 8px 18px rgba(63, 93, 116, 0.13);
+}
+
+.online-teammates-action:active {
+    transform: translateY(0);
+    box-shadow: 0 4px 10px rgba(63, 93, 116, 0.08);
 }
 
 .online-teammates-action-strong {
     background: linear-gradient(180deg, #ffffff 0%, #eaf4ff 100%);
     border-color: #b8d3ea;
     color: #18486a;
+}
+
+.online-teammates-toolbar .online-teammates-action:nth-child(2),
+.online-teammates-toolbar .online-teammates-action:nth-child(3) {
+    background: linear-gradient(180deg, #f9fcff 0%, #edf5fa 100%);
 }
 
 .online-teammates-toolbar {
@@ -2604,15 +2627,6 @@ button:hover {
     flex-wrap: wrap;
 }
 
-#modify-server-dialog .modify-server-close-btn {
-    top: 10px;
-    right: 10px;
-    width: 34px;
-    height: 34px;
-    font-size: 22px;
-    background: rgba(255, 255, 255, 0.72);
-}
-
 #modify-server-dialog .button-container button {
     border: 1px solid rgba(170, 192, 208, 0.42);
     border-radius: 999px;
@@ -2669,11 +2683,6 @@ button:hover {
         justify-content: stretch;
     }
 
-    #modify-server-dialog .modify-server-close-btn {
-        top: 8px;
-        right: 8px;
-    }
-
     #modify-server-dialog .button-container button {
         flex: 1 1 calc(50% - 10px);
         text-align: center;
@@ -2709,6 +2718,123 @@ button:hover {
     font-size: 14px;
 }
 
+.serverDialog .close-x,
+#modify-server-dialog .close-x {
+    position: absolute !important;
+    top: 8px !important;
+    right: 10px !important;
+    width: 32px !important;
+    height: 32px !important;
+    padding: 0 !important;
+    border: 1px solid transparent !important;
+    border-radius: 999px !important;
+    background: transparent !important;
+    color: #667b8c !important;
+    font-size: 22px !important;
+    font-weight: 500 !important;
+    line-height: 30px !important;
+    text-align: center;
+    cursor: pointer;
+    transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
+
+.serverDialog .close-x:hover,
+#modify-server-dialog .close-x:hover {
+    background: #e7f1f7 !important;
+    border-color: #c9dce8 !important;
+    color: #294b63 !important;
+    transform: rotate(90deg);
+}
+
+.serverDialog .close-x:active,
+#modify-server-dialog .close-x:active {
+    background: #dbeaf2 !important;
+    transform: rotate(90deg) scale(0.96);
+}
+
+#addUserDialog,
+#whitelistDialog {
+    width: min(440px, calc(100vw - 40px));
+    max-width: calc(100vw - 40px);
+}
+
+#addUserDialog .server-dialog,
+#whitelistDialog .server-dialog {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+#addUserDialog .server-form,
+#whitelistDialog .server-form {
+    width: 100%;
+    align-items: stretch;
+    gap: 12px;
+}
+
+#addUserDialog .server-form input,
+#addUserDialog .server-form button,
+#whitelistDialog .server-form textarea,
+#whitelistDialog .server-form button {
+    width: 100%;
+    min-height: 42px;
+    box-sizing: border-box;
+}
+
+#addUserDialog .server-form input,
+#whitelistDialog .server-form textarea {
+    border: 1px solid #c7d7e2;
+    border-radius: 12px;
+    background: #f9fcfe;
+    color: #26455c;
+    padding: 11px 13px;
+    outline: none;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+#addUserDialog .server-form input:focus,
+#whitelistDialog .server-form textarea:focus {
+    border-color: #8fb8d6;
+    background: #ffffff;
+    box-shadow: 0 0 0 4px rgba(111, 170, 213, 0.14);
+}
+
+#addUserDialog .server-buttons,
+#whitelistDialog .server-buttons {
+    width: 100%;
+    margin-top: 4px;
+}
+
+#addUserDialog .server-buttons button,
+#whitelistDialog .server-buttons button {
+    border: 1px solid #9fc0d7;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #3a87b1 0%, #295f7b 100%);
+    color: #ffffff;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+#addUserDialog .server-buttons button:hover,
+#whitelistDialog .server-buttons button:hover {
+    background: linear-gradient(135deg, #34799f 0%, #244f66 100%);
+    border-color: #244f66;
+    transform: translateY(-1px);
+    box-shadow: 0 8px 18px rgba(41, 95, 123, 0.2);
+}
+
+#addUserDialog .server-buttons button:active,
+#whitelistDialog .server-buttons button:active {
+    transform: translateY(0);
+}
+
+#whitelistDialog .server-form textarea {
+    min-height: 220px;
+    resize: vertical;
+    line-height: 1.55;
+    font-family: Consolas, Monaco, "Courier New", monospace;
+}
+
 @media (max-width: 768px) {
     .serverDialog {
         top: 50% !important;
@@ -2718,6 +2844,12 @@ button:hover {
         max-width: calc(100vw - 24px);
         max-height: 88vh;
         padding: 18px 16px 20px !important;
+    }
+
+    #addUserDialog,
+    #whitelistDialog {
+        width: calc(100vw - 24px);
+        max-width: calc(100vw - 24px);
     }
 }
 `
