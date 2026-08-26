@@ -240,7 +240,6 @@ func Lain(error_str, web_title, web_js, web_css string, sessionSlice []string) h
                         <select name="net_shell" id="net_shell">
                             <option value="">Select</option>
                         </select>
-                        <div id="net_uid"></div>
                     </div>
                     <div class="net_scan">
                         <select id='net_options' name='net_options'>
