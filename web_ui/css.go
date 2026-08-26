@@ -1986,7 +1986,6 @@ button:hover {
         width: 100% !important;
         height: auto;
         flex: 1 1 auto;
-        padding: 12px !important;
         border-radius: 18px 18px 0 0;
         box-shadow: none;
     }
