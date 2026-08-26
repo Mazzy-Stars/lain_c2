@@ -1048,12 +1048,21 @@ class WebSocketClient {
     }
 
     handleServer(msg){
+        const startServerDialog = document.getElementById("serverDialog");
+        const keepStartServerDialog = !!startServerDialog && startServerDialog.dataset.closing !== "true";
         let indexServer = new lain_server();
         server_data = msg.data;
         indexServer.updateServerIndex();
         indexServer.initServerIndexClickHandler();
         rebuildServerClientCounts(User_data);
         indexServer.requestOnlineTeammates();
+        if (keepStartServerDialog && startServerDialog) {
+            if (startServerDialog.parentNode !== document.body) {
+                document.body.appendChild(startServerDialog);
+            }
+            startServerDialog.style.display = "block";
+            startServerDialog.style.opacity = "1";
+        }
     }
 
     handlePlugin(msg){
@@ -4142,6 +4151,9 @@ class lain_server {
                 result.message ||
                 ("Server started on port " + (result.port || ""))
             );
+            if (typeof closeStartServerDialog === "function") {
+                closeStartServerDialog();
+            }
             return true;
         }catch(err){
             console.error("start server error:",err);
