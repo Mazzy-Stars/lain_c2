@@ -78,6 +78,7 @@ func Lain(error_str, web_title, web_js, web_css string, sessionSlice []string) h
                             if (document.getElementById("serverDialog")) {
                                 const dialog = document.getElementById("serverDialog");
                                 dialog.style.display = "block";
+                                dialog.dataset.closing = "false";
                                 requestAnimationFrame(() => {
                                     dialog.style.opacity = "1";
                                 });
@@ -87,6 +88,7 @@ func Lain(error_str, web_title, web_js, web_css string, sessionSlice []string) h
                             dialog.id = "serverDialog";
                             dialog.className = "serverDialog";
                             dialog.style.display = "block";
+                            dialog.dataset.closing = "false";
                             var formHtml = '' +
                                 '<div class="server-dialog">' +
                                     '<button class="close-x" onclick="closeStartServerDialog()" ' +
@@ -169,8 +171,7 @@ func Lain(error_str, web_title, web_js, web_css string, sessionSlice []string) h
                                     '</form>' +
                                 '</div>';
                             dialog.innerHTML = formHtml;
-                            var container = document.getElementById("server_index");
-                            container.appendChild(dialog);
+                            document.body.appendChild(dialog);
                             dialog.style.opacity = "0";
                             requestAnimationFrame(function () {
                                 dialog.style.opacity = "1";
@@ -194,6 +195,7 @@ func Lain(error_str, web_title, web_js, web_css string, sessionSlice []string) h
                         function closeStartServerDialog() {
                             var dialog = document.getElementById("serverDialog");
                             if (dialog) {
+                                dialog.dataset.closing = "true";
                                 dialog.style.opacity = "0";
                                 setTimeout(function () {
                                     dialog.parentNode.removeChild(dialog);
