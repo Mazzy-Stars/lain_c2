@@ -3290,29 +3290,6 @@ class index{
                 );
             }catch(err){
                 console.log("change failed:",err.message);
-                let new_user =document.getElementById('username_' + uid).value;
-                if(!new_user){
-                    return;
-                }
-                try{
-                    let client = await webSocketClient.send(
-                        "confirm",
-                        {
-                            uid:uid,
-                            username:new_user
-                        }
-                    );
-                    const userIndex =User_data.findIndex(client=>client.uid===uid);
-                    if(userIndex!==-1){
-                        User_data[userIndex].remarks =remarks;
-                        User_data[userIndex].delay =delay;
-                        User_data[userIndex].username =username;
-                        User_data[userIndex].jitter =jitter;
-                    }
-                    this.updateUserUI(uid,remarks,delay,username,jitter);
-                }catch(e){
-                    console.error("confirm error:",e);
-                }
             }
         }
         updateUserUI(uid, remarks, delay, username, jitter) {
