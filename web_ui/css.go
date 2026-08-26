@@ -829,17 +829,61 @@ button:hover {
         width: 40%;
     }
 }
+#net {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0 20px 20px;
+}
 .net_div {
     height: 20%;
-    background-color: lightgray; /* 濞ｈ濮為懗灞炬珯閼硅弓浜掓笟澶哥艾閺屻儳婀?*/
-    width: 95%;
-    margin-left: 40px;
+    width: 100%;
+    margin: 0 auto;
+    border-radius: 14px;
+    box-sizing: border-box;
+    padding: 12px;
 }
 .net_scan{
     display: flex;
-    gap: 10px; 
-    margin-bottom: 2%;
-    margin-left: 50px;
+    gap: 10px;
+    margin: 0 auto 14px;
+    width: 100%;
+    align-items: center;
+    flex-wrap: wrap;
+}
+.net_scan select,
+.net_scan input,
+.net_scan button,
+#net_uid {
+    min-height: 40px;
+    box-sizing: border-box;
+}
+.net_scan select,
+.net_scan input {
+    flex: 1 1 180px;
+    padding: 0 12px;
+    border: 1px solid #cfd9e2;
+    border-radius: 10px;
+    background: #fff;
+}
+.net_scan button {
+    padding: 0 18px;
+    border-radius: 10px;
+    border: none;
+    background: linear-gradient(135deg, #2f7fb4 0%, #1d5f8d 100%);
+    color: #fff;
+    font-weight: 600;
+}
+.net_scan button:hover {
+    background: linear-gradient(135deg, #2a73a3 0%, #184f75 100%);
+}
+#net_uid {
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    border-radius: 10px;
+    background: #eef4f8;
+    color: #355066;
+    flex: 1 1 180px;
 }
 .net_div_son {
     background-color: #f9f9f9; /* 濞村懐浼嗛懝鑼跺剹閺咃拷 */
@@ -874,7 +918,7 @@ button:hover {
     gap: 10px; /* 鐠佸墽鐤嗙€涙劕鍘撶槐鐘辩闂傚娈戦梻纾嬬獩 */
     margin-top: 10px; /* 娑撳酣鈧瀚ㄥ鍡欐畱闂傜绐?*/
     font-family: 'Arial', sans-serif; /* 鐠佸墽鐤嗙€涙ぞ缍?*/
-    margin-left: 15px;
+    margin-left: 0;
 }
 #have_ip div {
     background-color: #f0f0f0; /* 濞村懐浼嗛懝鑼跺剹閺咃拷 */
@@ -886,6 +930,31 @@ button:hover {
 #have_ip div:hover {
     background-color: #e0e0e0; /* 姒х姵鐖ｉ幃顒€浠犻弮鍓佹畱閼冲本娅欐０婊嗗 */
     cursor: pointer; /* 姒х姵鐖ｉ幃顒€浠犻弮鍓佹畱閸忓鐖ｉ弽宄扮础 */
+}
+@media (max-width: 768px) {
+    #net {
+        padding: 0 12px 16px;
+    }
+    .net_scan {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 12px;
+        margin-bottom: 12px;
+    }
+    .net_scan select,
+    .net_scan input,
+    .net_scan button,
+    #net_uid {
+        width: 100%;
+        flex: none;
+    }
+    .net_div {
+        padding: 10px;
+        border-radius: 12px;
+    }
+    #have_ip {
+        gap: 8px;
+    }
 }
 .file-dialog .file-history{
     width: 20%;
@@ -1983,7 +2052,7 @@ button:hover {
     }
 
     .file-dialog .filecontainer {
-        width: 100% !important;
+        width: 91% !important;
         height: auto;
         flex: 1 1 auto;
         border-radius: 18px 18px 0 0;
