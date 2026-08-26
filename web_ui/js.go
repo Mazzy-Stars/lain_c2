@@ -49,6 +49,65 @@ function createRuntimeTaskId(prefix = "task") {
     return prefix + "-" + Math.random().toString(36).slice(2) + Date.now();
 }
 
+function isNearBottom(element, threshold = 80) {
+    if (!element) {
+        return true;
+    }
+    return (element.scrollHeight - element.scrollTop - element.clientHeight) <= threshold;
+}
+
+function snapshotViewState(root, options = {}) {
+    const state = {
+        windowX: window.scrollX || window.pageXOffset || 0,
+        windowY: window.scrollY || window.pageYOffset || 0,
+        scrollTop: root ? (root.scrollTop || 0) : 0,
+        scrollLeft: root ? (root.scrollLeft || 0) : 0,
+        stickToBottom: !!options.stickToBottom && root ? isNearBottom(root, options.threshold || 80) : false,
+        showIds: []
+    };
+
+    if (options.captureShow && root && root.querySelectorAll) {
+        state.showIds = Array.from(root.querySelectorAll(".show"))
+            .map(function(el) {
+                return el && el.id ? el.id : "";
+            })
+            .filter(Boolean);
+    }
+
+    return state;
+}
+
+function restoreViewState(root, state) {
+    if (!state) {
+        return;
+    }
+
+    requestAnimationFrame(function() {
+        if (typeof window.scrollTo === "function") {
+            window.scrollTo(state.windowX || 0, state.windowY || 0);
+        }
+
+        if (root && root.isConnected) {
+            if (state.stickToBottom) {
+                root.scrollTop = root.scrollHeight;
+            } else {
+                const maxTop = Math.max(0, root.scrollHeight - root.clientHeight);
+                root.scrollTop = Math.min(state.scrollTop || 0, maxTop);
+            }
+            root.scrollLeft = state.scrollLeft || 0;
+        }
+
+        if (Array.isArray(state.showIds)) {
+            state.showIds.forEach(function(id) {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.classList.add("show");
+                }
+            });
+        }
+    });
+}
+
 function normalizeServerCountKey(value) {
     return String(value || "").trim().toLowerCase();
 }
@@ -951,6 +1010,7 @@ class WebSocketClient {
     handleChat(msg){
         let indexchat = new lain_chat();
         let chat_div = document.getElementById("chat_div");
+        const chatState = snapshotViewState(chat_div, { stickToBottom: true });
         chat_div.innerHTML = "";
         if (!msg || !Array.isArray(msg.data)) {
             console.error("Invalid chat data");
@@ -959,6 +1019,7 @@ class WebSocketClient {
         for (let i = 0; i < msg.data.length; i++) {
             indexchat.renderChatItem(msg.data[i]);
         }
+        restoreViewState(chat_div, chatState);
     }
 
     handleListen(msg) {
@@ -1409,6 +1470,7 @@ class index{
         renderFileList(fileContent, shell_dir) {
             const div_file = this.getDialogNode('#file_resp') || document.querySelector('#file_resp');
             if (!div_file) return false;
+            const fileState = snapshotViewState(div_file, { stickToBottom: true });
 
             if (Array.isArray(fileContent)) {
                 fileContent = fileContent.join("\n");
@@ -1419,6 +1481,7 @@ class index{
             if (typeof fileContent !== "string") {
                 console.warn("renderFileList bad data:", fileContent);
                 div_file.innerHTML = "";
+                restoreViewState(div_file, fileState);
                 return false;
             }
 
@@ -1426,6 +1489,7 @@ class index{
 
             div_file.innerHTML = "";
             if (dir_list.length === 0) {
+                restoreViewState(div_file, fileState);
                 return false;
             }
 
@@ -1582,15 +1646,20 @@ class index{
                 renderedCount++;
             }
 
-            if (renderedCount === 0) return false;
+            if (renderedCount === 0) {
+                restoreViewState(div_file, fileState);
+                return false;
+            }
 
             div_file.appendChild(fragment);
+            restoreViewState(div_file, fileState);
             return true;
         }
         async history_file(uid) {
             uid = uid || this.uid;
             const historyParent = this.getDialogNode('#history');
             const historyData = Array.isArray(fileQueues[uid]) ? fileQueues[uid] : [];
+            const historyState = snapshotViewState(historyParent, { stickToBottom: true });
             if(historyParent){
                 historyParent.innerHTML='';
                 if(historyData.length > 0){
@@ -1659,6 +1728,7 @@ class index{
                         historyParent.appendChild(listDiv);
                     });
                 }
+                restoreViewState(historyParent, historyState);
             }
         }
         stopFileListPolling(taskId = null) {
@@ -1864,6 +1934,7 @@ class index{
             if (!container) {
                 return;
             }
+            const containerState = snapshotViewState(container, { captureShow: true });
             container.innerHTML = "";
             data.forEach(key=>{
                 let userDiv = document.createElement('div');
@@ -1958,8 +2029,9 @@ class index{
                             '</div>' +
                             '<div class="info-content" id="' + safeUidHtml + '-msg-content"></div>';
                             userDiv.innerHTML = userHTML;
-                            container.appendChild(userDiv);
+                container.appendChild(userDiv);
             });
+            restoreViewState(container, containerState);
         }
         showTerminalDialog(uid, host, os) {
 		    const dialogId = "terminal-dialog-" + uid;
@@ -2847,6 +2919,7 @@ class index{
             function renderRequestList() {
                 const requestList = getRequestList();
                 if (!requestList) return;
+                const requestState = snapshotViewState(requestList, { stickToBottom: true });
 
                 requestList.innerHTML = "";
 
@@ -2863,18 +2936,21 @@ class index{
                         })
                     );
                 });
+                restoreViewState(requestList, requestState);
             }
 
             function renderResultList() {
                 const resultTitle = dialog.querySelector("#msg-result-title");
                 const resultList = getResultList();
                 if (!resultTitle || !resultList) return;
+                const resultState = snapshotViewState(resultList, { stickToBottom: true });
 
                 msgPostArray = Array.isArray(resultQueues[uid]) ? resultQueues[uid].slice() : [];
                 resultList.innerHTML = "";
 
                 if (msgPostArray.length === 0) {
                     resultTitle.style.display = "none";
+                    restoreViewState(resultList, resultState);
                     return;
                 }
 
@@ -2893,6 +2969,7 @@ class index{
                 });
 
                 refreshResultIndexes(resultList);
+                restoreViewState(resultList, resultState);
             }
 
             async function deleteMsg(msgDiv) {
@@ -4078,8 +4155,9 @@ class lain_server {
             console.error("server_data is not an array");
             return;
         }
-        this.renderOnlineTeammatesCard();
         const serverIndexDiv = document.getElementById('server_index');
+        const serverState = snapshotViewState(serverIndexDiv);
+        this.renderOnlineTeammatesCard();
         if (!serverIndexDiv) return;
 
         let htmlContent = "";
@@ -4130,6 +4208,7 @@ class lain_server {
             htmlContent += "</article>";
         }
         serverIndexDiv.innerHTML = htmlContent;
+        restoreViewState(serverIndexDiv, serverState);
     }
 
     async initServerIndexClickHandler() {
