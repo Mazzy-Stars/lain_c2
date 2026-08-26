@@ -840,20 +840,6 @@ class WebSocketClient {
                     this.handleOnlineTeammates(msg);
                 }
                 break;
-            case "getShellInnet":
-                if (msg.code === 200) {
-                    if (msg.uid) {
-                        window.shellInnetData[msg.uid] = msg.data;
-                    }
-                    const selectedUid = document.getElementById("net_shell") ?
-                        document.getElementById("net_shell").value :
-                        "";
-                    if (selectedUid && (!msg.uid || selectedUid === msg.uid)) {
-                        let netInstance = new lain_net();
-                        netInstance.getshellip(msg.data, selectedUid);
-                    }
-                }
-                break;
             case "insertKey":
                 if(msg.code === 200){
                     console.log("Key inserted successfully");
