@@ -2091,57 +2091,6 @@ func User_index() http.HandlerFunc {
 						"message": resultMessage,
 					})
 					// 处理添加白名单逻辑
-				case "addWhitelist":
-					ip, _ := body["ip"].(string)
-					if ip == "" {
-						clientWs.WriteJSON(map[string]interface{}{
-							"code":    400,
-							"path":    "addWhitelist",
-							"message": "IP address cannot be empty",
-						})
-						continue
-					}
-					exists := false
-					whitelist, err := readWhitelist()
-					if err != nil {
-						clientWs.WriteJSON(map[string]interface{}{
-							"code":    500,
-							"path":    "addWhitelist",
-							"message": "failed to read white.config",
-						})
-						continue
-					}
-					// 检查IP是否已在白名单中
-					for _, wip := range whitelist {
-						if wip == ip {
-							exists = true
-							break
-						}
-					}
-					if exists {
-						clientWs.WriteJSON(map[string]interface{}{
-							"code":    400,
-							"path":    "addWhitelist",
-							"message": "IP address already in whitelist",
-						})
-						continue
-					}
-					// 添加IP到白名单
-					whitelist = append(whitelist, ip)
-					if err := writeWhitelist(whitelist); err != nil {
-						clientWs.WriteJSON(map[string]interface{}{
-							"code":    500,
-							"path":    "addWhitelist",
-							"message": "failed to write white.config",
-						})
-						continue
-					}
-					logger.WriteLog(fmt.Sprintf(log_word["add_whitelist"], username, ip))
-					clientWs.WriteJSON(map[string]interface{}{
-						"code":    200,
-						"path":    "addWhitelist",
-						"message": "IP address added to whitelist successfully",
-					})
 				case "getWhitelist":
 					whitelist, err := readWhitelist()
 					if err != nil {
