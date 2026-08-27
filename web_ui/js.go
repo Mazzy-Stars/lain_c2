@@ -24,6 +24,7 @@ let server_data = [];
 let User_data = [];
 let server_plugin = [];
 let chat_slice = [];
+let listen_data = [];
 
 let msgQueues = {};
 let resultQueues = {};
@@ -62,7 +63,9 @@ function snapshotViewState(root, options = {}) {
         windowY: window.scrollY || window.pageYOffset || 0,
         scrollTop: root ? (root.scrollTop || 0) : 0,
         scrollLeft: root ? (root.scrollLeft || 0) : 0,
-        stickToBottom: !!options.stickToBottom && root ? isNearBottom(root, options.threshold || 80) : false,
+        stickToBottom: !!options.stickToBottom && root ?
+            isNearBottom(root, options.threshold || 80) :
+            false,
         showIds: []
     };
 
@@ -108,6 +111,99 @@ function restoreViewState(root, state) {
     });
 }
 
+function applyStickyDialogBar(dragBar, options = {}) {
+    if (!dragBar) {
+        return;
+    }
+    const padX = Number(options.padX || 0);
+    const padTop = Number(options.padTop || 0);
+    const height = Number(options.height || 36);
+    const radius = Number(options.radius || 8);
+    const marginBottom = Number(options.marginBottom || 0);
+
+    dragBar.style.position = "sticky";
+    dragBar.style.top = (-padTop) + "px";
+    dragBar.style.left = "0";
+    dragBar.style.display = "block";
+    dragBar.style.height = height + "px";
+    dragBar.style.width = padX > 0 ? "calc(100% + " + (padX * 2) + "px)" : "100%";
+    dragBar.style.margin = (-padTop) + "px " + (-padX) + "px " + marginBottom + "px " + (-padX) + "px";
+    dragBar.style.cursor = "move";
+    dragBar.style.touchAction = "none";
+    dragBar.style.zIndex = String(options.zIndex || 10001);
+    dragBar.style.background = options.background ||
+        "linear-gradient(90deg, rgba(230,236,243,0.95), rgba(243,247,251,0.9))";
+    dragBar.style.borderTopLeftRadius = radius + "px";
+    dragBar.style.borderTopRightRadius = radius + "px";
+    dragBar.style.borderBottom = options.borderBottom ||
+        "1px solid rgba(138,160,178,0.18)";
+    dragBar.style.boxSizing = "border-box";
+    dragBar.setAttribute("aria-hidden", "true");
+}
+
+function normalizeIncomingList(data) {
+    if (typeof data === "string") {
+        try {
+            data = JSON.parse(data);
+        } catch (err) {
+            return [];
+        }
+    }
+    if (data && typeof data === "object" && !Array.isArray(data)) {
+        if (Array.isArray(data.conns)) {
+            return data.conns;
+        }
+        if (Array.isArray(data.Conns)) {
+            return data.Conns;
+        }
+    }
+    return Array.isArray(data) ? data : [];
+}
+
+function syncSnapshotEntries(target, incoming, keyFn) {
+    const list = normalizeIncomingList(incoming);
+    const next = [];
+    const seen = new Set();
+
+    list.forEach(function(item) {
+        if (!item) {
+            return;
+        }
+        const key = keyFn(item);
+        if (!key) {
+            return;
+        }
+        const index = next.findIndex(function(existing) {
+            return keyFn(existing) === key;
+        });
+        if (index >= 0) {
+            next[index] = Object.assign({}, next[index], item);
+        } else {
+            next.push(item);
+        }
+        seen.add(key);
+    });
+
+    target.length = 0;
+    next.forEach(function(item) {
+        target.push(item);
+    });
+
+    return seen;
+}
+
+function removeMissingNodes(container, selector, keepKeys, getKey) {
+    if (!container) {
+        return;
+    }
+    container.querySelectorAll(selector).forEach(function(node) {
+        const key = getKey(node);
+        if (!keepKeys.has(key)) {
+            node.remove();
+        }
+    });
+}
+
 function normalizeServerCountKey(value) {
     return String(value || "").trim().toLowerCase();
 }
@@ -149,6 +245,460 @@ function applyServerClientCountsToDom() {
         if (clientNode) {
             clientNode.textContent = count;
         }
+    });
+}
+
+function captureUserCardState(card) {
+    const state = {
+        infoOpen: false,
+        chooseOpen: false,
+        msgOpen: false,
+        values: {},
+        msgHtml: ""
+    };
+
+    if (!card) {
+        return state;
+    }
+
+    const infoContents = card.querySelectorAll(".info-content");
+    const infoContent = infoContents && infoContents.length > 0 ? infoContents[0] : null;
+    const msgContent = infoContents && infoContents.length > 1 ? infoContents[1] : null;
+    const chooseContent = card.querySelector(".choose-content");
+
+    state.infoOpen = !!(infoContent && infoContent.classList.contains("show"));
+    state.chooseOpen = !!(chooseContent && chooseContent.classList.contains("show"));
+    state.msgOpen = !!(msgContent && msgContent.classList.contains("show"));
+
+    if (infoContent) {
+        const inputs = infoContent.querySelectorAll("input");
+        state.values.remarks = inputs[0] ? inputs[0].value : "";
+        state.values.delay = inputs[1] ? inputs[1].value : "";
+        state.values.jitter = inputs[2] ? inputs[2].value : "";
+        state.values.username = inputs[3] ? inputs[3].value : "";
+    }
+
+    if (msgContent) {
+        state.msgHtml = msgContent.innerHTML;
+    }
+
+    return state;
+}
+
+function restoreUserCardState(card, state) {
+    if (!card || !state) {
+        return;
+    }
+
+    const infoContents = card.querySelectorAll(".info-content");
+    const infoContent = infoContents && infoContents.length > 0 ? infoContents[0] : null;
+    const msgContent = infoContents && infoContents.length > 1 ? infoContents[1] : null;
+    const chooseContent = card.querySelector(".choose-content");
+
+    if (infoContent && state.infoOpen) {
+        infoContent.classList.add("show");
+    }
+    if (chooseContent && state.chooseOpen) {
+        chooseContent.classList.add("show");
+    }
+    if (msgContent) {
+        if (state.msgOpen) {
+            msgContent.classList.add("show");
+        }
+        if (typeof state.msgHtml === "string") {
+            msgContent.innerHTML = state.msgHtml;
+        }
+    }
+
+    if (infoContent && state.values) {
+        const inputs = infoContent.querySelectorAll("input");
+        if (inputs[0] && typeof state.values.remarks !== "undefined") {
+            inputs[0].value = state.values.remarks;
+        }
+        if (inputs[1] && typeof state.values.delay !== "undefined") {
+            inputs[1].value = state.values.delay;
+        }
+        if (inputs[2] && typeof state.values.jitter !== "undefined") {
+            inputs[2].value = state.values.jitter;
+        }
+        if (inputs[3] && typeof state.values.username !== "undefined") {
+            inputs[3].value = state.values.username;
+        }
+    }
+}
+
+function getUserCardViewModel(key) {
+    const os = String(key && key.os ? key.os : "").toLowerCase();
+    let osEmoji = "💻";
+    if (os.includes("linux")) {
+        osEmoji = "🐧";
+    } else if (os.includes("macos")) {
+        osEmoji = "🍎";
+    } else if (os.includes("android")) {
+        osEmoji = "📱";
+    }
+
+    return {
+        os: os,
+        osEmoji: osEmoji,
+        pluginParam: key ? key.plugin_parameter : null,
+        safeUidHtml: escapeHtml(key ? key["uid"] : ""),
+        safeUidJs: escapeInlineJsArg(key ? key["uid"] : ""),
+        safeHostHtml: escapeHtml(key ? key["host"] : ""),
+        safeHostJs: escapeInlineJsArg(key ? key["host"] : ""),
+        safeOsHtml: escapeHtml(key ? key["os"] : ""),
+        safeOsJs: escapeInlineJsArg(key ? key["os"] : ""),
+        safeExternalIpHtml: escapeHtml(key ? key["external_ip"] : ""),
+        safeProtocolHtml: escapeHtml(key ? key["protocol"] : ""),
+        safeRemarksHtml: escapeHtml(key ? key["remarks"] : ""),
+        safeCurrentDirHtml: escapeHtml(key ? (key["current_dir"] || "-") : "-"),
+        safeCurrentDirAttr: escapeHtml(key ? (key["current_dir"] || "./") : "./"),
+        safeLocalIpHtml: escapeHtml(key ? key["local_ip"] : ""),
+        safeCheckTimeHtml: escapeHtml(key ? key["check_time"] : ""),
+        safeExecutableHtml: escapeHtml(key ? key["executable"] : ""),
+        safeServerHtml: escapeHtml(key ? key["server"] : ""),
+        safeDelayHtml: escapeHtml(key ? key["delay"] : ""),
+        safeJitterHtml: escapeHtml(key ? key["jitter"] : ""),
+        safeUsernameHtml: escapeHtml(key ? key["username"] : "")
+    };
+}
+
+function buildPluginButtonsHtml(view) {
+    let pluginButtons = "";
+    const pluginParam = view.pluginParam;
+
+    if (pluginParam && typeof pluginParam === "object" && pluginParam[view.os]) {
+        for (let codeword in pluginParam[view.os]) {
+            let paramDescList = pluginParam[view.os][codeword];
+            let encodedDesc = encodeURIComponent(
+                (Array.isArray(paramDescList) ? paramDescList : []).join(",")
+            );
+            let safeCodewordHtml = escapeHtml(codeword);
+            let safeCodewordJs = escapeInlineJsArg(codeword);
+            let safeEncodedDescJs = escapeInlineJsArg(encodedDesc);
+            pluginButtons +=
+                '<button type="button" class="console-link" onclick="showPluginDialog(\'' +
+                view.safeUidJs +
+                '\', \'' +
+                escapeInlineJsArg(view.os) +
+                '\', \'' +
+                safeEncodedDescJs +
+                '\', \'' +
+                safeCodewordJs +
+                '\')">[' + safeCodewordHtml + ']</button>';
+        }
+    }
+
+    return pluginButtons;
+}
+
+function buildUserCardHtml(view) {
+    return '<div class="conn-container">' +
+            '<span class="shell-address" data-role="external-ip">' + view.safeExternalIpHtml + '/</span>' +
+            '<span class="ip-address" data-role="host">' + view.safeHostHtml + '/</span>' +
+            '<span class="ip-address" data-role="uid">' + view.safeUidHtml + '/</span>' +
+            '<span class="ip-address" data-role="protocol">' + view.safeProtocolHtml + '/</span>' +
+            '<span class="ip-address" data-role="os">' + view.safeOsHtml + '/' + escapeHtml(view.osEmoji) + '</span>' +
+            '<div class="os-container">' +
+                '<div class="ip-address" id="' + view.safeUidHtml + '-img" data-role="status-bar" style="background-color: #8B4513; width: 106px; height: 1px; display: inline-block; vertical-align: middle; position: relative;"><div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; box-shadow: inset 0 0 0 106px #8B4513;"></div></div>' +
+            '</div>' +
+        '</div>' +
+        '<div class="button-container">' +
+            '<button class="console-link" onclick="toggleInfo(\'' + view.safeUidJs + '\', \'info\')">[info]</button>' +
+            '<button class="console-link" onclick="toggleInfo(\'' + view.safeUidJs + '\', \'choose\')">[☰]</button>' +
+            '<button class="console-link" onclick="del(\'' + view.safeUidJs + '\')">🗑️</button>' +
+        '</div>' +
+        '<div class="info-content" id="' + view.safeUidHtml + '-info-content">' +
+            '<p><strong class="s_left">Remarks:</strong><input type="text" value="' + view.safeRemarksHtml + '" id="remarks_' + view.safeUidHtml + '" class="s_right_input custom-remarks" data-server-value="' + view.safeRemarksHtml + '"></p>' +
+            '<p><strong class="s_left">Path:</strong><strong class="s_right" data-role="current-dir">' + view.safeCurrentDirHtml + '</strong></p>' +
+            '<p><strong class="s_left">Host:</strong><strong class="s_right" data-role="detail-host">' + view.safeHostHtml + '</strong></p>' +
+            '<p><strong class="s_left">IP Addresses:</strong><strong class="s_right" data-role="local-ip">' + view.safeLocalIpHtml + '</strong></p>' +
+            '<p><strong class="s_left">Check:</strong><strong id="' + view.safeUidHtml + '-check" class="s_right" data-role="check-time">' + view.safeCheckTimeHtml + '</strong></p>' +
+            '<p><strong class="s_left">Executable:</strong><strong class="s_right" data-role="executable">' + view.safeExecutableHtml + '</strong></p>' +
+            '<p><strong class="s_left">OS:</strong><strong class="s_right" data-role="detail-os">' + view.safeOsHtml + '</strong></p>' +
+            '<p><strong class="s_left">Delay:</strong><input type="text" value="' + view.safeDelayHtml + '" id="delay_' + view.safeUidHtml + '" class="s_right_input custom-remarks" data-server-value="' + view.safeDelayHtml + '"></p>' +
+            '<p><strong class="s_left">Jitter:</strong><input type="text" value="' + view.safeJitterHtml + '" id="jitter_' + view.safeUidHtml + '" class="s_right_input custom-remarks" data-server-value="' + view.safeJitterHtml + '"></p>' +
+            '<p><strong class="s_left">UID:</strong><strong class="s_right" data-role="detail-uid">' + view.safeUidHtml + '</strong></p>' +
+            '<p><strong class="s_left">Server:</strong><strong class="s_right" data-role="server">' + view.safeServerHtml + '</strong></p>' +
+            '<p><strong class="s_left">Username:</strong><input type="text" value="' + view.safeUsernameHtml + '" id="username_' + view.safeUidHtml + '" class="s_right_input custom-remarks" data-server-value="' + view.safeUsernameHtml + '"></p>' +
+            '<button class="console-link" onclick="saveInfo(\'' + view.safeUidJs + '\')">Save Changes</button>' +
+        '</div>' +
+        '<div class="choose-content" id="' + view.safeUidHtml + '-choose-content">' +
+            '<button type="button" class="console-link" data-role="terminal-btn" onclick="showTerminalDialog(\'' + view.safeUidJs + '\', \'' + view.safeHostJs + '\', \'' + view.safeOsJs + '\')">💻</button>' +
+            '<button type="button" class="console-link file-open-btn" data-role="file-btn" data-uid="' + view.safeUidHtml + '" data-host="' + view.safeHostHtml + '" data-dir="' + view.safeCurrentDirAttr + '">📁</button>' +
+            '<button type="button" class="console-link" data-role="msg-btn" onclick="showMsgDialog(\'' + view.safeUidJs + '\', \'' + view.safeHostJs + '\')">📩</button>' +
+            '<span data-role="plugin-buttons">' + buildPluginButtonsHtml(view) + '</span>' +
+        '</div>' +
+        '<div class="info-content" id="' + view.safeUidHtml + '-msg-content"></div>';
+}
+
+function syncUserInputValue(input, nextValue) {
+    if (!input) {
+        return;
+    }
+
+    const normalized = String(nextValue == null ? "" : nextValue);
+    const previousServerValue = typeof input.dataset.serverValue === "string" ? input.dataset.serverValue : input.value;
+    const isFocused = document.activeElement === input;
+    const isDirty = input.value !== previousServerValue;
+
+    if (!isFocused && !isDirty) {
+        input.value = normalized;
+    }
+
+    input.dataset.serverValue = normalized;
+}
+
+function updateUserCardNode(userDiv, key) {
+    const view = getUserCardViewModel(key);
+    const infoContent = document.getElementById(String(key.uid) + '-info-content');
+    const chooseContent = document.getElementById(String(key.uid) + '-choose-content');
+    const msgContent = document.getElementById(String(key.uid) + '-msg-content');
+
+    if (!infoContent || !chooseContent || !msgContent) {
+        const preservedState = captureUserCardState(userDiv);
+        userDiv.innerHTML = buildUserCardHtml(view);
+        restoreUserCardState(userDiv, preservedState);
+        return;
+    }
+
+    const setHtml = function(selector, value) {
+        const node = userDiv.querySelector(selector);
+        if (node) {
+            node.innerHTML = value;
+        }
+    };
+
+    setHtml('[data-role="external-ip"]', view.safeExternalIpHtml + '/');
+    setHtml('[data-role="host"]', view.safeHostHtml + '/');
+    setHtml('[data-role="uid"]', view.safeUidHtml + '/');
+    setHtml('[data-role="protocol"]', view.safeProtocolHtml + '/');
+    setHtml('[data-role="os"]', view.safeOsHtml + '/' + escapeHtml(view.osEmoji));
+    setHtml('[data-role="current-dir"]', view.safeCurrentDirHtml);
+    setHtml('[data-role="detail-host"]', view.safeHostHtml);
+    setHtml('[data-role="local-ip"]', view.safeLocalIpHtml);
+    setHtml('[data-role="check-time"]', view.safeCheckTimeHtml);
+    setHtml('[data-role="executable"]', view.safeExecutableHtml);
+    setHtml('[data-role="detail-os"]', view.safeOsHtml);
+    setHtml('[data-role="detail-uid"]', view.safeUidHtml);
+    setHtml('[data-role="server"]', view.safeServerHtml);
+
+    syncUserInputValue(document.getElementById('remarks_' + key.uid), key["remarks"]);
+    syncUserInputValue(document.getElementById('delay_' + key.uid), key["delay"]);
+    syncUserInputValue(document.getElementById('jitter_' + key.uid), key["jitter"]);
+    syncUserInputValue(document.getElementById('username_' + key.uid), key["username"]);
+
+    const terminalBtn = userDiv.querySelector('[data-role="terminal-btn"]');
+    if (terminalBtn) {
+        terminalBtn.setAttribute('onclick', "showTerminalDialog('" + view.safeUidJs + "', '" + view.safeHostJs + "', '" + view.safeOsJs + "')");
+    }
+
+    const fileBtn = userDiv.querySelector('[data-role="file-btn"]');
+    if (fileBtn) {
+        fileBtn.dataset.uid = String(key.uid == null ? "" : key.uid);
+        fileBtn.dataset.host = String(key.host == null ? "" : key.host);
+        fileBtn.dataset.dir = String(key.current_dir || "./");
+    }
+
+    const msgBtn = userDiv.querySelector('[data-role="msg-btn"]');
+    if (msgBtn) {
+        msgBtn.setAttribute('onclick', "showMsgDialog('" + view.safeUidJs + "', '" + view.safeHostJs + "')");
+    }
+
+    const pluginSlot = userDiv.querySelector('[data-role="plugin-buttons"]');
+    if (pluginSlot) {
+        pluginSlot.innerHTML = buildPluginButtonsHtml(view);
+    }
+}
+
+function buildClientCardNode(client, index) {
+    const container = document.createElement('div');
+    container.className = 'client-card';
+    container.id = 'container-' + String(client && client.uid != null ? client.uid : '');
+    container.dataset.uid = String(client && client.uid != null ? client.uid : '');
+
+    const makeField = function(label, value, role) {
+        const p = document.createElement('p');
+        p.dataset.role = role;
+        p.appendChild(Object.assign(document.createElement('span'), { textContent: label }));
+        p.appendChild(document.createTextNode(String(value ?? '')));
+        return p;
+    };
+
+    const pUid = makeField('Uid', client ? client.uid : '', 'uid');
+    const pHost = makeField('Host', client ? client.host : '', 'host');
+    const pTime = makeField('Online', client ? client.online_time : '', 'online');
+    const pIP = makeField('IP', client ? client.shell_ip : '', 'ip');
+
+    const btnReceive = document.createElement('button');
+    btnReceive.textContent = 'Receive';
+    btnReceive.className = 'btn receive';
+    btnReceive.dataset.role = 'receive';
+    btnReceive.onclick = () => {
+        get_conn(client.uid, client.host);
+    };
+
+    const btnRemove = document.createElement('button');
+    btnRemove.textContent = 'Remove';
+    btnRemove.className = 'btn remove';
+    btnRemove.dataset.role = 'remove';
+    btnRemove.onclick = async () => {
+        const ok = await del_conn(String(index));
+        if (ok) {
+            container.remove();
+        }
+    };
+
+    const btnBox = document.createElement('div');
+    btnBox.className = 'btn-box';
+    btnBox.appendChild(btnReceive);
+    btnBox.appendChild(btnRemove);
+
+    container.appendChild(pUid);
+    container.appendChild(pHost);
+    container.appendChild(pTime);
+    container.appendChild(pIP);
+    container.appendChild(btnBox);
+    return container;
+}
+
+function updateClientCardNode(container, client, index) {
+    if (!container) {
+        return;
+    }
+
+    const setField = function(role, label, value) {
+        const node = container.querySelector('[data-role="' + role + '"]');
+        if (!node) {
+            return;
+        }
+        node.textContent = '';
+        node.appendChild(Object.assign(document.createElement('span'), { textContent: label }));
+        node.appendChild(document.createTextNode(String(value ?? '')));
+    };
+
+    container.dataset.uid = String(client && client.uid != null ? client.uid : '');
+    container.id = 'container-' + container.dataset.uid;
+    setField('uid', 'Uid', client ? client.uid : '');
+    setField('host', 'Host', client ? client.host : '');
+    setField('online', 'Online', client ? client.online_time : '');
+    setField('ip', 'IP', client ? client.shell_ip : '');
+
+    const btnReceive = container.querySelector('[data-role="receive"]');
+    if (btnReceive) {
+        btnReceive.onclick = () => {
+            get_conn(client.uid, client.host);
+        };
+    }
+
+    const btnRemove = container.querySelector('[data-role="remove"]');
+    if (btnRemove) {
+        btnRemove.onclick = async () => {
+            const ok = await del_conn(String(index));
+            if (ok) {
+                container.remove();
+            }
+        };
+    }
+}
+
+function buildServerCardHtml(server) {
+    const portRaw = String(server && server.port != null ? server.port : '');
+    const safePort = escapeHtml(portRaw);
+    const keyPathRaw = String(server && server.keyPath ? server.keyPath : '');
+    const certPathRaw = String(server && server.certPath ? server.certPath : '');
+    const keyPath = keyPathRaw.length > 22 ? keyPathRaw.substring(0, 22) + '...' : keyPathRaw;
+    const certPath = certPathRaw.length > 22 ? certPathRaw.substring(0, 22) + '...' : certPathRaw;
+    const clientCount = serverClientCounts[portRaw] || 0;
+    const protocol = escapeHtml(String(server && server.protocol ? server.protocol : '').toUpperCase());
+    const winOnly = server && server.windows_pro === 'group_pro';
+
+    let html = '';
+    html += "<div class='server-card-head'>";
+    html += "<div class='server-card-copy'>";
+    html += "<div class='server-card-title' data-role='title'>" + escapeHtml(server && server.remark ? server.remark : 'Unnamed server') + "</div>";
+    html += "<div class='server-card-subtitle' data-role='subtitle'>" + escapeHtml(server && server.path ? server.path : '/') + "</div>";
+    html += "</div>";
+    html += "<div class='server-card-badges'>";
+    html += "<span class='server-badge' data-role='protocol'>" + protocol + "</span>";
+    html += "<span class='server-badge server-badge-accent'><span id='" + safePort + "' data-role='count'>" + clientCount + "</span> agents</span>";
+    html += "</div>";
+    html += "</div>";
+    html += "<div class='server-meta-grid'>";
+    html += "<div class='server-meta-item'><span class='server-meta-label'>Port</span><span class='server-meta-value' data-role='port'>" + safePort + "</span></div>";
+    html += "<div class='server-meta-item'><span class='server-meta-label'>User</span><span class='server-meta-value' data-role='user'>" + escapeHtml(server && server.username ? server.username : '') + "</span></div>";
+    html += "<div class='server-meta-item'><span class='server-meta-label'>Cert</span><span class='server-meta-value' data-role='cert'>" + escapeHtml(certPath || '-') + "</span></div>";
+    html += "<div class='server-meta-item'><span class='server-meta-label'>Key</span><span class='server-meta-value' data-role='key'>" + escapeHtml(keyPath || '-') + "</span></div>";
+    html += "</div>";
+    html += "<div class='server-action-groups'>";
+    html += "<div class='server-action-row' data-role='agent-links'>";
+    html += "<a class='server-action-pill agent-link' href='javascript:void(0)' data-os='win' data-port='" + safePort + "'>Win agent</a>";
+    if (!winOnly) {
+        html += "<a class='server-action-pill agent-link' href='javascript:void(0)' data-os='linux' data-port='" + safePort + "'>Linux agent</a>";
+        html += "<a class='server-action-pill agent-link' href='javascript:void(0)' data-os='macos' data-port='" + safePort + "'>macOS agent</a>";
+        html += "<a class='server-action-pill agent-link' href='javascript:void(0)' data-os='android' data-port='" + safePort + "'>Android agent</a>";
+    }
+    html += "</div>";
+    html += "<div class='server-action-row server-action-row-secondary'>";
+    html += "<a class='server-action-pill server-action-pill-secondary download-config' href='javascript:void(0)' data-port='" + safePort + "'>Download config</a>";
+    html += "<a class='server-action-pill server-action-pill-secondary modifyServerHeader' href='javascript:void(0)' data-port='" + safePort + "'>Headers</a>";
+    html += "<a class='server-action-pill server-action-pill-secondary plugin' href='javascript:void(0)' data-port='" + safePort + "' style='top: 30%;'>Plugins</a>";
+    html += "<a class='server-action-pill server-action-pill-danger delete-server' href='javascript:void(0)' data-port='" + safePort + "'>Delete</a>";
+    html += "</div>";
+    html += "</div>";
+    return html;
+}
+
+function updateServerCardNode(card, server) {
+    if (!card) {
+        return;
+    }
+
+    const portRaw = String(server && server.port != null ? server.port : '');
+    const safePort = escapeHtml(portRaw);
+    const keyPathRaw = String(server && server.keyPath ? server.keyPath : '');
+    const certPathRaw = String(server && server.certPath ? server.certPath : '');
+    const keyPath = keyPathRaw.length > 22 ? keyPathRaw.substring(0, 22) + '...' : keyPathRaw;
+    const certPath = certPathRaw.length > 22 ? certPathRaw.substring(0, 22) + '...' : certPathRaw;
+    const clientCount = serverClientCounts[portRaw] || 0;
+    const protocol = escapeHtml(String(server && server.protocol ? server.protocol : '').toUpperCase());
+    const winOnly = server && server.windows_pro === 'group_pro';
+
+    const setHtml = function(selector, value) {
+        const node = card.querySelector(selector);
+        if (node) {
+            node.innerHTML = value;
+        }
+    };
+
+    if (!card.querySelector('[data-role="title"]')) {
+        card.innerHTML = buildServerCardHtml(server);
+        return;
+    }
+
+    card.id = portRaw + '-info';
+    setHtml('[data-role="title"]', escapeHtml(server && server.remark ? server.remark : 'Unnamed server'));
+    setHtml('[data-role="subtitle"]', escapeHtml(server && server.path ? server.path : '/'));
+    setHtml('[data-role="protocol"]', protocol);
+    setHtml('[data-role="port"]', safePort);
+    setHtml('[data-role="user"]', escapeHtml(server && server.username ? server.username : ''));
+    setHtml('[data-role="cert"]', escapeHtml(certPath || '-'));
+    setHtml('[data-role="key"]', escapeHtml(keyPath || '-'));
+    setHtml('[data-role="count"]', String(clientCount));
+
+    const agentLinks = card.querySelector('[data-role="agent-links"]');
+    if (agentLinks) {
+        let linksHtml = "<a class='server-action-pill agent-link' href='javascript:void(0)' data-os='win' data-port='" + safePort + "'>Win agent</a>";
+        if (!winOnly) {
+            linksHtml += "<a class='server-action-pill agent-link' href='javascript:void(0)' data-os='linux' data-port='" + safePort + "'>Linux agent</a>";
+            linksHtml += "<a class='server-action-pill agent-link' href='javascript:void(0)' data-os='macos' data-port='" + safePort + "'>macOS agent</a>";
+            linksHtml += "<a class='server-action-pill agent-link' href='javascript:void(0)' data-os='android' data-port='" + safePort + "'>Android agent</a>";
+        }
+        agentLinks.innerHTML = linksHtml;
+    }
+
+    card.querySelectorAll('[data-port]').forEach(function(node) {
+        node.setAttribute('data-port', safePort);
     });
 }
 
@@ -876,7 +1426,6 @@ class WebSocketClient {
             case "winAgentList":
                 break;
             case "chat":
-                chat_slice = msg.data;
                 this.handleChat(msg);
                 break;
             case "loot":
@@ -1010,37 +1559,57 @@ class WebSocketClient {
     handleChat(msg){
         let indexchat = new lain_chat();
         let chat_div = document.getElementById("chat_div");
-        const chatState = snapshotViewState(chat_div, { stickToBottom: true });
-        chat_div.innerHTML = "";
-        if (!msg || !Array.isArray(msg.data)) {
-            console.error("Invalid chat data");
+        if (!chat_div || !msg) {
             return;
         }
-        for (let i = 0; i < msg.data.length; i++) {
-            indexchat.renderChatItem(msg.data[i]);
-        }
+        const chatState = snapshotViewState(chat_div, {
+            stickToBottom: true,
+            threshold: 80
+        });
+        const keepKeys = syncSnapshotEntries(chat_slice, msg.data, function(item) {
+            return String(item && item.chatid !== undefined ? item.chatid : "");
+        });
+        removeMissingNodes(chat_div, ".chat_message", keepKeys, function(node) {
+            return String(node && node.dataset ? node.dataset.chatid || "" : "");
+        });
+        chat_slice.forEach(function(item) {
+            const existing = chat_div.querySelector('[data-chatid="' + escapeJsString(String(item.chatid)) + '"]');
+            if (!existing) {
+                indexchat.renderChatItem(item, false);
+            }
+        });
         restoreViewState(chat_div, chatState);
     }
 
     handleListen(msg) {
         let indexInstance = new index();
-        indexInstance.renderClients(msg.data);
+        const list = normalizeIncomingList(msg && msg.data);
+        const keepKeys = syncSnapshotEntries(listen_data, list, function(item) {
+            const uid = String(item && item.uid !== undefined ? item.uid : "");
+            return uid;
+        });
+        const listenDiv = document.getElementById("div_conn");
+        removeMissingNodes(listenDiv, ".client-card", keepKeys, function(node) {
+            return String(node && node.dataset ? node.dataset.uid || "" : "");
+        });
+        indexInstance.renderClients(listen_data);
     }
 
     handleAgentList(msg) {
         let indexInstance = new lain_index();
-        User_data = (msg.data && msg.data.length) ?
-            (Array.isArray(msg.data) ? msg.data : []) :
-            [];
-        if(User_data.length > 0) {
-            indexInstance.renderUserList(User_data);
-            net_init();
-            rebuildServerClientCounts(User_data);
-        } else {
-            indexInstance.renderUserList([]);
-            net_init();
-            rebuildServerClientCounts([]);
-        }
+        const nextUserData = normalizeIncomingList(msg && msg.data);
+        User_data = nextUserData.slice();
+        const keepKeys = new Set(User_data.map(function(item) {
+            const uid = String(item && item.uid !== undefined ? item.uid : "");
+            return uid;
+        }).filter(Boolean));
+        const userDiv = document.getElementById("div_index");
+        removeMissingNodes(userDiv, ".ip-info", keepKeys, function(node) {
+            return String(node && node.id ? node.id.replace(/info$/, "") : "");
+        });
+        indexInstance.renderUserList(User_data);
+        net_init();
+        rebuildServerClientCounts(User_data);
 
         Object.keys(pendingCheckTimes).forEach((uid) => {
             indexInstance.checkTime(pendingCheckTimes[uid], true);
@@ -1051,10 +1620,17 @@ class WebSocketClient {
         const startServerDialog = document.getElementById("serverDialog");
         const keepStartServerDialog = !!startServerDialog && startServerDialog.dataset.closing !== "true";
         let indexServer = new lain_server();
-        server_data = msg.data;
+        const keepKeys = syncSnapshotEntries(server_data, msg.data, function(item) {
+            const port = String(item && item.port !== undefined ? item.port : "");
+            return port;
+        });
+        const serverIndexDiv = document.getElementById("server_index");
+        removeMissingNodes(serverIndexDiv, "article.server-card", keepKeys, function(node) {
+            return String(node && node.id ? node.id.replace(/-info$/, "") : "");
+        });
+        rebuildServerClientCounts(User_data);
         indexServer.updateServerIndex();
         indexServer.initServerIndexClickHandler();
-        rebuildServerClientCounts(User_data);
         indexServer.requestOnlineTeammates();
         if (keepStartServerDialog && startServerDialog) {
             if (startServerDialog.parentNode !== document.body) {
@@ -1108,11 +1684,6 @@ class index{
             }
         }
         var div = document.getElementById('div_conn');
-        // 鍏堟竻绌哄綋鍓嶆樉绀�
-        while(div.firstChild){
-            div.removeChild(div.firstChild);
-        }
-        // 绌烘暟缁勭洿鎺ユ樉绀轰负绌�
         if (!clients || !Array.isArray(clients)) {
             console.error("Invalid clients data");
             return;
@@ -1122,60 +1693,14 @@ class index{
         }
         for(let i = 0; i < clients.length; i++){
             let c = clients[i];
-        
-            var container = document.createElement('div');
-            container.className = 'client-card';
-            container.id = "container-" + c.uid;
-            container.dataset.uid = c.uid;
-        
-            var pUid = document.createElement('p');
-			pUid.appendChild(Object.assign(document.createElement('span'), { textContent: 'Uid' }));
-			pUid.appendChild(document.createTextNode(String(c.uid ?? '')));
-
-			var pHost = document.createElement('p');
-			pHost.appendChild(Object.assign(document.createElement('span'), { textContent: 'Host' }));
-			pHost.appendChild(document.createTextNode(String(c.host ?? '')));
-
-			var pTime = document.createElement('p');
-			pTime.appendChild(Object.assign(document.createElement('span'), { textContent: 'Online' }));
-			pTime.appendChild(document.createTextNode(String(c.online_time ?? '')));
-
-			var pIP = document.createElement('p');
-			pIP.appendChild(Object.assign(document.createElement('span'), { textContent: 'IP' }));
-			pIP.appendChild(document.createTextNode(String(c.shell_ip ?? '')));
-        
-            var btnReceive = document.createElement('button');
-            btnReceive.textContent = "Receive";
-            btnReceive.className = "btn receive";
-            btnReceive.onclick = () => {
-                get_conn(c.uid, c.host);
-            };
-        
-            var btnRemove = document.createElement('button');
-            btnRemove.textContent = "Remove";
-            btnRemove.className = "btn remove";
-            btnRemove.onclick = async () => {
-                const ok = await del_conn(String(i));
-                if (ok) {
-                    container.remove();
-                }
-            };
-        
-        
-            var btnBox = document.createElement('div');
-            btnBox.className = "btn-box";
-        
-            btnBox.appendChild(btnReceive);
-            btnBox.appendChild(btnRemove);
-        
-        
-            container.appendChild(pUid);
-            container.appendChild(pHost);
-            container.appendChild(pTime);
-            container.appendChild(pIP);
-            container.appendChild(btnBox);
-        
-            div.appendChild(container);
+            var oldContainer = document.getElementById("container-" + c.uid);
+            if (oldContainer && oldContainer.parentNode === div) {
+                updateClientCardNode(oldContainer, c, i);
+                div.appendChild(oldContainer);
+            } else {
+                var container = buildClientCardNode(c, i);
+                div.appendChild(container);
+            }
         }
     }
         async get(uid,shellname){
@@ -1479,7 +2004,9 @@ class index{
         renderFileList(fileContent, shell_dir) {
             const div_file = this.getDialogNode('#file_resp') || document.querySelector('#file_resp');
             if (!div_file) return false;
-            const fileState = snapshotViewState(div_file, { stickToBottom: true });
+            const viewState = snapshotViewState(div_file, {
+                captureShow: true
+            });
 
             if (Array.isArray(fileContent)) {
                 fileContent = fileContent.join("\n");
@@ -1490,7 +2017,7 @@ class index{
             if (typeof fileContent !== "string") {
                 console.warn("renderFileList bad data:", fileContent);
                 div_file.innerHTML = "";
-                restoreViewState(div_file, fileState);
+                restoreViewState(div_file, viewState);
                 return false;
             }
 
@@ -1498,7 +2025,7 @@ class index{
 
             div_file.innerHTML = "";
             if (dir_list.length === 0) {
-                restoreViewState(div_file, fileState);
+                restoreViewState(div_file, viewState);
                 return false;
             }
 
@@ -1656,19 +2183,18 @@ class index{
             }
 
             if (renderedCount === 0) {
-                restoreViewState(div_file, fileState);
+                restoreViewState(div_file, viewState);
                 return false;
             }
 
             div_file.appendChild(fragment);
-            restoreViewState(div_file, fileState);
+            restoreViewState(div_file, viewState);
             return true;
         }
         async history_file(uid) {
             uid = uid || this.uid;
             const historyParent = this.getDialogNode('#history');
             const historyData = Array.isArray(fileQueues[uid]) ? fileQueues[uid] : [];
-            const historyState = snapshotViewState(historyParent, { stickToBottom: true });
             if(historyParent){
                 historyParent.innerHTML='';
                 if(historyData.length > 0){
@@ -1737,7 +2263,6 @@ class index{
                         historyParent.appendChild(listDiv);
                     });
                 }
-                restoreViewState(historyParent, historyState);
             }
         }
         stopFileListPolling(taskId = null) {
@@ -1943,11 +2468,20 @@ class index{
             if (!container) {
                 return;
             }
-            const containerState = snapshotViewState(container, { captureShow: true });
-            container.innerHTML = "";
             data.forEach(key=>{
-                let userDiv = document.createElement('div');
-                userDiv.classList.add('ip-info');
+                let userDiv = document.getElementById(key.uid + "info");
+                if (userDiv) {
+                    updateUserCardNode(userDiv, key);
+                    container.appendChild(userDiv);
+                    return;
+                }
+                const preservedState = captureUserCardState(userDiv);
+
+                if (!userDiv) {
+                    userDiv = document.createElement('div');
+                }
+
+                userDiv.className = 'ip-info';
                 userDiv.id = key.uid + "info";
                 let os = (key.os || "").toLowerCase();
                 let osEmoji = "💻";
@@ -2036,11 +2570,11 @@ class index{
                                 '<button type="button" class="console-link" onclick="showMsgDialog(\'' + safeUidJs + '\', \'' + safeHostJs + '\')">📩</button>' +
                                 pluginButtons +
                             '</div>' +
-                            '<div class="info-content" id="' + safeUidHtml + '-msg-content"></div>';
+                                '<div class="info-content" id="' + safeUidHtml + '-msg-content"></div>';
                             userDiv.innerHTML = userHTML;
+                            restoreUserCardState(userDiv, preservedState);
                 container.appendChild(userDiv);
             });
-            restoreViewState(container, containerState);
         }
         showTerminalDialog(uid, host, os) {
 		    const dialogId = "terminal-dialog-" + uid;
@@ -2073,13 +2607,16 @@ class index{
 		    dialog.style.maxWidth = "900px";
 		    dialog.style.width = "90vw";
 		    dialog.style.maxHeight = "90vh";
-		    dialog.style.overflow = "auto";
+		    dialog.style.overflow = "hidden";
 		    dialog.style.border = "1px solid rgba(138, 160, 178, 0.25)";
 		    dialog.style.borderRadius = "18px";
 		    dialog.style.boxShadow = "0 24px 60px rgba(44, 72, 98, 0.18)";
 		    dialog.style.padding = "18px";
+		    dialog.style.display = "flex";
+		    dialog.style.flexDirection = "column";
 		    dialog.style.userSelect = "none";
 		    dialog.style.touchAction = "none";
+		    dialog.style.overscrollBehavior = "contain";
 		    dialog.style.backdropFilter = "blur(10px)";
 		    document.body.appendChild(dialog);
 		
@@ -2104,6 +2641,23 @@ class index{
 	    }
 		
 		    const dragBar = dialog.querySelector(".terminal-drag-bar");
+            const toolbar = dialog.querySelector(".terminal-dialog-toolbar");
+            const terminalPanel = dialog.querySelector(".terminal");
+            applyStickyDialogBar(dragBar, {
+                padX: 18,
+                padTop: 18,
+                radius: 18
+            });
+            if (toolbar) {
+                toolbar.style.marginTop = "0";
+                toolbar.style.padding = "8px 4px 14px 4px";
+                toolbar.style.flex = "0 0 auto";
+            }
+            if (terminalPanel) {
+                terminalPanel.style.flex = "1 1 auto";
+                terminalPanel.style.minHeight = "0";
+                terminalPanel.style.overflow = "auto";
+            }
 		    let isDragging = false;
 		    let offsetX = 0;
 		    let offsetY = 0;
@@ -2290,8 +2844,11 @@ class index{
             dialog.style.border = "1px solid #ccc";
             dialog.style.borderRadius = "8px";
             dialog.style.boxShadow = "0 2px 8px rgba(0,0,0,0.2)";
+            dialog.style.display = "flex";
+            dialog.style.flexDirection = "column";
             dialog.style.userSelect = "none";
             dialog.style.touchAction = "none";
+            dialog.style.overscrollBehavior = "contain";
             document.body.appendChild(dialog);
 
             dialog._fileClosed = false;
@@ -2307,7 +2864,7 @@ class index{
                     '<div class="filecontainer">' +
                         '<div class="file-dialog-toolbar">' +
                             '<div class="file-dialog-toolbar-row">' +
-                                "<p id='hostname'>Host:</p>" +
+                                "<p id='file-dialog-hostname'>Host:</p>" +
                                 '<label for="splitSize">Enter the split size (each part in MB): </label>' +
                                 '<input type="number" id="splitSize" min="1" placeholder="Enter part" />' +
                             '</div>' +
@@ -2327,12 +2884,20 @@ class index{
                 '</div>' +
                 '<link rel="stylesheet" href="/`+web_css+`">';
 
-            const fileHost = dialog.querySelector("#hostname");
+            const fileHost = dialog.querySelector("#file-dialog-hostname");
             if (fileHost) {
                 fileHost.textContent = "Host: " + String(host == null ? "" : host);
             }
 
             const dragBar = dialog.querySelector("#file-drag-bar");
+            const fileLayout = dialog.querySelector(".file-dialog-layout");
+            applyStickyDialogBar(dragBar, {
+                radius: 8
+            });
+            if (fileLayout) {
+                fileLayout.style.flex = "1 1 auto";
+                fileLayout.style.minHeight = "0";
+            }
             let isDragging = false;
             let offsetX = 0;
             let offsetY = 0;
@@ -2452,7 +3017,7 @@ class index{
             window.fileManagerSessions[uid] = fileManager;
             window.activeFileManager = fileManager;
 
-            const hostname = dialog.querySelector("#hostname");
+            const hostname = dialog.querySelector("#file-dialog-hostname");
             if (hostname) {
                 hostname.innerText = "Host:" + host;
             }
@@ -2613,13 +3178,16 @@ class index{
             dialog.style.maxWidth = "700px";
             dialog.style.width = "90vw";
             dialog.style.maxHeight = "90vh";
-            dialog.style.overflow = "auto";
+            dialog.style.overflow = "hidden";
             dialog.style.border = "1px solid #ccc";
             dialog.style.borderRadius = "8px";
             dialog.style.boxShadow = "0 2px 8px rgba(0,0,0,0.2)";
             dialog.style.padding = "16px";
+            dialog.style.display = "flex";
+            dialog.style.flexDirection = "column";
             dialog.style.userSelect = "none";
             dialog.style.touchAction = "pan-y";
+            dialog.style.overscrollBehavior = "contain";
             document.body.appendChild(dialog);
 
             dialog.innerHTML =
@@ -2627,18 +3195,27 @@ class index{
                 '<button id="msg-close-btn" class="dialog-close-btn" type="button">x</button>' +
                 '<div class="msg-dialog-header">' +
                     '<h2 class="msg-dialog-title">Msg list</h2>' +
-                    "<p id='hostname' class='msg-dialog-hostname'>Host:</p>" +
+                    "<p id='msg-dialog-hostname' class='msg-dialog-hostname'>Host:</p>" +
                 '</div>' +
                 '<div id="msg-container" class="msg-dialog-body">loading...</div>';
 
-            const msgHost = dialog.querySelector("#hostname");
+            const msgHost = dialog.querySelector("#msg-dialog-hostname");
             if (msgHost) {
                 msgHost.textContent = "Host: " + String(host == null ? "" : host);
             }
 
             const dragBar = dialog.querySelector("#msg-drag-bar");
             const msgContainer = dialog.querySelector("#msg-container");
-            dragBar.style.touchAction = "none";
+            applyStickyDialogBar(dragBar, {
+                padX: 16,
+                padTop: 16,
+                radius: 8
+            });
+            if (msgContainer) {
+                msgContainer.style.flex = "1 1 auto";
+                msgContainer.style.minHeight = "0";
+                msgContainer.style.overflowY = "auto";
+            }
 
             dialog._msgClosed = false;
             dialog._msgWatchTimer = null;
@@ -2928,7 +3505,6 @@ class index{
             function renderRequestList() {
                 const requestList = getRequestList();
                 if (!requestList) return;
-                const requestState = snapshotViewState(requestList, { stickToBottom: true });
 
                 requestList.innerHTML = "";
 
@@ -2945,21 +3521,18 @@ class index{
                         })
                     );
                 });
-                restoreViewState(requestList, requestState);
             }
 
             function renderResultList() {
                 const resultTitle = dialog.querySelector("#msg-result-title");
                 const resultList = getResultList();
                 if (!resultTitle || !resultList) return;
-                const resultState = snapshotViewState(resultList, { stickToBottom: true });
 
                 msgPostArray = Array.isArray(resultQueues[uid]) ? resultQueues[uid].slice() : [];
                 resultList.innerHTML = "";
 
                 if (msgPostArray.length === 0) {
                     resultTitle.style.display = "none";
-                    restoreViewState(resultList, resultState);
                     return;
                 }
 
@@ -2978,7 +3551,6 @@ class index{
                 });
 
                 refreshResultIndexes(resultList);
-                restoreViewState(resultList, resultState);
             }
 
             async function deleteMsg(msgDiv) {
@@ -3504,11 +4076,15 @@ class index{
         if(!lootDiv){
             return;
         }
+        const viewState = snapshotViewState(lootDiv, {
+            stickToBottom: true
+        });
         lootDiv.classList.add("loot-list");
         lootDiv.innerHTML = "";
         if(!Array.isArray(data) || data.length === 0){
             lootDiv.textContent = "No loot available";
             lootDiv.classList.add("loot-empty-state");
+            restoreViewState(lootDiv, viewState);
             return;
         }
         lootDiv.classList.remove("loot-empty-state");
@@ -3576,6 +4152,7 @@ class index{
 
             lootDiv.appendChild(card);
         });
+        restoreViewState(lootDiv, viewState);
     }
     async downloadLoot(uid,file, buttonEl = null){
         const originalText = buttonEl ? buttonEl.textContent : "";
@@ -3671,8 +4248,12 @@ class lain_net{
         if (!netDiv) {
             return;
         }
+        const viewState = snapshotViewState(netDiv, {
+            stickToBottom: true
+        });
         netDiv.innerHTML = "";
         if (!Array.isArray(net_data) || net_data.length === 0) {
+            restoreViewState(netDiv, viewState);
             return;
         }
 
@@ -3725,6 +4306,7 @@ class lain_net{
             }
             netDiv.appendChild(row);
         });
+        restoreViewState(netDiv, viewState);
     }
     async scan(){
         var uid = document.getElementById('net_shell').value;
@@ -4168,59 +4750,23 @@ class lain_server {
             return;
         }
         const serverIndexDiv = document.getElementById('server_index');
-        const serverState = snapshotViewState(serverIndexDiv);
         this.renderOnlineTeammatesCard();
         if (!serverIndexDiv) return;
 
-        let htmlContent = "";
         for (const server of server_data) {
             const portRaw = String(server.port || "");
-            const safePort = escapeHtml(portRaw);
-            const keyPathRaw = String(server.keyPath || "");
-            const certPathRaw = String(server.certPath || "");
-            const key_path = keyPathRaw.length > 22 ? keyPathRaw.substring(0, 22) + "..." : keyPathRaw;
-            const cert_path = certPathRaw.length > 22 ? certPathRaw.substring(0, 22) + "..." : certPathRaw;
-            const clientCount = serverClientCounts[portRaw] || 0;
-
-            htmlContent += "<article id='" + safePort + "-info' class='server-card'>";
-            htmlContent += "<div class='server-card-head'>";
-            htmlContent += "<div class='server-card-copy'>";
-            htmlContent += "<div class='server-card-title'>" + escapeHtml(server.remark || "Unnamed server") + "</div>";
-            htmlContent += "<div class='server-card-subtitle'>" + escapeHtml(server.path || "/") + "</div>";
-            htmlContent += "</div>";
-            htmlContent += "<div class='server-card-badges'>";
-            htmlContent += "<span class='server-badge'>" + escapeHtml(String(server.protocol || "").toUpperCase()) + "</span>";
-            htmlContent += "<span class='server-badge server-badge-accent'><span id='" + safePort + "'>" + clientCount + "</span> agents</span>";
-            htmlContent += "</div>";
-            htmlContent += "</div>";
-            htmlContent += "<div class='server-meta-grid'>";
-            htmlContent += "<div class='server-meta-item'><span class='server-meta-label'>Port</span><span class='server-meta-value'>" + safePort + "</span></div>";
-            htmlContent += "<div class='server-meta-item'><span class='server-meta-label'>User</span><span class='server-meta-value'>" + escapeHtml(server.username) + "</span></div>";
-            htmlContent += "<div class='server-meta-item'><span class='server-meta-label'>Cert</span><span class='server-meta-value'>" + escapeHtml(cert_path || "-") + "</span></div>";
-            htmlContent += "<div class='server-meta-item'><span class='server-meta-label'>Key</span><span class='server-meta-value'>" + escapeHtml(key_path || "-") + "</span></div>";
-            htmlContent += "</div>";
-            htmlContent += "<div class='server-action-groups'>";
-            htmlContent += "<div class='server-action-row'>";
-            if (server.windows_pro === "group_pro") {
-                htmlContent += "<a class='server-action-pill agent-link' href='javascript:void(0)' data-os='win' data-port='" + safePort + "'>Win agent</a>";
+            const existingCard = document.getElementById(portRaw + "-info");
+            if (existingCard && existingCard.parentNode === serverIndexDiv) {
+                updateServerCardNode(existingCard, server);
+                serverIndexDiv.appendChild(existingCard);
             } else {
-                htmlContent += "<a class='server-action-pill agent-link' href='javascript:void(0)' data-os='win' data-port='" + safePort + "'>Win agent</a>";
-                htmlContent += "<a class='server-action-pill agent-link' href='javascript:void(0)' data-os='linux' data-port='" + safePort + "'>Linux agent</a>";
-                htmlContent += "<a class='server-action-pill agent-link' href='javascript:void(0)' data-os='macos' data-port='" + safePort + "'>macOS agent</a>";
-                htmlContent += "<a class='server-action-pill agent-link' href='javascript:void(0)' data-os='android' data-port='" + safePort + "'>Android agent</a>";
+                const article = document.createElement('article');
+                article.id = portRaw + '-info';
+                article.className = 'server-card';
+                article.innerHTML = buildServerCardHtml(server);
+                serverIndexDiv.appendChild(article);
             }
-            htmlContent += "</div>";
-            htmlContent += "<div class='server-action-row server-action-row-secondary'>";
-            htmlContent += "<a class='server-action-pill server-action-pill-secondary download-config' href='javascript:void(0)' data-port='" + safePort + "'>Download config</a>";
-            htmlContent += "<a class='server-action-pill server-action-pill-secondary modifyServerHeader' href='javascript:void(0)' data-port='" + safePort + "'>Headers</a>";
-            htmlContent += "<a class='server-action-pill server-action-pill-secondary plugin' href='javascript:void(0)' data-port='" + safePort + "' style='top: 30%;'>Plugins</a>";
-            htmlContent += "<a class='server-action-pill server-action-pill-danger delete-server' href='javascript:void(0)' data-port='" + safePort + "'>Delete</a>";
-            htmlContent += "</div>";
-            htmlContent += "</div>";
-            htmlContent += "</article>";
         }
-        serverIndexDiv.innerHTML = htmlContent;
-        restoreViewState(serverIndexDiv, serverState);
     }
 
     async initServerIndexClickHandler() {
@@ -4406,7 +4952,7 @@ class lain_server {
                         "</div>" +
                         "<input name='code' placeholder='golang language.msg-1,msg-2,msg-3 for parameter'><br>" +
                         "<input id='parameterDec' name='parameterDec' placeholder='Meaning of parameter'><br>" +
-                        "<button type='button' id='submitBtn'>plugin</button>" +
+                        "<button type='button' id='pluginSubmitBtn'>plugin</button>" +
                         "</form>" +
                         "<div id='plugin_list' class='plugin_list'></div>";
 
@@ -4422,7 +4968,7 @@ class lain_server {
                     const countDisplay = dialog.querySelector('#parameterCount');
                     const countHidden = dialog.querySelector('#parameterHidden');
                     const pluginForm = dialog.querySelector('#pluginForm');
-                    const submitBtn = dialog.querySelector('#submitBtn');
+                    const submitBtn = dialog.querySelector('#pluginSubmitBtn');
 
                     if (pluginForm) {
                         pluginForm.onsubmit = function(event) {
@@ -4880,7 +5426,7 @@ class lain_server {
 }
 
 class lain_chat{
-    renderChatItem(data) {
+    renderChatItem(data, autoScroll = true) {
         console.log("renderChatItem:", data);
         if (!data) return;
         // 濡傛灉浼犲叆鐨勬槸鎺ュ彛瀹屾暣杩斿洖 {data: []}
@@ -4953,7 +5499,9 @@ class lain_chat{
         div.appendChild(timeSpan);
         chat_div.appendChild(div);
         // 鑷姩婊氬埌搴曢儴
-        chat_div.scrollTop = chat_div.scrollHeight;
+        if (autoScroll) {
+            chat_div.scrollTop = chat_div.scrollHeight;
+        }
     }
     async sendChat() {
         if (!chat_slice) {
@@ -5380,37 +5928,22 @@ document.addEventListener("DOMContentLoaded", function () {
     if (links.length > 0) {
         showSection(links[0].getAttribute("data-target"));
     }
-});
-
-document.addEventListener('DOMContentLoaded', function () {
-    // 閫夋嫨鐢佃剳绔拰鎵嬫満绔殑渚ц竟鏍�
-    const links = document.querySelectorAll('.sidebar a, .tle-sidebar a');
-    const sections = document.querySelectorAll('.content > div');
-    // 涓烘瘡涓摼鎺ユ坊鍔犵偣鍑讳簨浠�
-    links.forEach(link => {
-        link.addEventListener('click', function (e) {
-            e.preventDefault();
-            const targetId = this.getAttribute('data-target');
-            sections.forEach(section => {
-                if (section.id === targetId) {
-                    section.classList.remove('hidden');
-                } else {
-                    section.classList.add('hidden');
-                }
-            });
+    const telToggleBtn = document.getElementById("tel-toggleBtn");
+    if (telToggleBtn) {
+        telToggleBtn.addEventListener("click", function() {
+            const sidebar = document.getElementById("tle-sidebar");
+            if (!sidebar) {
+                return;
+            }
+            if (sidebar.style.display === "none" || sidebar.style.display === "") {
+                sidebar.style.display = "block";
+                this.textContent = "x";
+            } else {
+                sidebar.style.display = "none";
+                this.textContent = "[+]";
+            }
         });
-    });
-    // 渚ц竟鏍忔樉绀�/闅愯棌鎸夐挳浜嬩欢
-    document.getElementById("tel-toggleBtn").addEventListener("click", function() {
-        const sidebar = document.getElementById("tle-sidebar");
-        if (sidebar.style.display === "none" || sidebar.style.display === "") {
-            sidebar.style.display = "block";
-            this.textContent = "x";
-        } else {
-            sidebar.style.display = "none";
-            this.textContent = "[+]";
-        }
-    });
+    }
 });
 function showPluginDialog(uid, os, paramDescList, codeword) {
     // 瑙ｆ瀽鍙傛暟
@@ -5443,6 +5976,7 @@ function showPluginDialog(uid, os, paramDescList, codeword) {
     if (!dialog) {
         dialog = document.createElement("form");
         dialog.id = dialogId;
+        dialog.className = "floating-dialog plugin-dialog";
         dialog.dataset.uid = uid;
         dialog.style.position = "fixed";
         dialog.style.top = "10%";
@@ -5452,28 +5986,27 @@ function showPluginDialog(uid, os, paramDescList, codeword) {
         dialog.style.zIndex = String((window.dialogZIndexCounter = (window.dialogZIndexCounter || 9999) + 1));
         dialog.style.maxWidth = "95vw";
         dialog.style.width = "95%";
+        dialog.style.maxHeight = "90vh";
         dialog.style.margin = "40px auto";
         dialog.style.border = "1px solid #ccc";
         dialog.style.borderRadius = "8px";
         dialog.style.boxShadow = "0 2px 8px rgba(0,0,0,0.2)";
-        dialog.style.padding = "48px 16px 16px";
+        dialog.style.padding = "16px";
+        dialog.style.overflowY = "auto";
+        dialog.style.overscrollBehavior = "contain";
         dialog.style.userSelect = "none";
         document.body.appendChild(dialog);
     }
 
     const dragBar = document.createElement("div");
-    dragBar.style.position = "absolute";
-    dragBar.style.top = "0";
-    dragBar.style.left = "0";
-    dragBar.style.width = "100%";
-    dragBar.style.height = "36px";
-    dragBar.style.cursor = "move";
-    dragBar.style.background = "rgba(0,0,0,0.05)";
-    dragBar.style.borderTopLeftRadius = "8px";
-    dragBar.style.borderTopRightRadius = "8px";
-    dragBar.style.touchAction = "none";
+    dragBar.className = "plugin-drag-bar";
     dragBar.setAttribute("aria-label", "Drag plugin dialog");
     dialog.appendChild(dragBar);
+    applyStickyDialogBar(dragBar, {
+        padX: 16,
+        padTop: 16,
+        radius: 8
+    });
 
     let closeBtn = document.createElement("button");
     closeBtn.type = "button";
@@ -5660,7 +6193,7 @@ async function submitPlugin(remark) {
         return false;
     }
 
-    const submitBtn = dialog.querySelector("#submitBtn");
+    const submitBtn = dialog.querySelector("#pluginSubmitBtn");
     if (submitBtn) {
         submitBtn.disabled = true;
     }
