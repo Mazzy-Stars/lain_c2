@@ -994,7 +994,7 @@ button:hover {
     display: flex;
     align-items: center;
 }
-.file-dialog #hostname {
+.file-dialog #file-dialog-hostname {
     margin-right: 25px;
 }
 .file-dialog .history-item {
@@ -1608,27 +1608,6 @@ button:hover {
     text-transform: uppercase;
 }
 
-.plugin-close-btn {
-    position: absolute;
-    top: 0;
-    right: 0;
-    width: 38px;
-    height: 38px;
-    border: none;
-    border-radius: 999px;
-    background: #e7f1f7;
-    color: #35536b;
-    font-size: 24px;
-    line-height: 1;
-    cursor: pointer;
-    transition: background-color 0.2s ease, transform 0.2s ease;
-}
-
-.plugin-close-btn:hover {
-    background: #d5e6f1;
-    transform: translateY(-1px);
-}
-
 .plugin-form {
     width: 100%;
     display: flex;
@@ -1894,12 +1873,6 @@ button:hover {
         font-size: 18px;
     }
 
-    .plugin-close-btn {
-        width: 34px;
-        height: 34px;
-        font-size: 22px;
-    }
-
     .plugin-form select,
     .plugin-form input,
     .plugin-form button,
@@ -1924,62 +1897,6 @@ button:hover {
 
 .plugin-item-actions button {
         flex: 1;
-    }
-}
-
-.dialog-close-btn {
-    position: absolute;
-    top: 1px;
-    right: 4px;
-    z-index: 10002;
-    width: 15px;
-    height: 29px;
-    border: 1px solid rgba(130, 154, 170, 0.22);
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.55);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    color: #617485;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 20px;
-    line-height: 1;
-    cursor: pointer;
-    box-shadow: 0 6px 18px rgba(72, 94, 109, 0.10);
-    transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
-}
-
-.dialog-close-btn:hover {
-    background: rgba(255, 255, 255, 0.82);
-    border-color: rgba(111, 136, 153, 0.34);
-    color: #314657;
-    transform: translateY(-1px);
-}
-
-.dialog-close-btn:active {
-    transform: translateY(0);
-    background: rgba(242, 247, 250, 0.88);
-}
-
-@media (max-width: 768px) {
-    .dialog-close-btn {
-        top: 8px;
-        right: 8px;
-        width: 34px;
-        height: 34px;
-        font-size: 22px;
-        background: rgba(255, 255, 255, 0.72);
-    }
-}
-
-@media (max-width: 480px) {
-    .dialog-close-btn {
-        top: 6px;
-        right: 6px;
-        width: 32px;
-        height: 32px;
-        font-size: 20px;
     }
 }
 
@@ -2065,7 +1982,7 @@ button:hover {
         gap: 8px;
     }
 
-    .file-dialog #hostname {
+    .file-dialog #file-dialog-hostname {
         margin-right: 0 !important;
     }
 
@@ -2916,6 +2833,249 @@ button:hover {
     #whitelistDialog {
         width: calc(100vw - 24px);
         max-width: calc(100vw - 24px);
+    }
+}
+
+/* unified floating dialog shell */
+.floating-dialog,
+.plugin-dialog {
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    overflow: hidden !important;
+    border-radius: 20px !important;
+    border: 1px solid rgba(138, 160, 178, 0.26) !important;
+    box-shadow: 0 24px 60px rgba(44, 72, 98, 0.18) !important;
+    background: linear-gradient(180deg, #fbfdff 0%, #f2f6fb 100%) !important;
+    padding: 16px !important;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+}
+
+.terminal-dialog,
+.file-dialog,
+.msg-dialog,
+.plugin-dialog {
+    width: min(92vw, 1100px) !important;
+    max-width: min(92vw, 1100px) !important;
+    max-height: 90vh !important;
+}
+
+.terminal-dialog {
+    width: min(92vw, 980px) !important;
+    max-width: min(92vw, 980px) !important;
+}
+
+.file-dialog {
+    width: min(96vw, 1180px) !important;
+    max-width: min(96vw, 1180px) !important;
+}
+
+.msg-dialog {
+    width: min(92vw, 760px) !important;
+    max-width: min(92vw, 760px) !important;
+}
+
+.plugin-dialog {
+    width: min(92vw, 680px) !important;
+    max-width: min(92vw, 680px) !important;
+}
+
+.terminal-dialog .terminal-drag-bar,
+.file-dialog #file-drag-bar,
+.msg-dialog #msg-drag-bar,
+.plugin-dialog .plugin-drag-bar {
+    position: sticky !important;
+    top: -16px !important;
+    left: 0;
+    width: calc(100% + 32px) !important;
+    height: 38px !important;
+    margin: -16px -16px 12px -16px !important;
+    cursor: move;
+    background: linear-gradient(90deg, rgba(230, 236, 243, 0.96), rgba(243, 247, 251, 0.9)) !important;
+    border-bottom: 1px solid rgba(138, 160, 178, 0.18) !important;
+    border-top-left-radius: 20px !important;
+    border-top-right-radius: 20px !important;
+    z-index: 10001 !important;
+    touch-action: none;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+}
+
+.terminal-dialog .terminal-dialog-toolbar {
+    flex: 0 0 auto;
+    margin-top: 0 !important;
+    padding: 8px 4px 14px 4px;
+}
+
+.terminal-dialog .terminal {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    border-radius: 16px;
+}
+
+.file-dialog .file-dialog-layout {
+    flex: 1 1 auto;
+    min-height: 0;
+    margin-top: 0 !important;
+    height: auto !important;
+}
+
+.file-dialog .file-history {
+    background: linear-gradient(180deg, #fbfdff 0%, #f4f8fb 100%);
+    border-right: 1px solid #e4ebf1;
+}
+
+.file-dialog .filecontainer {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    width: auto;
+    height: auto;
+    border-radius: 16px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.72);
+}
+
+.msg-dialog {
+    padding-bottom: 14px !important;
+}
+
+.msg-dialog .msg-dialog-header {
+    flex: 0 0 auto;
+    margin-top: 0 !important;
+    padding: 8px 6px 12px;
+}
+
+.msg-dialog .msg-dialog-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 0 2px 8px;
+}
+
+.plugin-dialog {
+    position: fixed;
+    top: 10%;
+    left: 50%;
+    transform: translateX(-50%);
+    overflow-y: auto !important;
+}
+
+.plugin-dialog .plugin-drag-bar {
+    margin-bottom: 10px !important;
+}
+
+.dialog-close-btn {
+    position: absolute;
+    top: 3px;
+    right: 12px;
+    z-index: 10002;
+    width: 34px;
+    height: 34px;
+    border: 1px solid rgba(130, 154, 170, 0.24);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.78);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    color: #5d7185;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    box-shadow: 0 8px 18px rgba(72, 94, 109, 0.12);
+    transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.dialog-close-btn:hover {
+    background: rgba(255, 255, 255, 0.95);
+    border-color: rgba(111, 136, 153, 0.4);
+    color: #314657;
+    transform: translateY(-1px);
+    box-shadow: 0 10px 22px rgba(72, 94, 109, 0.14);
+}
+
+.dialog-close-btn:active {
+    transform: translateY(0);
+    background: rgba(242, 247, 250, 0.96);
+}
+
+@media (max-width: 768px) {
+    .floating-dialog,
+    .plugin-dialog {
+        width: calc(100vw - 20px) !important;
+        max-width: calc(100vw - 20px) !important;
+        max-height: calc(100dvh - 20px) !important;
+        border-radius: 22px !important;
+        padding: 12px 10px 14px !important;
+    }
+
+    .terminal-dialog,
+    .file-dialog,
+    .msg-dialog,
+    .plugin-dialog {
+        width: calc(100vw - 20px) !important;
+        max-width: calc(100vw - 20px) !important;
+    }
+
+    .terminal-dialog .terminal-drag-bar,
+    .file-dialog #file-drag-bar,
+    .msg-dialog #msg-drag-bar,
+    .plugin-dialog .plugin-drag-bar {
+        top: -12px !important;
+        width: calc(100% + 24px) !important;
+        margin: -12px -12px 10px -12px !important;
+        height: 36px !important;
+        border-top-left-radius: 22px !important;
+        border-top-right-radius: 22px !important;
+    }
+
+    .dialog-close-btn {
+        top: 0px;
+        right: 8px;
+        width: 34px;
+        height: 34px;
+        font-size: 22px;
+    }
+}
+
+@media (max-width: 480px) {
+    .floating-dialog,
+    .plugin-dialog {
+        width: calc(100vw - 16px) !important;
+        max-width: calc(100vw - 16px) !important;
+        max-height: calc(100dvh - 16px) !important;
+        border-radius: 20px !important;
+        padding: 10px 8px 12px !important;
+    }
+
+    .terminal-dialog,
+    .file-dialog,
+    .msg-dialog,
+    .plugin-dialog {
+        width: calc(100vw - 16px) !important;
+        max-width: calc(100vw - 16px) !important;
+    }
+
+    .terminal-dialog .terminal-drag-bar,
+    .file-dialog #file-drag-bar,
+    .msg-dialog #msg-drag-bar,
+    .plugin-dialog .plugin-drag-bar {
+        top: -10px !important;
+        width: calc(100% + 20px) !important;
+        margin: -10px -10px 8px -10px !important;
+        height: 34px !important;
+    }
+
+    .dialog-close-btn {
+        top: 0px;
+        right: 8px;
+        width: 32px;
+        height: 32px;
+        font-size: 20px;
     }
 }
 `
