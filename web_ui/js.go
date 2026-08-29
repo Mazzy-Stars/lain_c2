@@ -25,6 +25,9 @@ let User_data = [];
 let server_plugin = [];
 let chat_slice = [];
 let listen_data = [];
+let loot_data = [];
+let log_slice = [];
+let log_pending_slice = [];
 
 let msgQueues = {};
 let resultQueues = {};
@@ -40,6 +43,7 @@ window.terminalSessions = window.terminalSessions || {};
 window.fileManagerSessions = window.fileManagerSessions || {};
 window.netInitTimer = window.netInitTimer || null;
 window.shellInnetData = window.shellInnetData || {};
+window.netListData = window.netListData || {};
 
 let resultTimers = window.resultTimers;
 let serverClientCounts = window.serverClientCounts;
@@ -76,7 +80,6 @@ function snapshotViewState(root, options = {}) {
             })
             .filter(Boolean);
     }
-
     return state;
 }
 
@@ -126,8 +129,13 @@ function applyStickyDialogBar(dragBar, options = {}) {
     dragBar.style.left = "0";
     dragBar.style.display = "block";
     dragBar.style.height = height + "px";
+    dragBar.style.minHeight = height + "px";
+    dragBar.style.maxHeight = height + "px";
     dragBar.style.width = padX > 0 ? "calc(100% + " + (padX * 2) + "px)" : "100%";
     dragBar.style.margin = (-padTop) + "px " + (-padX) + "px " + marginBottom + "px " + (-padX) + "px";
+    dragBar.style.flex = "0 0 " + height + "px";
+    dragBar.style.flexShrink = "0";
+    dragBar.style.alignSelf = "stretch";
     dragBar.style.cursor = "move";
     dragBar.style.touchAction = "none";
     dragBar.style.zIndex = String(options.zIndex || 10001);
@@ -138,6 +146,7 @@ function applyStickyDialogBar(dragBar, options = {}) {
     dragBar.style.borderBottom = options.borderBottom ||
         "1px solid rgba(138,160,178,0.18)";
     dragBar.style.boxSizing = "border-box";
+    dragBar.style.overflow = "hidden";
     dragBar.setAttribute("aria-hidden", "true");
 }
 
@@ -156,8 +165,158 @@ function normalizeIncomingList(data) {
         if (Array.isArray(data.Conns)) {
             return data.Conns;
         }
+        return [data];
     }
     return Array.isArray(data) ? data : [];
+}
+
+function unwrapMessageData(msg) {
+    if (!msg || typeof msg !== "object") {
+        return msg;
+    }
+    let payload = msg.data;
+    while (payload && typeof payload === "object" && !Array.isArray(payload) && "data" in payload) {
+        payload = payload.data;
+    }
+    return payload;
+}
+
+function unwrapAgentPayload(msg) {
+    if (!msg || typeof msg !== "object") {
+        return msg;
+    }
+    const outer = msg.data;
+    if (outer && typeof outer === "object" && !Array.isArray(outer) && "data" in outer) {
+        return outer.data;
+    }
+    return outer;
+}
+
+function normalizeAgentRecord(item, fallbackUid = "") {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+        return item;
+    }
+    const normalized = Object.assign({}, item);
+    const uid = getAgentUid(normalized) || String(fallbackUid || "").trim();
+    if (uid) {
+        normalized.uid = uid;
+    }
+    if (normalized.delay === undefined && normalized.Delay !== undefined) {
+        normalized.delay = normalized.Delay;
+    }
+    if (normalized.remarks === undefined && normalized.Remarks !== undefined) {
+        normalized.remarks = normalized.Remarks;
+    }
+    if (normalized.current_dir === undefined && normalized.currentDir !== undefined) {
+        normalized.current_dir = normalized.currentDir;
+    }
+    if (normalized.protocol === undefined && normalized.proto !== undefined) {
+        normalized.protocol = normalized.proto;
+    }
+    if (normalized.check_time === undefined && normalized.online_time !== undefined) {
+        normalized.check_time = normalized.online_time;
+    }
+    if (normalized.external_ip === undefined && normalized.externalIp !== undefined) {
+        normalized.external_ip = normalized.externalIp;
+    }
+    if (normalized.local_ip === undefined && normalized.localIp !== undefined) {
+        normalized.local_ip = normalized.localIp;
+    }
+    if (normalized.server === undefined && normalized.Server !== undefined) {
+        normalized.server = normalized.Server;
+    }
+    if (normalized.username === undefined && normalized.Username !== undefined) {
+        normalized.username = normalized.Username;
+    }
+    if (normalized.os === undefined && normalized.OS !== undefined) {
+        normalized.os = normalized.OS;
+    }
+    if (normalized.jitter === undefined && normalized.Jitter !== undefined) {
+        normalized.jitter = normalized.Jitter;
+    }
+    return normalized;
+}
+
+function getAgentUid(item) {
+    return String(
+        item && (item.uid !== undefined ? item.uid :
+        item.Uid !== undefined ? item.Uid :
+        item.UID !== undefined ? item.UID : "")
+    ).trim();
+}
+
+function mergeEntriesByKey(target, incoming, keyFn) {
+    const list = normalizeIncomingList(incoming);
+    const seen = new Set();
+
+    list.forEach(function(item) {
+        if (!item) {
+            return;
+        }
+        const key = keyFn(item);
+        if (!key) {
+            return;
+        }
+        const index = target.findIndex(function(existing) {
+            return keyFn(existing) === key;
+        });
+        if (index >= 0) {
+            target[index] = Object.assign({}, target[index], item);
+        } else {
+            target.push(item);
+        }
+        seen.add(key);
+    });
+
+    return seen;
+}
+
+function appendUniquePrimitiveList(target, incoming) {
+    const list = normalizeIncomingList(incoming);
+    const seen = new Set(target.map(function(item) {
+        return String(item == null ? "" : item);
+    }));
+
+    list.forEach(function(item) {
+        const value = String(item == null ? "" : item);
+        if (!value || seen.has(value)) {
+            return;
+        }
+        target.push(item);
+        seen.add(value);
+    });
+
+    return seen;
+}
+
+function buildCombinedAgentData() {
+    const combined = [];
+    const keys = new Set();
+
+    (Array.isArray(User_data) ? User_data : []).forEach(function(item) {
+        const normalizedItem = normalizeAgentRecord(item);
+        if (!normalizedItem) {
+            return;
+        }
+        const key = getAgentUid(normalizedItem);
+        if (!key) {
+            return;
+        }
+        const index = combined.findIndex(function(existing) {
+            return getAgentUid(existing) === key;
+        });
+        if (index >= 0) {
+            combined[index] = Object.assign({}, combined[index], normalizedItem);
+        } else {
+            combined.push(Object.assign({}, normalizedItem));
+        }
+        keys.add(key);
+    });
+
+    return {
+        data: combined,
+        keys: keys
+    };
 }
 
 function syncSnapshotEntries(target, incoming, keyFn) {
@@ -329,6 +488,7 @@ function restoreUserCardState(card, state) {
 
 function getUserCardViewModel(key) {
     const os = String(key && key.os ? key.os : "").toLowerCase();
+    const uid = getAgentUid(key);
     let osEmoji = "💻";
     if (os.includes("linux")) {
         osEmoji = "🐧";
@@ -342,8 +502,8 @@ function getUserCardViewModel(key) {
         os: os,
         osEmoji: osEmoji,
         pluginParam: key ? key.plugin_parameter : null,
-        safeUidHtml: escapeHtml(key ? key["uid"] : ""),
-        safeUidJs: escapeInlineJsArg(key ? key["uid"] : ""),
+        safeUidHtml: escapeHtml(uid),
+        safeUidJs: escapeInlineJsArg(uid),
         safeHostHtml: escapeHtml(key ? key["host"] : ""),
         safeHostJs: escapeInlineJsArg(key ? key["host"] : ""),
         safeOsHtml: escapeHtml(key ? key["os"] : ""),
@@ -366,10 +526,24 @@ function getUserCardViewModel(key) {
 function buildPluginButtonsHtml(view) {
     let pluginButtons = "";
     const pluginParam = view.pluginParam;
+    let pluginGroup = null;
 
-    if (pluginParam && typeof pluginParam === "object" && pluginParam[view.os]) {
-        for (let codeword in pluginParam[view.os]) {
-            let paramDescList = pluginParam[view.os][codeword];
+    if (pluginParam && typeof pluginParam === "object") {
+        pluginGroup = pluginParam[view.os] || null;
+        if (!pluginGroup) {
+            const targetOs = String(view.os || "").toLowerCase();
+            for (const osKey in pluginParam) {
+                if (String(osKey || "").toLowerCase() === targetOs) {
+                    pluginGroup = pluginParam[osKey];
+                    break;
+                }
+            }
+        }
+    }
+
+    if (pluginGroup && typeof pluginGroup === "object") {
+        for (let codeword in pluginGroup) {
+            let paramDescList = pluginGroup[codeword];
             let encodedDesc = encodeURIComponent(
                 (Array.isArray(paramDescList) ? paramDescList : []).join(",")
             );
@@ -450,10 +624,11 @@ function syncUserInputValue(input, nextValue) {
 }
 
 function updateUserCardNode(userDiv, key) {
+    const uid = getAgentUid(key);
     const view = getUserCardViewModel(key);
-    const infoContent = document.getElementById(String(key.uid) + '-info-content');
-    const chooseContent = document.getElementById(String(key.uid) + '-choose-content');
-    const msgContent = document.getElementById(String(key.uid) + '-msg-content');
+    const infoContent = document.getElementById(uid + '-info-content');
+    const chooseContent = document.getElementById(uid + '-choose-content');
+    const msgContent = document.getElementById(uid + '-msg-content');
 
     if (!infoContent || !chooseContent || !msgContent) {
         const preservedState = captureUserCardState(userDiv);
@@ -483,10 +658,10 @@ function updateUserCardNode(userDiv, key) {
     setHtml('[data-role="detail-uid"]', view.safeUidHtml);
     setHtml('[data-role="server"]', view.safeServerHtml);
 
-    syncUserInputValue(document.getElementById('remarks_' + key.uid), key["remarks"]);
-    syncUserInputValue(document.getElementById('delay_' + key.uid), key["delay"]);
-    syncUserInputValue(document.getElementById('jitter_' + key.uid), key["jitter"]);
-    syncUserInputValue(document.getElementById('username_' + key.uid), key["username"]);
+    syncUserInputValue(document.getElementById('remarks_' + uid), key["remarks"]);
+    syncUserInputValue(document.getElementById('delay_' + uid), key["delay"]);
+    syncUserInputValue(document.getElementById('jitter_' + uid), key["jitter"]);
+    syncUserInputValue(document.getElementById('username_' + uid), key["username"]);
 
     const terminalBtn = userDiv.querySelector('[data-role="terminal-btn"]');
     if (terminalBtn) {
@@ -495,7 +670,7 @@ function updateUserCardNode(userDiv, key) {
 
     const fileBtn = userDiv.querySelector('[data-role="file-btn"]');
     if (fileBtn) {
-        fileBtn.dataset.uid = String(key.uid == null ? "" : key.uid);
+        fileBtn.dataset.uid = uid;
         fileBtn.dataset.host = String(key.host == null ? "" : key.host);
         fileBtn.dataset.dir = String(key.current_dir || "./");
     }
@@ -744,6 +919,8 @@ function applyNetData(uid, list) {
     }
     const safeList = Array.isArray(list) ? list : [];
 
+    window.netListData = window.netListData || {};
+    window.netListData[uid] = safeList.slice();
     window.shellInnetData = window.shellInnetData || {};
     window.shellInnetData[uid] = safeList.flatMap(function(item) {
         if (item && Array.isArray(item.shell_innet)) {
@@ -784,6 +961,9 @@ class WebSocketClient {
         this.pendingWaiters = new Set();
         this.manualClose = false;
         this.reconnectTimer = null;
+        this.bootstrapTimer = null;
+        this.bootstrapWatchdogDelay = options.bootstrapWatchdogDelay || 65000;
+        this.bootstrapSeen = false;
         this.reconnectDelay = 2000; // 2秒后重试
         this.enableResumeReconnect = options.enableResumeReconnect !== false;
         this.enableAutoReconnect = options.enableAutoReconnect !== false;
@@ -848,6 +1028,53 @@ class WebSocketClient {
             });
         }, this.reconnectDelay);
     }
+    clearBootstrapWatchdog(){
+        if (this.bootstrapTimer) {
+            clearTimeout(this.bootstrapTimer);
+            this.bootstrapTimer = null;
+        }
+    }
+    startBootstrapWatchdog(){
+        this.clearBootstrapWatchdog();
+        this.bootstrapSeen = false;
+        this.bootstrapTimer = setTimeout(() => {
+            this.bootstrapTimer = null;
+            if (this.manualClose || this.bootstrapSeen) {
+                return;
+            }
+            console.warn("bootstrap sync timeout, reconnecting...");
+            if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                try {
+                    this.ws.close();
+                } catch (_) {}
+            } else {
+                this.scheduleReconnect();
+            }
+        }, this.bootstrapWatchdogDelay);
+    }
+    markBootstrapMessage(msg){
+        const code = msg && typeof msg.code !== "undefined"
+            ? msg.code
+            : (msg && msg.data && typeof msg.data.code !== "undefined" ? msg.data.code : undefined);
+        if (String(code) !== "200") {
+            return false;
+        }
+        const bootstrapPaths = new Set([
+            "agentList",
+            "listen",
+            "server",
+            "chat",
+            "log",
+            "PluginList",
+            "loot"
+        ]);
+        if (!bootstrapPaths.has(String(msg.path || ""))) {
+            return false;
+        }
+        this.bootstrapSeen = true;
+        this.clearBootstrapWatchdog();
+        return true;
+    }
     connect(){
         if(this.ws && this.ws.readyState === WebSocket.OPEN){
             return Promise.resolve(true);
@@ -876,6 +1103,7 @@ class WebSocketClient {
                     clearTimeout(this.reconnectTimer);
                     this.reconnectTimer = null;
                 }
+                this.startBootstrapWatchdog();
 
                 if (this.ws === ws && this.connectPromise === connectPromise) {
                     this.connectPromise = null;
@@ -899,6 +1127,7 @@ class WebSocketClient {
                 if (await this.handleDownloadMessage(msg)) {
                     return;
                 }
+                this.markBootstrapMessage(msg);
                 this.handleMessage(msg);
             };
 
@@ -1391,6 +1620,7 @@ class WebSocketClient {
             this.reconnectTimer = null;
         }
         this._rejectAllWaiters(new Error("websocket closed"));
+        this.clearBootstrapWatchdog();
         if(this.ws){
             this.ws.close();
             this.ws = null;
@@ -1415,30 +1645,44 @@ class WebSocketClient {
                 }
                 break;
             case "log":
+            case "updatelog":
                 this.handleLog(msg);
                 break;
             case "listen":
-                this.handleListen(msg);
+                this.handleListenInitial(msg);
+                break;
+            case "updateListen":
+                this.handleListenAppend(msg);
                 break;
             case "agentList":
                 this.handleAgentList(msg);
                 break;
-            case "winAgentList":
+            case "updateIndex":
+                this.handleAgentUpdate(msg);
                 break;
             case "chat":
-                this.handleChat(msg);
+                this.handleChatInitial(msg);
+                break;
+            case "updateChat":
+                this.handleChatAppend(msg);
                 break;
             case "loot":
-                if(msg.data){
-                    let lootIndex = new lain_index();
-                    lootIndex.loothander(msg.data);
-                }
+                this.handleLootInitial(msg);
+                break;
+            case "updateLoot":
+                this.handleLootAppend(msg);
                 break;
             case "server":
-                this.handleServer(msg);
+                this.handleServerInitial(msg);
+                break;
+            case "updateServer":
+                this.handleServerAppend(msg);
                 break;
             case "PluginList":
-                this.handlePlugin(msg);
+                this.handlePlugin(msg, false);
+                break;
+            case "updatePlugin":
+                this.handlePlugin(msg, true);
                 break;
             case "check_time":
                 this.handleCheck(msg);
@@ -1501,7 +1745,7 @@ class WebSocketClient {
                         [];
                 }
                 break;
-            case "GetMsgCache":
+            case "getFileCache":
                 if (msg.data) {
                     let uid = msg.data.uid;
                     fileQueues[uid] = Array.isArray(msg.data.data) ?
@@ -1525,6 +1769,51 @@ class WebSocketClient {
                     applyNetData(uid, list);
                 }
                 break;
+            case "updateGetMsgList":
+                if (msg.data) {
+                    const uid = msg.data.uid;
+                    msgQueues[uid] = Array.isArray(msgQueues[uid]) ? msgQueues[uid] : [];
+                    appendUniquePrimitiveList(msgQueues[uid], msg.data.data);
+                }
+                break;
+            case "updateGetMsgPost":
+                if (msg.data) {
+                    const uid = msg.data.uid;
+                    resultQueues[uid] = Array.isArray(resultQueues[uid]) ? resultQueues[uid] : [];
+                    appendUniquePrimitiveList(resultQueues[uid], msg.data.data);
+                }
+                break;
+            case "updateGetMsgCache":
+                if (msg.data) {
+                    const uid = msg.data.uid;
+                    fileQueues[uid] = Array.isArray(fileQueues[uid]) ? fileQueues[uid] : [];
+                    mergeEntriesByKey(fileQueues[uid], msg.data.data, function(item) {
+                        return String(item && (item.list !== undefined ? item.list : item.List || ""));
+                    });
+                    const fileManager = window.fileManagerSessions ?
+                        window.fileManagerSessions[uid] :
+                        null;
+                    if (fileManager) {
+                        fileManager.history_file(uid);
+                    } else if (window.activeFileManager &&
+                        window.activeFileManager.uid === uid) {
+                        window.activeFileManager.history_file(uid);
+                    }
+                }
+                break;
+            case "updateGetMsgNet":
+                if (msg.data) {
+                    const uid = msg.data.uid;
+                    const currentList = Array.isArray(window.netListData[uid]) ?
+                        window.netListData[uid].slice() :
+                        [];
+                    mergeEntriesByKey(currentList, msg.data.data, function(item) {
+                        return String(item && (item.target !== undefined ? item.target : item.Target || ""));
+                    });
+                    window.netListData[uid] = currentList;
+                    applyNetData(uid, currentList);
+                }
+                break;
             case "getNetdata":
                 if (msg.code === 200) {
                     const shellSelect = document.getElementById("net_shell");
@@ -1533,6 +1822,34 @@ class WebSocketClient {
                     applyNetData(uid, list);
                 }
                 break;
+            case "send_delServer":
+                this.handleServerDeletePush(msg);
+                break;
+            case "send_delShellInnet":
+                this.handleShellInnetDeletePush(msg);
+                break;
+            case "send_delFileList":
+                this.handleFileQueueDeletePush(msg);
+                break;
+            case "send_delInfo":
+            case "send_delWinInfo":
+                this.handleAgentDeletePush(msg);
+                break;
+            case "send_deleteChat":
+                this.handleChatDeletePush(msg);
+                break;
+            case "send_delMsgGet":
+                this.handleMsgQueueDeletePush(msg);
+                break;
+            case "send_delMsgMap":
+                this.handleMsgResultDeletePush(msg);
+                break;
+            case "send_delListen":
+                this.handleListenDeletePush(msg);
+                break;
+            case "send_delPlugin":
+                this.handlePluginDeletePush(msg);
+                break;
             default:
                 console.log("not handled:", msg.path);
                 break;
@@ -1540,39 +1857,130 @@ class WebSocketClient {
     }
 
     handleLog(msg) {
-        if(!msg.data || !msg.data.length){
+        const logItems = normalizeIncomingList(unwrapMessageData(msg));
+        if(!logItems.length){
             return;
         }
         let logDiv = document.getElementById("log-content");
         if(!logDiv){
-            console.error("Log content div not found.");
+            const seen = new Set(log_pending_slice.map(function(item) {
+                return String(
+                    (item && (item.id || item.logid || item.idx || item.time || "")) +
+                    "|" +
+                    (item && item.message ? item.message : "")
+                );
+            }));
+            logItems.forEach(function(item) {
+                const key = String(
+                    (item && (item.id || item.logid || item.idx || item.time || "")) +
+                    "|" +
+                    (item && item.message ? item.message : "")
+                );
+                if (!seen.has(key)) {
+                    seen.add(key);
+                    log_pending_slice.push(item);
+                }
+            });
             return;
         }
-        for(let i = 0; i < msg.data.length; i++) {
+        if (log_pending_slice.length > 0) {
+            const pending = log_pending_slice.slice();
+            log_pending_slice.length = 0;
+            pending.forEach(function(item) {
+                logItems.unshift(item);
+            });
+        }
+        const viewState = snapshotViewState(logDiv, {
+            stickToBottom: true,
+            threshold: 80
+        });
+        const seen = new Set(log_slice.map(function(item) {
+            return String(
+                (item && (item.id || item.logid || item.idx || item.time || "")) +
+                "|" +
+                (item && item.message ? item.message : "")
+            );
+        }));
+        for(let i = 0; i < logItems.length; i++) {
+            const item = logItems[i];
+            const key = String(
+                (item && (item.id || item.logid || item.idx || item.time || "")) +
+                "|" +
+                (item && item.message ? item.message : "")
+            );
+            if (seen.has(key)) {
+                continue;
+            }
+            seen.add(key);
+            log_slice.push(item);
             let line = document.createElement("div");
-            line.textContent = "[" + msg.data[i].time + "] : " + msg.data[i].message;
+            line.textContent = "[" + String(item.time || "") + "] : " + String(item.message || "");
             logDiv.appendChild(line);
         }
-        logDiv.scrollTop = logDiv.scrollHeight;
+        restoreViewState(logDiv, viewState);
     }
 
-    handleChat(msg){
-        let indexchat = new lain_chat();
-        let chat_div = document.getElementById("chat_div");
-        if (!chat_div || !msg) {
+    handleChatInitial(msg) {
+        const list = normalizeIncomingList(unwrapMessageData(msg));
+        const chat_div = document.getElementById("chat_div");
+        if (!list.length) {
+            chat_slice = [];
             return;
         }
+
+        chat_slice = list.slice();
+        if (!chat_div) {
+            return;
+        }
+
         const chatState = snapshotViewState(chat_div, {
             stickToBottom: true,
             threshold: 80
         });
-        const keepKeys = syncSnapshotEntries(chat_slice, msg.data, function(item) {
-            return String(item && item.chatid !== undefined ? item.chatid : "");
-        });
-        removeMissingNodes(chat_div, ".chat_message", keepKeys, function(node) {
-            return String(node && node.dataset ? node.dataset.chatid || "" : "");
-        });
+
+        chat_div.innerHTML = "";
+        const indexchat = new lain_chat();
         chat_slice.forEach(function(item) {
+            indexchat.renderChatItem(item, false);
+        });
+        restoreViewState(chat_div, chatState);
+    }
+
+    handleChatAppend(msg) {
+        const list = normalizeIncomingList(unwrapMessageData(msg));
+        if (!list.length) {
+            return;
+        }
+
+        const chat_div = document.getElementById("chat_div");
+        const chatState = chat_div ? snapshotViewState(chat_div, {
+            stickToBottom: true,
+            threshold: 80
+        }) : null;
+        const added = [];
+
+        list.forEach(function(item) {
+            if (!item || item.chatid === undefined || item.chatid === null) {
+                return;
+            }
+            const chatid = String(item.chatid);
+            const index = chat_slice.findIndex(function(existing) {
+                return String(existing && existing.chatid !== undefined ? existing.chatid : "") === chatid;
+            });
+            if (index >= 0) {
+                chat_slice[index] = Object.assign({}, chat_slice[index], item);
+                return;
+            }
+            chat_slice.push(item);
+            added.push(item);
+        });
+
+        if (!chat_div || added.length === 0) {
+            return;
+        }
+
+        const indexchat = new lain_chat();
+        added.forEach(function(item) {
             const existing = chat_div.querySelector('[data-chatid="' + escapeJsString(String(item.chatid)) + '"]');
             if (!existing) {
                 indexchat.renderChatItem(item, false);
@@ -1581,32 +1989,180 @@ class WebSocketClient {
         restoreViewState(chat_div, chatState);
     }
 
-    handleListen(msg) {
-        let indexInstance = new index();
-        const list = normalizeIncomingList(msg && msg.data);
-        const keepKeys = syncSnapshotEntries(listen_data, list, function(item) {
-            const uid = String(item && item.uid !== undefined ? item.uid : "");
-            return uid;
+    handleChatDeletePush(msg) {
+        const payload = unwrapMessageData(msg);
+        const chatid = String(payload && payload.chatid !== undefined ? payload.chatid : "").trim();
+        if (!chatid) {
+            return;
+        }
+
+        chat_slice = Array.isArray(chat_slice)
+            ? chat_slice.filter(function(item) {
+                return String(item && item.chatid !== undefined ? item.chatid : "") !== chatid;
+            })
+            : [];
+
+        const chatDiv = document.getElementById("chat_div");
+        if (!chatDiv) {
+            return;
+        }
+
+        const existing = chatDiv.querySelector('[data-chatid="' + escapeJsString(chatid) + '"]');
+        if (existing) {
+            existing.remove();
+            return;
+        }
+
+        const chatState = snapshotViewState(chatDiv, {
+            stickToBottom: true,
+            threshold: 80
         });
+        chatDiv.innerHTML = "";
+        const indexchat = new lain_chat();
+        chat_slice.forEach(function(item) {
+            indexchat.renderChatItem(item, false);
+        });
+        restoreViewState(chatDiv, chatState);
+    }
+
+    handleListenInitial(msg) {
+        const list = normalizeIncomingList(unwrapMessageData(msg));
         const listenDiv = document.getElementById("div_conn");
-        removeMissingNodes(listenDiv, ".client-card", keepKeys, function(node) {
-            return String(node && node.dataset ? node.dataset.uid || "" : "");
+        const listenState = listenDiv ? snapshotViewState(listenDiv, {
+            stickToBottom: true,
+            threshold: 80
+        }) : null;
+
+        listen_data.length = 0;
+        list.forEach(function(item) {
+            listen_data.push(item);
         });
+
+        if (listenDiv) {
+            const keepKeys = new Set(listen_data.map(function(item) {
+                return getAgentUid(item);
+            }).filter(Boolean));
+            removeMissingNodes(listenDiv, ".client-card", keepKeys, function(node) {
+                return String(node && node.dataset ? node.dataset.uid || "" : "");
+            });
+        }
+
+        let indexInstance = new index();
         indexInstance.renderClients(listen_data);
+        restoreViewState(listenDiv, listenState);
+    }
+
+    handleListenAppend(msg) {
+        const list = normalizeIncomingList(unwrapMessageData(msg));
+        if (!list.length) {
+            return;
+        }
+
+        const listenDiv = document.getElementById("div_conn");
+        const listenState = listenDiv ? snapshotViewState(listenDiv, {
+            stickToBottom: true,
+            threshold: 80
+        }) : null;
+        const touchedUids = [];
+        const seenUids = new Set();
+
+        list.forEach(function(item) {
+            const uid = getAgentUid(item);
+            if (!item || !uid) {
+                return;
+            }
+            if (seenUids.has(uid)) {
+                return;
+            }
+            seenUids.add(uid);
+            touchedUids.push(uid);
+
+            const index = listen_data.findIndex(function(existing) {
+                return getAgentUid(existing) === uid;
+            });
+            if (index >= 0) {
+                listen_data[index] = Object.assign({}, listen_data[index], item);
+            } else {
+                listen_data.push(item);
+            }
+        });
+
+        if (!listenDiv || touchedUids.length === 0) {
+            return;
+        }
+
+        touchedUids.forEach(function(uid) {
+            const currentIndex = listen_data.findIndex(function(existing) {
+                return String(existing && existing.uid !== undefined ? existing.uid : "") === uid;
+            });
+            if (currentIndex < 0) {
+                return;
+            }
+            const client = listen_data[currentIndex];
+            const oldContainer = document.getElementById("container-" + uid);
+            if (oldContainer && oldContainer.parentNode === listenDiv) {
+                updateClientCardNode(oldContainer, client, currentIndex);
+            } else {
+                listenDiv.appendChild(buildClientCardNode(client, currentIndex));
+            }
+        });
+
+        restoreViewState(listenDiv, listenState);
+    }
+
+    handleListenDeletePush(msg) {
+        const payload = unwrapMessageData(msg);
+        const uid = String(payload && (payload.uid !== undefined ? payload.uid : "")).trim();
+        if (!uid) {
+            return;
+        }
+
+        listen_data = Array.isArray(listen_data)
+            ? listen_data.filter(function(item) {
+                return String(item && item.uid !== undefined ? item.uid : "") !== uid;
+            })
+            : [];
+
+        const container = document.getElementById("container-" + uid);
+        if (container) {
+            container.remove();
+        }
+    }
+
+    handleAgentDeletePush(msg) {
+        const payload = unwrapMessageData(msg);
+        const uid = String(payload && (payload.uid !== undefined ? payload.uid : "")).trim();
+        if (!uid) {
+            return;
+        }
+
+        User_data = Array.isArray(User_data)
+            ? User_data.filter(function(item) {
+                return String(item && item.uid !== undefined ? item.uid : "") !== uid;
+            })
+            : [];
+
+        Object.keys(pendingCheckTimes).forEach(function(key) {
+            if (String(key) === uid) {
+                delete pendingCheckTimes[key];
+            }
+        });
+
+        const userCard = document.getElementById(uid + "info");
+        if (userCard) {
+            userCard.remove();
+        }
+
+        const indexInstance = new lain_index();
+        indexInstance.renderUserList(User_data);
+        net_init();
+        rebuildServerClientCounts(User_data);
     }
 
     handleAgentList(msg) {
-        let indexInstance = new lain_index();
-        const nextUserData = normalizeIncomingList(msg && msg.data);
-        User_data = nextUserData.slice();
-        const keepKeys = new Set(User_data.map(function(item) {
-            const uid = String(item && item.uid !== undefined ? item.uid : "");
-            return uid;
-        }).filter(Boolean));
-        const userDiv = document.getElementById("div_index");
-        removeMissingNodes(userDiv, ".ip-info", keepKeys, function(node) {
-            return String(node && node.id ? node.id.replace(/info$/, "") : "");
-        });
+        const nextUserData = this.parseAgentData(msg);
+        User_data = Array.isArray(nextUserData) ? nextUserData : [];
+        const indexInstance = new lain_index();
         indexInstance.renderUserList(User_data);
         net_init();
         rebuildServerClientCounts(User_data);
@@ -1616,18 +2172,72 @@ class WebSocketClient {
         });
     }
 
-    handleServer(msg){
+    handleAgentUpdate(msg) {
+        const nextUserData = this.parseAgentData(msg);
+        if (!nextUserData.length) {
+            return;
+        }
+
+        if (!Array.isArray(User_data)) {
+            User_data = [];
+        }
+        nextUserData.forEach(function(item) {
+            const uid = getAgentUid(item);
+            if (!uid) {
+                return;
+            }
+
+            const existingIndex = User_data.findIndex(function(existing) {
+                return getAgentUid(existing) === uid;
+            });
+
+            if (existingIndex >= 0) {
+                User_data[existingIndex] = Object.assign({}, User_data[existingIndex], item);
+            } else {
+                User_data.push(item);
+            }
+        });
+
+        const indexInstance = new lain_index();
+        indexInstance.renderUserList(User_data);
+        net_init();
+        rebuildServerClientCounts(User_data);
+
+        Object.keys(pendingCheckTimes).forEach((uid) => {
+            indexInstance.checkTime(pendingCheckTimes[uid], true);
+        });
+    }
+
+    parseAgentData(msg) {
+        const outerPayload = msg && typeof msg === "object" ? msg.data.data : null;
+        const fallbackUid = String(
+            outerPayload && typeof outerPayload === "object" ? (
+                outerPayload.uid !== undefined ? outerPayload.uid : ""
+            ) : ""
+        ).trim();
+        return normalizeIncomingList(unwrapAgentPayload(msg)).map(function(item) {
+            return normalizeAgentRecord(item, fallbackUid);
+        });
+    }
+
+    handleServerInitial(msg) {
+        const list = normalizeIncomingList(unwrapMessageData(msg));
         const startServerDialog = document.getElementById("serverDialog");
         const keepStartServerDialog = !!startServerDialog && startServerDialog.dataset.closing !== "true";
         let indexServer = new lain_server();
-        const keepKeys = syncSnapshotEntries(server_data, msg.data, function(item) {
-            const port = String(item && item.port !== undefined ? item.port : "");
-            return port;
-        });
+        server_data = Array.isArray(list) ? list.slice() : [];
+
         const serverIndexDiv = document.getElementById("server_index");
-        removeMissingNodes(serverIndexDiv, "article.server-card", keepKeys, function(node) {
-            return String(node && node.id ? node.id.replace(/-info$/, "") : "");
-        });
+        if (serverIndexDiv) {
+            serverIndexDiv.innerHTML = "";
+            server_data.forEach(function(server) {
+                const article = document.createElement('article');
+                article.id = String(server && server.port != null ? server.port : "") + '-info';
+                article.className = 'server-card';
+                article.innerHTML = buildServerCardHtml(server);
+                serverIndexDiv.appendChild(article);
+            });
+        }
         rebuildServerClientCounts(User_data);
         indexServer.updateServerIndex();
         indexServer.initServerIndexClickHandler();
@@ -1641,11 +2251,174 @@ class WebSocketClient {
         }
     }
 
-    handlePlugin(msg){
-        server_plugin = Array.isArray(msg.data) ? msg.data : [];
-        if (window.server && typeof window.server.refreshPluginList === "function") {
-            window.server.refreshPluginList();
+    handleServerAppend(msg) {
+        const list = normalizeIncomingList(unwrapMessageData(msg));
+        if (!list.length) {
+            return;
         }
+
+        const startServerDialog = document.getElementById("serverDialog");
+        const keepStartServerDialog = !!startServerDialog && startServerDialog.dataset.closing !== "true";
+        const serverIndexDiv = document.getElementById("server_index");
+        const indexServer = new lain_server();
+
+        list.forEach(function(server) {
+            if (!server) {
+                return;
+            }
+            const port = String(server.port != null ? server.port : "");
+            if (!port) {
+                return;
+            }
+            const existingIndex = Array.isArray(server_data) ?
+                server_data.findIndex(function(item) {
+                    return String(item && item.port != null ? item.port : "") === port;
+                }) :
+                -1;
+
+            if (existingIndex >= 0) {
+                server_data[existingIndex] = Object.assign({}, server_data[existingIndex], server);
+            } else {
+                server_data.push(server);
+            }
+
+            if (!serverIndexDiv) {
+                return;
+            }
+
+            const existingCard = document.getElementById(port + "-info");
+            if (existingCard && existingCard.parentNode === serverIndexDiv) {
+                updateServerCardNode(existingCard, server);
+                serverIndexDiv.appendChild(existingCard);
+            } else {
+                const article = document.createElement('article');
+                article.id = port + '-info';
+                article.className = 'server-card';
+                article.innerHTML = buildServerCardHtml(server);
+                serverIndexDiv.appendChild(article);
+            }
+        });
+
+        rebuildServerClientCounts(User_data);
+        indexServer.updateServerIndex();
+        indexServer.initServerIndexClickHandler();
+        indexServer.requestOnlineTeammates();
+        if (keepStartServerDialog && startServerDialog) {
+            if (startServerDialog.parentNode !== document.body) {
+                document.body.appendChild(startServerDialog);
+            }
+            startServerDialog.style.display = "block";
+            startServerDialog.style.opacity = "1";
+        }
+    }
+
+    handleServerDeletePush(msg) {
+        const payload = unwrapMessageData(msg);
+        const port = String(payload && (payload.port !== undefined ? payload.port : ""));
+        if (!port) {
+            return;
+        }
+
+        server_data = Array.isArray(server_data)
+            ? server_data.filter(function(server) {
+                return String(server && server.port !== undefined ? server.port : "") !== port;
+            })
+            : [];
+
+        const serverCard = document.getElementById(port + "-info");
+        if (serverCard) {
+            serverCard.remove();
+        }
+    }
+
+    handlePlugin(msg, mergeOnly = false){
+        const list = normalizeIncomingList(unwrapMessageData(msg));
+        if (mergeOnly) {
+            mergeEntriesByKey(server_plugin, list, function(item) {
+                const remark = String(item && (item.remark || item.Remark || "")).trim();
+                const os = String(item && (item.os || item.OS || "")).trim().toLowerCase();
+                const codeword = String(item && (item.codeWord || item.CodeWord || "")).trim();
+                return remark + "|" + os + "|" + codeword;
+            });
+        } else {
+            server_plugin.length = 0;
+            list.forEach(function(item) {
+                server_plugin.push(item);
+            });
+        }
+        const serverUi = new lain_server();
+        if (typeof serverUi.refreshPluginList === "function") {
+            serverUi.refreshPluginList();
+        }
+    }
+
+    handlePluginDeletePush(msg) {
+        const payload = unwrapMessageData(msg);
+        const remark = String(payload && (payload.remark || payload.Remark || "")).trim();
+        const osName = String(payload && (payload.os || payload.OS || "")).trim().toLowerCase();
+        const codeWords = String(payload && (payload.codeWords || payload.codeWord || payload.CodeWord || "")).trim();
+        if (!remark) {
+            return;
+        }
+
+        server_plugin = Array.isArray(server_plugin)
+            ? server_plugin.filter(function(item) {
+                if (!item) {
+                    return false;
+                }
+                const itemRemark = String(item.remark || item.Remark || "").trim();
+                const itemOs = String(item.os || item.OS || "").trim().toLowerCase();
+                const itemCodeWords = String(item.codeWord || item.CodeWord || "").trim();
+                if (itemRemark !== remark) {
+                    return true;
+                }
+                if (osName && itemOs !== osName) {
+                    return true;
+                }
+                if (codeWords && itemCodeWords !== codeWords) {
+                    return true;
+                }
+                return false;
+            })
+            : [];
+
+        const serverUi = new lain_server();
+        if (typeof serverUi.refreshPluginList === "function") {
+            serverUi.refreshPluginList();
+        }
+    }
+
+    handleLootInitial(msg) {
+        const list = normalizeIncomingList(unwrapMessageData(msg));
+        loot_data = Array.isArray(list) ? list.slice() : [];
+        const lootIndex = new lain_index();
+        lootIndex.loothander(loot_data);
+    }
+
+    handleLootAppend(msg) {
+        const list = normalizeIncomingList(unwrapMessageData(msg));
+        if (!list.length) {
+            return;
+        }
+        const entry = list[0];
+        const uid = String(entry && entry.uid !== undefined ? entry.uid : "");
+        if (!uid) {
+            return;
+        }
+
+        const currentIndex = Array.isArray(loot_data) ?
+            loot_data.findIndex(function(item) {
+                return String(item && item.uid !== undefined ? item.uid : "") === uid;
+            }) :
+            -1;
+        if (currentIndex >= 0) {
+            loot_data[currentIndex] = Object.assign({}, loot_data[currentIndex], entry);
+        } else {
+            loot_data.push(entry);
+        }
+
+        const lootIndex = new lain_index();
+        lootIndex.updateLootItem(loot_data[currentIndex >= 0 ? currentIndex : loot_data.length - 1]);
     }
 
     handleCheck(msg) {
@@ -1660,6 +2433,197 @@ class WebSocketClient {
         window.onlineTeammates = onlineTeammates;
         let serverUi = new lain_server();
         serverUi.renderOnlineTeammatesCard();
+    }
+
+    handleMsgQueueDeletePush(msg) {
+        const payload = unwrapMessageData(msg);
+        const uid = String(payload && payload.uid !== undefined ? payload.uid : "").trim();
+        const index = Number(payload && payload.index !== undefined ? payload.index : -1);
+
+        if (!uid || index < 0) {
+            return;
+        }
+
+        if (!Array.isArray(msgQueues[uid]) || index >= msgQueues[uid].length) {
+            return;
+        }
+
+        msgQueues[uid].splice(index, 1);
+
+        const dialog = document.getElementById("msg-dialog-" + uid);
+        if (dialog && !dialog._msgClosed && dialog.isConnected) {
+            const requestList = dialog.querySelector("#msg-request-list");
+            if (requestList) {
+                requestList.innerHTML = "";
+                msgQueues[uid].forEach(function(raw, i) {
+                    const msgDiv = document.createElement("div");
+                    msgDiv.className = "msg-item";
+                    msgDiv.dataset.reorderable = "true";
+                    msgDiv.dataset.rawMessage = raw;
+                    msgDiv.dataset.sourceIndex = String(i);
+
+                    const left = document.createElement("div");
+                    left.className = "msg-item-main";
+
+                    const handle = document.createElement("button");
+                    handle.type = "button";
+                    handle.className = "msg-drag-handle";
+                    handle.textContent = "⋮⋮";
+                    handle.title = "Drag to reorder";
+                    left.appendChild(handle);
+
+                    const idx = document.createElement("span");
+                    idx.className = "msg-index";
+                    idx.textContent = "[" + String(i).padStart(2, "0") + "] ";
+                    left.appendChild(idx);
+
+                    const span = document.createElement("span");
+                    span.className = "msg-item-text";
+                    span.textContent = raw;
+                    left.appendChild(span);
+
+                    msgDiv.appendChild(left);
+
+                    const btnGroup = document.createElement("div");
+                    btnGroup.className = "msg-item-actions";
+                    const del = document.createElement("button");
+                    del.className = "msg-action-btn msg-delete-btn";
+                    del.textContent = "🗑️";
+                    del.onclick = async function() {
+                        const currentIndex = Number(msgDiv.dataset.sourceIndex || "-1");
+                        if (currentIndex < 0) {
+                            return;
+                        }
+                        try {
+                            const responsePromise = webSocketClient.waitForMessage(
+                                (reply) => reply.path === "delMsgGet" && reply.uid === uid && reply.taskid === AgentTaskId && reply.index === String(currentIndex)
+                            );
+                            const sent = await webSocketClient.send("delMsgGet", {
+                                uid: uid,
+                                index: String(currentIndex),
+                                taskid: AgentTaskId
+                            });
+                            if (!sent) {
+                                return;
+                            }
+                            await responsePromise;
+                        } catch (err) {
+                            console.error("delete msg error:", err);
+                        }
+                    };
+                    btnGroup.appendChild(del);
+                    msgDiv.appendChild(btnGroup);
+                    requestList.appendChild(msgDiv);
+                });
+            }
+        }
+    }
+
+    handleMsgResultDeletePush(msg) {
+        const payload = unwrapMessageData(msg);
+        const uid = String(payload && payload.uid !== undefined ? payload.uid : "").trim();
+        const index = Number(payload && payload.index !== undefined ? payload.index : -1);
+
+        if (!uid || index < 0) {
+            return;
+        }
+
+        if (!Array.isArray(resultQueues[uid]) || index >= resultQueues[uid].length) {
+            return;
+        }
+
+        resultQueues[uid].splice(index, 1);
+
+        const dialog = document.getElementById("msg-dialog-" + uid);
+        if (dialog && !dialog._msgClosed && dialog.isConnected) {
+            const resultList = dialog.querySelector("#msg-result-list");
+            const resultTitle = dialog.querySelector("#msg-result-title");
+            if (resultList) {
+                resultList.innerHTML = "";
+                if (Array.isArray(resultQueues[uid]) && resultQueues[uid].length > 0) {
+                    if (resultTitle) {
+                        resultTitle.style.display = "";
+                    }
+                    resultQueues[uid].forEach(function(raw, i) {
+                        const div = document.createElement("div");
+                        div.className = "msg-item";
+                        div.dataset.resultItem = "true";
+                        div.dataset.resultIndex = String(i);
+
+                        const left = document.createElement("div");
+                        left.className = "msg-item-main";
+                        const span = document.createElement("span");
+                        span.className = "msg-item-text";
+                        span.textContent = raw;
+                        left.appendChild(span);
+                        div.appendChild(left);
+
+                        resultList.appendChild(div);
+                    });
+                } else if (resultTitle) {
+                    resultTitle.style.display = "none";
+                }
+            }
+        }
+    }
+
+    handleFileQueueDeletePush(msg) {
+        const payload = unwrapMessageData(msg);
+        const uid = String(payload && payload.uid !== undefined ? payload.uid : "").trim();
+        const index = Number(payload && payload.index !== undefined ? payload.index : -1);
+
+        if (!uid || index < 0) {
+            return;
+        }
+
+        if (!Array.isArray(fileQueues[uid]) || index >= fileQueues[uid].length) {
+            return;
+        }
+
+        fileQueues[uid].splice(index, 1);
+
+        const fileManager = window.fileManagerSessions ? window.fileManagerSessions[uid] : null;
+        if (fileManager && typeof fileManager.history_file === "function") {
+            fileManager.history_file(uid);
+            return;
+        }
+
+        if (window.activeFileManager &&
+            window.activeFileManager.uid === uid &&
+            typeof window.activeFileManager.history_file === "function") {
+            window.activeFileManager.history_file(uid);
+        }
+    }
+
+    handleShellInnetDeletePush(msg) {
+        const payload = unwrapMessageData(msg);
+        const uid = String(payload && payload.uid !== undefined ? payload.uid : "").trim();
+        const target = String(payload && payload.target !== undefined ? payload.target : "").trim();
+
+        if (!uid || !target) {
+            return;
+        }
+
+        window.netListData = window.netListData || {};
+        const currentList = Array.isArray(window.netListData[uid]) ? window.netListData[uid] : [];
+        window.netListData[uid] = currentList.filter(function(item) {
+            return String(item && (item.target !== undefined ? item.target : item.Target || "")).trim() !== target;
+        });
+
+        window.shellInnetData = window.shellInnetData || {};
+        window.shellInnetData[uid] = window.netListData[uid].flatMap(function(item) {
+            if (item && Array.isArray(item.shell_innet)) {
+                return item.shell_innet;
+            }
+            return [];
+        }).filter(Boolean);
+
+        const shellSelect = document.getElementById("net_shell");
+        if (shellSelect && shellSelect.value === uid) {
+            const net = new lain_net();
+            net.getshellip(window.shellInnetData[uid], uid);
+            net.renderNetList(window.netListData[uid], uid);
+        }
     }
 }
 
@@ -1742,6 +2706,11 @@ class index{
             try {
                 const result = await responsePromise;
                 if (result && result.code === 200 && result.uid === String(index) && result.taskid === AgentTaskId) {
+                    webSocketClient.handleAgentDeletePush({
+                        data: {
+                            uid: String(index)
+                        }
+                    });
                     customLog("Agent removed");
                     return true;
                 }
@@ -2315,7 +3284,9 @@ class index{
                                 sameTask;
                         }
                     );
-
+                    webSocketClient.send("getFileCache", {
+                        uid: this.uid,
+                    });
                     const sent = await webSocketClient.send("getFileList", {
                         uid: this.uid,
                         taskid: taskId
@@ -2468,8 +3439,15 @@ class index{
             if (!container) {
                 return;
             }
-            data.forEach(key=>{
-                let userDiv = document.getElementById(key.uid + "info");
+            const normalizedData = (Array.isArray(data) ? data : []).map(function(item) {
+                return normalizeAgentRecord(item);
+            });
+            normalizedData.forEach(key=>{
+                const uid = getAgentUid(key);
+                if (!uid) {
+                    return;
+                }
+                let userDiv = document.getElementById(uid + "info");
                 if (userDiv) {
                     updateUserCardNode(userDiv, key);
                     container.appendChild(userDiv);
@@ -2482,7 +3460,7 @@ class index{
                 }
 
                 userDiv.className = 'ip-info';
-                userDiv.id = key.uid + "info";
+                userDiv.id = uid + "info";
                 let os = (key.os || "").toLowerCase();
                 let osEmoji = "💻";
                 if(os.includes("linux")){
@@ -2496,8 +3474,8 @@ class index{
                 }
                 let pluginButtons = "";
                 let pluginParam = key.plugin_parameter;
-                let safeUidHtml = escapeHtml(key["uid"]);
-                let safeUidJs = escapeInlineJsArg(key["uid"]);
+                let safeUidHtml = escapeHtml(uid);
+                let safeUidJs = escapeInlineJsArg(uid);
                 let safeHostHtml = escapeHtml(key["host"]);
                 let safeHostJs = escapeInlineJsArg(key["host"]);
                 let safeOsHtml = escapeHtml(key["os"]);
@@ -2646,7 +3624,8 @@ class index{
             applyStickyDialogBar(dragBar, {
                 padX: 18,
                 padTop: 18,
-                radius: 18
+                radius: 18,
+                marginBottom: 12
             });
             if (toolbar) {
                 toolbar.style.marginTop = "0";
@@ -2892,7 +3871,8 @@ class index{
             const dragBar = dialog.querySelector("#file-drag-bar");
             const fileLayout = dialog.querySelector(".file-dialog-layout");
             applyStickyDialogBar(dragBar, {
-                radius: 8
+                radius: 8,
+                marginBottom: 12
             });
             if (fileLayout) {
                 fileLayout.style.flex = "1 1 auto";
@@ -3209,7 +4189,8 @@ class index{
             applyStickyDialogBar(dragBar, {
                 padX: 16,
                 padTop: 16,
-                radius: 8
+                radius: 8,
+                marginBottom: 12
             });
             if (msgContainer) {
                 msgContainer.style.flex = "1 1 auto";
@@ -4057,10 +5038,15 @@ class index{
             try {
                 const result = await responsePromise;
                 if(result && result.code === 200 && result.uid === uid && result.taskid === AgentTaskId){
-                    document.getElementById("container-" + uid)?.remove();
                     msgQueues[uid] = [];
                     resultQueues[uid] = [];
                     fileQueues[uid] = [];
+                    webSocketClient.handleAgentDeletePush({
+                        data: {
+                            uid: uid,
+                            taskid: AgentTaskId
+                        }
+                    });
                     customLog("Agent removed");
                     return true;
                 }
@@ -4071,6 +5057,111 @@ class index{
                 return false;
             }
         }
+    populateLootCard(card, entry) {
+        if (!card) {
+            return;
+        }
+        const uid = String(entry && entry.uid !== undefined ? entry.uid : "");
+        const host = String(entry && entry.host !== undefined ? entry.host : "");
+        const files = Array.isArray(entry && entry.files) ? entry.files : [];
+
+        card.className = "loot-card";
+        if (uid) {
+            card.id = "loot-card-" + uid;
+        }
+        card.dataset.uid = uid;
+        card.innerHTML = "";
+
+        const title = document.createElement("div");
+        title.className = "loot-card-title";
+        const hostLabel = document.createElement("strong");
+        hostLabel.textContent = "Host:";
+        const uidWrapper = document.createElement("span");
+        uidWrapper.className = "loot-card-uid";
+        const uidLabel = document.createElement("strong");
+        uidLabel.textContent = "UID:";
+        uidWrapper.append(uidLabel, document.createTextNode(" " + uid));
+        title.append(hostLabel, document.createTextNode(" " + host + " "), uidWrapper);
+        card.appendChild(title);
+
+        if (files.length === 0) {
+            const empty = document.createElement("div");
+            empty.className = "loot-empty";
+            empty.textContent = "No files";
+            card.appendChild(empty);
+            return;
+        }
+
+        files.forEach((file) => {
+            const row = document.createElement("div");
+            row.className = "loot-row";
+
+            const info = document.createElement("div");
+            info.className = "loot-info";
+            const name = file.name || "";
+            const size = typeof file.size === "number" ? file.size : 0;
+            const modTime = file.mod_time || "";
+            const nameLine = document.createElement("div");
+            nameLine.className = "loot-file-name";
+            const nameLabel = document.createElement("strong");
+            nameLabel.textContent = String(name);
+            nameLine.appendChild(nameLabel);
+            const metaLine = document.createElement("div");
+            metaLine.className = "loot-meta";
+            metaLine.textContent = "size: " + String(size) + " | modified: " + String(modTime);
+            info.append(nameLine, metaLine);
+
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "loot-download-btn";
+            btn.textContent = "Download";
+            btn.onclick = () => {
+                this.downloadLoot(uid, name, btn);
+            };
+
+            row.appendChild(info);
+            row.appendChild(btn);
+            card.appendChild(row);
+        });
+    }
+
+    buildLootCardNode(entry) {
+        const card = document.createElement("div");
+        this.populateLootCard(card, entry);
+        return card;
+    }
+
+    updateLootItem(entry) {
+        const lootDiv = document.getElementById("g_file");
+        if (!lootDiv || !entry) {
+            return;
+        }
+
+        const uid = String(entry && entry.uid !== undefined ? entry.uid : "");
+        if (!uid) {
+            return;
+        }
+
+        const viewState = snapshotViewState(lootDiv, {
+            stickToBottom: true
+        });
+        lootDiv.classList.add("loot-list");
+        lootDiv.classList.remove("loot-empty-state");
+
+        if (lootDiv.textContent.trim() === "No loot available") {
+            lootDiv.innerHTML = "";
+        }
+
+        const cardId = "loot-card-" + uid;
+        const existing = document.getElementById(cardId);
+        if (existing && existing.parentNode === lootDiv) {
+            this.populateLootCard(existing, entry);
+        } else {
+            lootDiv.appendChild(this.buildLootCardNode(entry));
+        }
+        restoreViewState(lootDiv, viewState);
+    }
+
     loothander(data){
         const lootDiv = document.getElementById("g_file");
         if(!lootDiv){
@@ -4090,67 +5181,7 @@ class index{
         lootDiv.classList.remove("loot-empty-state");
 
         data.forEach((entry)=>{
-            const uid = entry.uid || "";
-            const host = entry.host || "";
-            const files = Array.isArray(entry.files) ? entry.files : [];
-
-            const card = document.createElement("div");
-            card.className = "loot-card";
-
-            const title = document.createElement("div");
-            title.className = "loot-card-title";
-            const hostLabel = document.createElement("strong");
-            hostLabel.textContent = "Host:";
-            const uidWrapper = document.createElement("span");
-            uidWrapper.className = "loot-card-uid";
-            const uidLabel = document.createElement("strong");
-            uidLabel.textContent = "UID:";
-            uidWrapper.append(uidLabel, document.createTextNode(" " + String(uid)));
-            title.append(hostLabel, document.createTextNode(" " + String(host) + " "), uidWrapper);
-            card.appendChild(title);
-
-            if(files.length === 0){
-                const empty = document.createElement("div");
-                empty.className = "loot-empty";
-                empty.textContent = "No files";
-                card.appendChild(empty);
-                lootDiv.appendChild(card);
-                return;
-            }
-
-            files.forEach((file)=>{
-                const row = document.createElement("div");
-                row.className = "loot-row";
-
-                const info = document.createElement("div");
-                info.className = "loot-info";
-                const name = file.name || "";
-                const size = typeof file.size === "number" ? file.size : 0;
-                const modTime = file.mod_time || "";
-                const nameLine = document.createElement("div");
-                nameLine.className = "loot-file-name";
-                const nameLabel = document.createElement("strong");
-                nameLabel.textContent = String(name);
-                nameLine.appendChild(nameLabel);
-                const metaLine = document.createElement("div");
-                metaLine.className = "loot-meta";
-                metaLine.textContent = "size: " + String(size) + " | modified: " + String(modTime);
-                info.append(nameLine, metaLine);
-
-                const btn = document.createElement("button");
-                btn.type = "button";
-                btn.className = "loot-download-btn";
-                btn.textContent = "Download";
-                btn.onclick = () => {
-                    this.downloadLoot(uid, name, btn);
-                };
-
-                row.appendChild(info);
-                row.appendChild(btn);
-                card.appendChild(row);
-            });
-
-            lootDiv.appendChild(card);
+            lootDiv.appendChild(this.buildLootCardNode(entry));
         });
         restoreViewState(lootDiv, viewState);
     }
@@ -4929,7 +5960,7 @@ class lain_server {
                     dialog.className = "serverDialog";
                     dialog.style.left = "50%";
                     dialog.style.display = "block";
-                    dialog.dataset.remark = server.remark;
+                    dialog.dataset.remark = String(server.remark || server.Remark || "").trim();
 
                     dialog.innerHTML =
                         "<div class='plugin-dialog-header'>" +
@@ -5004,8 +6035,9 @@ class lain_server {
                     dialog.style.display = "block";
                     dialog.style.transform = "translateX(-50%) scaleY(1)";
                     dialog.style.opacity = "1";
-                    if (dialog.dataset.remark !== server.remark) {
-                        dialog.dataset.remark = server.remark;
+                    const nextRemark = String(server.remark || server.Remark || "").trim();
+                    if (String(dialog.dataset.remark || "").trim() !== nextRemark) {
+                        dialog.dataset.remark = nextRemark;
                         this.refreshPluginList();
                     }
                 }
@@ -5018,7 +6050,7 @@ class lain_server {
         var pluginList = document.getElementById("plugin_list");
         if (!pluginList) return;
         var dialog = document.getElementById("pluginDialog");
-        var currentRemark = dialog ? dialog.dataset.remark : "";
+        var currentRemark = dialog ? String(dialog.dataset.remark || "").trim() : "";
         pluginList.innerHTML = "";
         pluginList.classList.add("plugin-panel");
         if (
@@ -5035,8 +6067,11 @@ class lain_server {
             if (!currentRemark) {
                 return true;
             }
-            return String(item.remark || item.Remark || "") === String(currentRemark);
+            return String(item.remark || item.Remark || "").trim() === currentRemark;
         });
+        if (pluginItems.length === 0 && server_plugin.length > 0) {
+            pluginItems = server_plugin.slice();
+        }
         if (pluginItems.length === 0) {
             pluginList.innerHTML = "<div class='plugin-empty'>No plugin available</div>";
             return;
@@ -5220,7 +6255,12 @@ class lain_server {
         }
         try {
             const responsePromise = webSocketClient.waitForMessage(
-                (msg) => msg.path === "delPlugin" && msg.remark === remark
+                (msg) => {
+                    const msgRemark = String(
+                        (msg && (msg.remark || (msg.data && msg.data.remark) || ""))
+                    ).trim();
+                    return msg.path === "delPlugin" && msgRemark === String(remark).trim();
+                }
             );
             const sent = await webSocketClient.send("delPlugin", {
                 remark: remark,
@@ -5232,8 +6272,38 @@ class lain_server {
                 return false;
             }
             const data = await responsePromise;
-            if (data && data.code === 200 && data.remark === remark) {
+            const normalizedRemark = String(remark).trim();
+            const normalizedOs = String(osName).trim().toLowerCase();
+            const normalizedCodeWords = String(codeWords).trim();
+            const stillExists = Array.isArray(server_plugin) && server_plugin.some(function(item) {
+                if (!item) {
+                    return false;
+                }
+                return String(item.remark || item.Remark || "").trim() === normalizedRemark &&
+                    String(item.os || item.OS || "").trim().toLowerCase() === normalizedOs &&
+                    String(item.codeWord || item.CodeWord || "").trim() === normalizedCodeWords;
+            });
+            if (data && String(data.code) === "200" && String(data.remark || "").trim() === normalizedRemark) {
+                server_plugin = Array.isArray(server_plugin)
+                    ? server_plugin.filter(function(item) {
+                        if (!item) {
+                            return false;
+                        }
+                        return !(
+                            String(item.remark || item.Remark || "").trim() === normalizedRemark &&
+                            String(item.os || item.OS || "").trim().toLowerCase() === normalizedOs &&
+                            String(item.codeWord || item.CodeWord || "").trim() === normalizedCodeWords
+                        );
+                    })
+                    : [];
+                const serverUi = new lain_server();
+                if (typeof serverUi.refreshPluginList === "function") {
+                    serverUi.refreshPluginList();
+                }
                 customLog("delPlugin success:", data);
+                return true;
+            } else if (!stillExists) {
+                customLog("delPlugin success:", data || { remark: remark, os: osName, codeWords: codeWords });
                 return true;
             } else {
                 customAlert(data?.message || "delPlugin failed");
