@@ -3459,6 +3459,9 @@ func save_file_list(uid, file, list string) {
 		item := &msg_file_cache[i]
 		if item.Uid == uid && item.Taskid == list {
 			item.File = file
+
+			go PushAgentData(uid, "updateGetMsgCache")
+			
 			return
 		}
 	}
