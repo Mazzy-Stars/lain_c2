@@ -814,20 +814,6 @@ button:hover {
         background-color: #f9f9f9;
         margin-left: 0; /* 閸欐牗绉烽懛顏勫З閹恒劌鍩岄崣鍏呮櫠 */
     }                    
-    .form {
-        background: #fff;
-        padding: 10px;
-        width: 100%;
-        border-radius: 8px;
-        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-        display: flex;
-        flex-direction: row; /* 濡亜鎮滈幒鎺戝灙 */
-        gap: 15px; /* 閸忓啰绀屾稊瀣？閻ㄥ嫰妫跨捄锟?*/
-        align-items: center; /* 閸忓啰绀岄崹鍌滄纯鐏炲懍鑵?*/
-    }
-    .button-container {
-        width: 40%;
-    }
 }
 #net {
     width: 100%;
@@ -2891,6 +2877,10 @@ button:hover {
     left: 0;
     width: calc(100% + 32px) !important;
     height: 38px !important;
+    min-height: 38px !important;
+    max-height: 38px !important;
+    flex: 0 0 38px !important;
+    flex-shrink: 0 !important;
     margin: -16px -16px 12px -16px !important;
     cursor: move;
     background: linear-gradient(90deg, rgba(230, 236, 243, 0.96), rgba(243, 247, 251, 0.9)) !important;
@@ -3029,6 +3019,9 @@ button:hover {
         width: calc(100% + 24px) !important;
         margin: -12px -12px 10px -12px !important;
         height: 36px !important;
+        min-height: 36px !important;
+        max-height: 36px !important;
+        flex: 0 0 36px !important;
         border-top-left-radius: 22px !important;
         border-top-right-radius: 22px !important;
     }
@@ -3068,6 +3061,9 @@ button:hover {
         width: calc(100% + 20px) !important;
         margin: -10px -10px 8px -10px !important;
         height: 34px !important;
+        min-height: 34px !important;
+        max-height: 34px !important;
+        flex: 0 0 34px !important;
     }
 
     .dialog-close-btn {
