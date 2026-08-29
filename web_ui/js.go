@@ -7044,8 +7044,9 @@ function showPluginDialog(uid, os, paramDescList, codeword) {
         dialog.style.transform = "translateX(-50%)";
         dialog.style.background = "#f9f9f9";
         dialog.style.zIndex = String((window.dialogZIndexCounter = (window.dialogZIndexCounter || 9999) + 1));
-        dialog.style.maxWidth = "95vw";
-        dialog.style.width = "95%";
+        dialog.style.width = "90vw";
+        dialog.style.maxWidth = "760px";
+        dialog.style.minWidth = "320px";
         dialog.style.maxHeight = "90vh";
         dialog.style.margin = "40px auto";
         dialog.style.border = "1px solid #ccc";
@@ -7132,8 +7133,10 @@ function showPluginDialog(uid, os, paramDescList, codeword) {
         }
         const point = event.touches ? event.touches[0] : event;
         const rect = dialog.getBoundingClientRect();
-        const maxLeft = Math.max(0, window.innerWidth - rect.width);
-        const maxTop = Math.max(0, window.innerHeight - rect.height);
+        const winW = window.innerWidth;
+        const winH = window.innerHeight;
+        const maxLeft = winW - rect.width;
+        const maxTop = winH - rect.height;
         dialog.style.left = clamp(point.clientX - offsetX, 0, maxLeft) + "px";
         dialog.style.top = clamp(point.clientY - offsetY, 0, maxTop) + "px";
         dialog.style.transform = "";
@@ -7155,6 +7158,9 @@ function showPluginDialog(uid, os, paramDescList, codeword) {
         }
         const point = event.touches ? event.touches[0] : event;
         const rect = dialog.getBoundingClientRect();
+        dialog.style.left = rect.left + "px";
+        dialog.style.top = rect.top + "px";
+        dialog.style.transform = "";
         isDragging = true;
         offsetX = point.clientX - rect.left;
         offsetY = point.clientY - rect.top;
