@@ -223,10 +223,10 @@ func Lain(error_str, web_title, web_js, web_css string, sessionSlice []string) h
                     </script>
                 </div>
                 <div id="index" class="hidden">
-                        <p id='div_conn'></p>
+                        <div id='div_conn'></div>
                 </div>
                 <div id="userIndex" class="hidden">
-                    <p id='div_index'></p>
+                    <div id='div_index'></div>
                     <script>
                         const _index = new lain_index();
                         function saveInfo(uid){
