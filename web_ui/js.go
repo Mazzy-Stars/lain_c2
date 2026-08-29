@@ -192,6 +192,10 @@ function unwrapAgentPayload(msg) {
     return outer;
 }
 
+function normalizeRemarkValue(value) {
+    return String(value || "").trim();
+}
+
 function normalizeAgentRecord(item, fallbackUid = "") {
     if (!item || typeof item !== "object" || Array.isArray(item)) {
         return item;
@@ -5902,14 +5906,14 @@ class lain_server {
                         if (!pluginItem) {
                             return false;
                         }
-                        const pluginRemark = String(
+                        const pluginRemark = normalizeRemarkValue(
                             pluginItem.remark || pluginItem.Remark || ""
                         );
                         const pluginOS = String(
                             pluginItem.os || pluginItem.OS || ""
                         ).toLowerCase();
                         const pluginCode = pluginItem.code || pluginItem.Code || "";
-                        return pluginRemark === String(server.remark || "") &&
+                        return pluginRemark === normalizeRemarkValue(server.remark || server.Remark || "") &&
                             pluginOS === String(os || "").toLowerCase() &&
                             typeof pluginCode === "string" &&
                             pluginCode.trim() !== "";
@@ -5960,7 +5964,7 @@ class lain_server {
                     dialog.className = "serverDialog";
                     dialog.style.left = "50%";
                     dialog.style.display = "block";
-                    dialog.dataset.remark = String(server.remark || server.Remark || "").trim();
+                    dialog.dataset.remark = normalizeRemarkValue(server.remark || server.Remark || "");
 
                     dialog.innerHTML =
                         "<div class='plugin-dialog-header'>" +
@@ -6035,7 +6039,7 @@ class lain_server {
                     dialog.style.display = "block";
                     dialog.style.transform = "translateX(-50%) scaleY(1)";
                     dialog.style.opacity = "1";
-                    const nextRemark = String(server.remark || server.Remark || "").trim();
+                    const nextRemark = normalizeRemarkValue(server.remark || server.Remark || "");
                     if (String(dialog.dataset.remark || "").trim() !== nextRemark) {
                         dialog.dataset.remark = nextRemark;
                         this.refreshPluginList();
@@ -6050,7 +6054,7 @@ class lain_server {
         var pluginList = document.getElementById("plugin_list");
         if (!pluginList) return;
         var dialog = document.getElementById("pluginDialog");
-        var currentRemark = dialog ? String(dialog.dataset.remark || "").trim() : "";
+        var currentRemark = dialog ? normalizeRemarkValue(dialog.dataset.remark || "") : "";
         pluginList.innerHTML = "";
         pluginList.classList.add("plugin-panel");
         if (
@@ -6064,10 +6068,7 @@ class lain_server {
             if (!item) {
                 return false;
             }
-            if (!currentRemark) {
-                return true;
-            }
-            return String(item.remark || item.Remark || "").trim() === currentRemark;
+            return normalizeRemarkValue(item.remark || item.Remark || "") === currentRemark;
         });
         if (pluginItems.length === 0) {
             pluginList.innerHTML = "<div class='plugin-empty'>No plugin available</div>";
