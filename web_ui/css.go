@@ -2864,8 +2864,8 @@ button:hover {
 }
 
 .plugin-dialog {
-    width: min(92vw, 680px) !important;
-    max-width: min(92vw, 680px) !important;
+    width: min(92vw, 760px) !important;
+    max-width: min(92vw, 760px) !important;
 }
 
 .terminal-dialog .terminal-drag-bar,
@@ -2949,8 +2949,10 @@ button:hover {
     position: fixed;
     top: 10%;
     left: 50%;
-    transform: translateX(-50%);
+    width: min(92vw, 760px) !important;
+    max-width: min(92vw, 760px) !important;
     overflow-y: auto !important;
+    box-sizing: border-box;
 }
 
 .plugin-dialog .plugin-drag-bar {
@@ -2996,8 +2998,8 @@ button:hover {
 @media (max-width: 768px) {
     .floating-dialog,
     .plugin-dialog {
-        width: calc(100vw - 20px) !important;
-        max-width: calc(100vw - 20px) !important;
+        width: min(92vw, 420px) !important;
+        max-width: min(92vw, 420px) !important;
         max-height: calc(100dvh - 20px) !important;
         border-radius: 22px !important;
         padding: 12px 10px 14px !important;
@@ -3038,8 +3040,8 @@ button:hover {
 @media (max-width: 480px) {
     .floating-dialog,
     .plugin-dialog {
-        width: calc(100vw - 16px) !important;
-        max-width: calc(100vw - 16px) !important;
+        width: min(94vw, 380px) !important;
+        max-width: min(94vw, 380px) !important;
         max-height: calc(100dvh - 16px) !important;
         border-radius: 20px !important;
         padding: 10px 8px 12px !important;
