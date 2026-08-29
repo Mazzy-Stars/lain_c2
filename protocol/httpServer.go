@@ -170,8 +170,6 @@ func Http_server(handler Handler, ServerManager Putserver, writeLog WLog,
             }
             //获取组织
             cert_g, key_g = "defaultCert", "defaultKey"
-            returnStr = log_word["provided_cert"]
-            writeLog.WriteLog(returnStr)
         }
         tlsConfig := &tls.Config{
             MinVersion:         tls.VersionTLS12,
@@ -217,6 +215,8 @@ func Http_server(handler Handler, ServerManager Putserver, writeLog WLog,
                 }
                 cert_g = certPEM
                 key_g = keyPEM
+                returnStr = log_word["provided_cert"]
+                writeLog.WriteLog(returnStr)
             } else {
                 cert, err = tls.X509KeyPair(
                     []byte(DefaultCert),
