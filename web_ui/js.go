@@ -6069,9 +6069,6 @@ class lain_server {
             }
             return String(item.remark || item.Remark || "").trim() === currentRemark;
         });
-        if (pluginItems.length === 0 && server_plugin.length > 0) {
-            pluginItems = server_plugin.slice();
-        }
         if (pluginItems.length === 0) {
             pluginList.innerHTML = "<div class='plugin-empty'>No plugin available</div>";
             return;
