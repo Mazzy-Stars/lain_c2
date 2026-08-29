@@ -925,8 +925,6 @@ func User_index() http.HandlerFunc {
 						"data":   data,
 					})
 
-					go PushAgentData(uid, "updateGetMsgCache")
-
 				case "getFileCache":
 					uid, _ := body["uid"].(string)
 					data := Read_file_list(uid)
