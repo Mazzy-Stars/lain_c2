@@ -416,8 +416,7 @@ function captureUserCardState(card) {
         infoOpen: false,
         chooseOpen: false,
         msgOpen: false,
-        values: {},
-        msgHtml: ""
+        values: {}
     };
 
     if (!card) {
@@ -439,10 +438,6 @@ function captureUserCardState(card) {
         state.values.delay = inputs[1] ? inputs[1].value : "";
         state.values.jitter = inputs[2] ? inputs[2].value : "";
         state.values.username = inputs[3] ? inputs[3].value : "";
-    }
-
-    if (msgContent) {
-        state.msgHtml = msgContent.innerHTML;
     }
 
     return state;
@@ -467,9 +462,6 @@ function restoreUserCardState(card, state) {
     if (msgContent) {
         if (state.msgOpen) {
             msgContent.classList.add("show");
-        }
-        if (typeof state.msgHtml === "string") {
-            msgContent.innerHTML = state.msgHtml;
         }
     }
 
