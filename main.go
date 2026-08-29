@@ -4207,13 +4207,17 @@ func GetAllPluginCode() []Plugin {
 func updatePluginCode(codeWord string) []Plugin {
 	serverPluginMu.RLock()
 	defer serverPluginMu.RUnlock()
+	matched := make([]Plugin, 0)
 	for i := range server_plugin.Plugins {
 		plugin := &server_plugin.Plugins[i]
 		if plugin.CodeWord == codeWord {
-			return []Plugin{*plugin}
+			matched = append(matched, *plugin)
 		}
 	}
-	return nil
+	if len(matched) == 0 {
+		return nil
+	}
+	return matched
 }
 
 func ServerIndex() []Server {
