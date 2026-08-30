@@ -839,6 +839,10 @@ button:hover {
 .net_scan select,
 .net_scan input,
 .net_scan button,
+#net_uid {
+    min-height: 40px;
+    box-sizing: border-box;
+}
 .net_scan select,
 .net_scan input {
     flex: 1 1 180px;
@@ -857,6 +861,15 @@ button:hover {
 }
 .net_scan button:hover {
     background: linear-gradient(135deg, #2a73a3 0%, #184f75 100%);
+}
+#net_uid {
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    border-radius: 10px;
+    background: #eef4f8;
+    color: #355066;
+    flex: 1 1 180px;
 }
 .net_div_son {
     background-color: #f9f9f9; /* 濞村懐浼嗛懝鑼跺剹閺咃拷 */
@@ -917,6 +930,10 @@ button:hover {
     .net_scan select,
     .net_scan input,
     .net_scan button,
+    #net_uid {
+        width: 100%;
+        flex: none;
+    }
     .net_div {
         padding: 10px;
         border-radius: 12px;
