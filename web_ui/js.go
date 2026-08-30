@@ -323,38 +323,6 @@ function buildCombinedAgentData() {
     };
 }
 
-function syncSnapshotEntries(target, incoming, keyFn) {
-    const list = normalizeIncomingList(incoming);
-    const next = [];
-    const seen = new Set();
-
-    list.forEach(function(item) {
-        if (!item) {
-            return;
-        }
-        const key = keyFn(item);
-        if (!key) {
-            return;
-        }
-        const index = next.findIndex(function(existing) {
-            return keyFn(existing) === key;
-        });
-        if (index >= 0) {
-            next[index] = Object.assign({}, next[index], item);
-        } else {
-            next.push(item);
-        }
-        seen.add(key);
-    });
-
-    target.length = 0;
-    next.forEach(function(item) {
-        target.push(item);
-    });
-
-    return seen;
-}
-
 function removeMissingNodes(container, selector, keepKeys, getKey) {
     if (!container) {
         return;
