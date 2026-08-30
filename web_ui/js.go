@@ -5271,7 +5271,6 @@ class lain_net{
                     try {
                         const result = await this.del_net(target, uid);
                         // 后端返回 200 才真正删除元素
-						customLog("delete shell innet:"+result.target);
                         if (result && result.code === 200 && result.uid === uid && result.taskid === AgentTaskId) {
                             customLog("delete shell innet:"+result.target);
                         } else {
