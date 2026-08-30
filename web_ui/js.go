@@ -2443,69 +2443,8 @@ class WebSocketClient {
 
         const dialog = document.getElementById("msg-dialog-" + uid);
         if (dialog && !dialog._msgClosed && dialog.isConnected) {
-            const requestList = dialog.querySelector("#msg-request-list");
-            if (requestList) {
-                requestList.innerHTML = "";
-                msgQueues[uid].forEach(function(raw, i) {
-                    const msgDiv = document.createElement("div");
-                    msgDiv.className = "msg-item";
-                    msgDiv.dataset.reorderable = "true";
-                    msgDiv.dataset.rawMessage = raw;
-                    msgDiv.dataset.sourceIndex = String(i);
-
-                    const left = document.createElement("div");
-                    left.className = "msg-item-main";
-
-                    const handle = document.createElement("button");
-                    handle.type = "button";
-                    handle.className = "msg-drag-handle";
-                    handle.textContent = "⋮⋮";
-                    handle.title = "Drag to reorder";
-                    left.appendChild(handle);
-
-                    const idx = document.createElement("span");
-                    idx.className = "msg-index";
-                    idx.textContent = "[" + String(i).padStart(2, "0") + "] ";
-                    left.appendChild(idx);
-
-                    const span = document.createElement("span");
-                    span.className = "msg-item-text";
-                    span.textContent = raw;
-                    left.appendChild(span);
-
-                    msgDiv.appendChild(left);
-
-                    const btnGroup = document.createElement("div");
-                    btnGroup.className = "msg-item-actions";
-                    const del = document.createElement("button");
-                    del.className = "msg-action-btn msg-delete-btn";
-                    del.textContent = "🗑️";
-                    del.onclick = async function() {
-                        const currentIndex = Number(msgDiv.dataset.sourceIndex || "-1");
-                        if (currentIndex < 0) {
-                            return;
-                        }
-                        try {
-                            const responsePromise = webSocketClient.waitForMessage(
-                                (reply) => reply.path === "delMsgGet" && reply.uid === uid && reply.taskid === AgentTaskId && reply.index === String(currentIndex)
-                            );
-                            const sent = await webSocketClient.send("delMsgGet", {
-                                uid: uid,
-                                index: String(currentIndex),
-                                taskid: AgentTaskId
-                            });
-                            if (!sent) {
-                                return;
-                            }
-                            await responsePromise;
-                        } catch (err) {
-                            console.error("delete msg error:", err);
-                        }
-                    };
-                    btnGroup.appendChild(del);
-                    msgDiv.appendChild(btnGroup);
-                    requestList.appendChild(msgDiv);
-                });
+            if (dialog.querySelector("#msg-request-list")) {
+                scheduleRequestListRender();
             }
         }
     }
@@ -2527,33 +2466,8 @@ class WebSocketClient {
 
         const dialog = document.getElementById("msg-dialog-" + uid);
         if (dialog && !dialog._msgClosed && dialog.isConnected) {
-            const resultList = dialog.querySelector("#msg-result-list");
-            const resultTitle = dialog.querySelector("#msg-result-title");
-            if (resultList) {
-                resultList.innerHTML = "";
-                if (Array.isArray(resultQueues[uid]) && resultQueues[uid].length > 0) {
-                    if (resultTitle) {
-                        resultTitle.style.display = "";
-                    }
-                    resultQueues[uid].forEach(function(raw, i) {
-                        const div = document.createElement("div");
-                        div.className = "msg-item";
-                        div.dataset.resultItem = "true";
-                        div.dataset.resultIndex = String(i);
-
-                        const left = document.createElement("div");
-                        left.className = "msg-item-main";
-                        const span = document.createElement("span");
-                        span.className = "msg-item-text";
-                        span.textContent = raw;
-                        left.appendChild(span);
-                        div.appendChild(left);
-
-                        resultList.appendChild(div);
-                    });
-                } else if (resultTitle) {
-                    resultTitle.style.display = "none";
-                }
+            if (dialog.querySelector("#msg-result-list")) {
+                scheduleResultListRender();
             }
         }
     }
@@ -4493,6 +4407,8 @@ class index{
                         })
                     );
                 });
+
+                dialog._lastMsgSig = getMessageSignature();
             }
 
             function renderResultList() {
@@ -4505,6 +4421,7 @@ class index{
 
                 if (msgPostArray.length === 0) {
                     resultTitle.style.display = "none";
+                    dialog._lastResultSig = getResultSignature();
                     return;
                 }
 
@@ -4523,6 +4440,47 @@ class index{
                 });
 
                 refreshResultIndexes(resultList);
+                dialog._lastResultSig = getResultSignature();
+            }
+
+            let msgRenderFrame = null;
+            let requestRenderPending = false;
+            let resultRenderPending = false;
+
+            function flushScheduledMessageRenders() {
+                msgRenderFrame = null;
+
+                if (dialog._msgClosed || !dialog.isConnected) {
+                    requestRenderPending = false;
+                    resultRenderPending = false;
+                    return;
+                }
+
+                if (requestRenderPending) {
+                    requestRenderPending = false;
+                    renderRequestList();
+                }
+
+                if (resultRenderPending) {
+                    resultRenderPending = false;
+                    renderResultList();
+                }
+            }
+
+            function scheduleRequestListRender() {
+                requestRenderPending = true;
+                if (msgRenderFrame !== null) {
+                    return;
+                }
+                msgRenderFrame = requestAnimationFrame(flushScheduledMessageRenders);
+            }
+
+            function scheduleResultListRender() {
+                resultRenderPending = true;
+                if (msgRenderFrame !== null) {
+                    return;
+                }
+                msgRenderFrame = requestAnimationFrame(flushScheduledMessageRenders);
             }
 
             async function deleteMsg(msgDiv) {
@@ -4547,10 +4505,6 @@ class index{
 
                     const data = await responsePromise;
                     if (data && data.code === 200 && data.uid === uid && data.taskid === AgentTaskId && data.index === String(idx)) {
-                        if (Array.isArray(msgQueues[uid])) {
-                            msgQueues[uid].splice(idx, 1);
-                        }
-                        renderRequestList();
                         customLog("Message deleted");
                     } else {
                         throw new Error(data?.message || "delete failed");
@@ -4601,11 +4555,6 @@ class index{
 
                     const data = await responsePromise;
                     if (data && data.code === 200 && data.uid === uid && data.index === String(realIndex) && data.taskid === AgentTaskId) {
-                        if (Array.isArray(resultQueues[uid])) {
-                            resultQueues[uid].splice(realIndex, 1);
-                        }
-                        msgPostArray.splice(realIndex, 1);
-                        renderResultList();
                         customLog("Result deleted");
                     } else {
                         customLog(data?.message || "Delete failed");
@@ -4798,7 +4747,7 @@ class index{
                     }
 
                     refreshMessageIndexes();
-                    renderRequestList();
+                    scheduleRequestListRender();
                 }
             }
 
@@ -4811,9 +4760,15 @@ class index{
                     if (!ok) return;
                     const response = await responsePromise;
                     if (response && response.data) {
-                        msgQueues[uid] = Array.isArray(response.data) ? response.data : [];
+                        const nextData = Array.isArray(response.data) ? response.data : [];
+                        const nextSig = JSON.stringify(nextData);
+                        if (nextSig === getMessageSignature()) {
+                            dialog._lastMsgSig = nextSig;
+                            return;
+                        }
+                        msgQueues[uid] = nextData;
                         if (!dialog._msgClosed && dialog.isConnected) {
-                            renderRequestList();
+                            scheduleRequestListRender();
                         }
                     }
                 } catch (err) {
@@ -4830,9 +4785,15 @@ class index{
                     if (!ok) return;
                     const response = await responsePromise;
                     if (response && response.data) {
-                        resultQueues[uid] = Array.isArray(response.data) ? response.data : [];
+                        const nextData = Array.isArray(response.data) ? response.data : [];
+                        const nextSig = JSON.stringify(nextData);
+                        if (nextSig === getResultSignature()) {
+                            dialog._lastResultSig = nextSig;
+                            return;
+                        }
+                        resultQueues[uid] = nextData;
                         if (!dialog._msgClosed && dialog.isConnected) {
-                            renderResultList();
+                            scheduleResultListRender();
                         }
                     }
                 } catch (err) {
@@ -4850,13 +4811,13 @@ class index{
 
             function renderAll() {
                 if (dialog._msgClosed || !dialog.isConnected) return;
-                renderRequestList();
-                renderResultList();
+                scheduleRequestListRender();
+                scheduleResultListRender();
             }
 
             function startDataWatcher() {
-                let lastMsgSig = getMessageSignature();
-                let lastResultSig = getResultSignature();
+                dialog._lastMsgSig = getMessageSignature();
+                dialog._lastResultSig = getResultSignature();
 
                 dialog._msgWatchTimer = setInterval(() => {
                     if (dialog._msgClosed || !dialog.isConnected) {
@@ -4869,14 +4830,14 @@ class index{
                     const nextMsgSig = getMessageSignature();
                     const nextResultSig = getResultSignature();
 
-                    if (nextMsgSig !== lastMsgSig) {
-                        lastMsgSig = nextMsgSig;
-                        renderRequestList();
+                    if (nextMsgSig !== dialog._lastMsgSig) {
+                        dialog._lastMsgSig = nextMsgSig;
+                        scheduleRequestListRender();
                     }
 
-                    if (nextResultSig !== lastResultSig) {
-                        lastResultSig = nextResultSig;
-                        renderResultList();
+                    if (nextResultSig !== dialog._lastResultSig) {
+                        dialog._lastResultSig = nextResultSig;
+                        scheduleResultListRender();
                     }
                 }, 300);
             }
