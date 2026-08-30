@@ -292,37 +292,6 @@ function appendUniquePrimitiveList(target, incoming) {
 
     return seen;
 }
-
-function buildCombinedAgentData() {
-    const combined = [];
-    const keys = new Set();
-
-    (Array.isArray(User_data) ? User_data : []).forEach(function(item) {
-        const normalizedItem = normalizeAgentRecord(item);
-        if (!normalizedItem) {
-            return;
-        }
-        const key = getAgentUid(normalizedItem);
-        if (!key) {
-            return;
-        }
-        const index = combined.findIndex(function(existing) {
-            return getAgentUid(existing) === key;
-        });
-        if (index >= 0) {
-            combined[index] = Object.assign({}, combined[index], normalizedItem);
-        } else {
-            combined.push(Object.assign({}, normalizedItem));
-        }
-        keys.add(key);
-    });
-
-    return {
-        data: combined,
-        keys: keys
-    };
-}
-
 function removeMissingNodes(container, selector, keepKeys, getKey) {
     if (!container) {
         return;
