@@ -3119,10 +3119,6 @@ class index{
                                 }
                                 const data = await responsePromise;
                                 if (data && data.code === 200 && data.uid === uid && data.index === String(index) && data.taskid === AgentTaskId) {
-                                    if (Array.isArray(fileQueues[uid])) {
-                                        fileQueues[uid].splice(index, 1);
-                                    }
-                                    listDiv.remove();
                                     customLog("History deleted");
                                 } else {
                                     customLog(data?.message || "Delete failed");
@@ -5275,9 +5271,9 @@ class lain_net{
                     try {
                         const result = await this.del_net(target, uid);
                         // 后端返回 200 才真正删除元素
+						customLog("delete shell innet:"+result.target);
                         if (result && result.code === 200 && result.uid === uid && result.taskid === AgentTaskId) {
                             customLog("delete shell innet:"+result.target);
-                            row.remove();
                         } else {
                             customLog("delete shell innet failed:", result);
                         }
@@ -6563,9 +6559,6 @@ class lain_chat{
             }
             const data = await responsePromise;
             if (data && data.code === 200 && String(data.chatid) === String(chatid)) {
-                if (chatDiv) {
-                    chatDiv.remove();
-                }
                 customLog("Chat deleted");
                 return true;
             } else {
