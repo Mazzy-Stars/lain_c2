@@ -3245,7 +3245,7 @@ func Insert_key(uid, shellname string) {
 	dataConnMu.Unlock()
 }
 
-func cleanupDeletedUID(uid string, delbase bool) {
+func cleanupDeletedUID(uid string, deletedIndex int, delbase bool) {
 	key1Mu.Lock()
 	delete(key1_map, uid)
 	key1Mu.Unlock()
@@ -3263,11 +3263,13 @@ func cleanupDeletedUID(uid string, delbase bool) {
 		delete(uid_base, uid)
 		uidMutex.Unlock()
 	}
+
 	go PushWS(
 		"",
 		"send_delListen",
 		map[string]interface{}{
-			"uid": uid,
+			"uid":   uid,
+			"index": deletedIndex,
 		},
 	)
 }
@@ -3276,37 +3278,30 @@ func deleteConnAtIndex(index int, delbase bool) bool {
 	if index < 0 {
 		return false
 	}
+
 	var uid string
 	dataConnMu.Lock()
 	if index >= len(data_conn.Conns) {
 		dataConnMu.Unlock()
 		return false
 	}
+
 	uid = data_conn.Conns[index].Uid
 	data_conn.Conns = append(
 		data_conn.Conns[:index],
 		data_conn.Conns[index+1:]...,
 	)
 	dataConnMu.Unlock()
-	cleanupDeletedUID(uid, delbase)
-	return true
-}
 
-func DeleteEntry_index(indexStr string, delbase bool) bool {
-	if indexStr == "" {
-		return false
-	}
-	index, err := strconv.Atoi(indexStr)
-	if err != nil {
-		return false
-	}
-	return deleteConnAtIndex(index, delbase)
+	cleanupDeletedUID(uid, index, delbase)
+	return true
 }
 
 func DeleteEntry(delshell string, delbase bool) {
 	if delshell == "" {
 		return
 	}
+
 	dataConnMu.Lock()
 	index := -1
 	for i := range data_conn.Conns {
@@ -3319,15 +3314,16 @@ func DeleteEntry(delshell string, delbase bool) {
 		dataConnMu.Unlock()
 		return
 	}
+
 	uid := data_conn.Conns[index].Uid
 	data_conn.Conns = append(
 		data_conn.Conns[:index],
 		data_conn.Conns[index+1:]...,
 	)
 	dataConnMu.Unlock()
-	cleanupDeletedUID(uid, delbase)
-}
 
+	cleanupDeletedUID(uid, index, delbase)
+}
 // 写入目录列表
 func Put_file_list(uid, file, taskid string, code_rounds map[byte]int) {
 	keyMu.RLock()
