@@ -5422,37 +5422,38 @@ func put_innet(uid, target string, shell_innet []string) {
 		}
 	}
 	clientDataMu.RUnlock()
+	changed := false
 	dataInnetmu.Lock()
-	defer dataInnetmu.Unlock()
 	for i := range data_innet.Innets {
-		innet := &data_innet.Innets[i]
-		if uid == innet.Uid && target == innet.Target {
-			for _, v := range shell_innet {
-				replaced := false
-				for idx := range innet.ShellInnet {
-					if strings.HasPrefix(innet.ShellInnet[idx], v) {
-						innet.ShellInnet[idx] = v
-						replaced = true
-						break
-					}
-				}
-				if !replaced {
-					innet.ShellInnet = append(innet.ShellInnet, v)
-				}
-			}
-			return
-		}
+	    innet := &data_innet.Innets[i]
+	    if uid == innet.Uid && target == innet.Target {
+	        for _, v := range shell_innet {
+	            replaced := false
+	            for idx := range innet.ShellInnet {
+	                if strings.HasPrefix(innet.ShellInnet[idx], v) {
+	                    innet.ShellInnet[idx] = v
+	                    replaced = true
+	                    break
+	                }
+	            }
+	            if !replaced {
+	                innet.ShellInnet = append(innet.ShellInnet, v)
+	            }
+	        }
+	        changed = true
+	        break
+	    }
 	}
-	newInnet := Innet{
-		Uid:        uid,
-		IP:         IP,
-		Target:     target,
-		ShellInnet: shell_innet,
+	if !changed {
+	    data_innet.Innets = append(data_innet.Innets, Innet{
+	        Uid: uid, IP: IP, Target: target, ShellInnet: shell_innet,
+	    })
+	    changed = true
 	}
-	data_innet.Innets = append(data_innet.Innets, newInnet)
-
-	go PushAgentData(uid, "updateGetMsgNet")
-
+	dataInnetmu.Unlock()
+	if changed {
+	    go PushAgentData(uid, "updateGetMsgNet")
+	}
 }
 
 // 写入链接结构体
