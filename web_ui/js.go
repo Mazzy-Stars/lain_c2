@@ -2614,11 +2614,6 @@ class index{
             try {
                 const result = await responsePromise;
                 if (result && result.code === 200 && result.uid === String(index) && result.taskid === AgentTaskId) {
-                    webSocketClient.handleAgentDeletePush({
-                        data: {
-                            uid: String(index)
-                        }
-                    });
                     customLog("Agent removed");
                     return true;
                 }
