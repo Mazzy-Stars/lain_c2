@@ -787,7 +787,19 @@ func User_index() http.HandlerFunc {
 					indexStr, _ := body["uid"].(string)
 					taskid, _ := body["taskid"].(string)
 				
-					del := DeleteEntry_index(indexStr, true)
+					index, err := strconv.Atoi(indexStr)
+					if err != nil {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "delIndex",
+							"uid":     indexStr,
+							"taskid":  taskid,
+							"message": "Invalid index",
+						})
+						break
+					}
+				
+					del := deleteConnAtIndex(index, true)
 					if del {
 						clientWs.WriteJSON(map[string]interface{}{
 							"code":    200,
@@ -798,7 +810,7 @@ func User_index() http.HandlerFunc {
 						})
 					} else {
 						clientWs.WriteJSON(map[string]interface{}{
-							"code":    500,
+							"code":    404,
 							"path":    "delIndex",
 							"uid":     indexStr,
 							"taskid":  taskid,
