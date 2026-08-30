@@ -2101,57 +2101,120 @@ class WebSocketClient {
     }
 
     handleListenDeletePush(msg) {
-        const payload = unwrapMessageData(msg);
-        const uid = String(payload && (payload.uid !== undefined ? payload.uid : "")).trim();
-        if (!uid) {
-            return;
-        }
-
-        listen_data = Array.isArray(listen_data)
-            ? listen_data.filter(function(item) {
-                return String(item && item.uid !== undefined ? item.uid : "") !== uid;
-            })
-            : [];
-
-        const container = document.getElementById("container-" + uid);
-        if (container) {
-            container.remove();
-        }
-    }
+	    const payload = unwrapMessageData(msg);
+	    const uid = String(payload && (payload.uid !== undefined ? payload.uid : "")).trim();
+	    if (!uid) {
+	        return;
+	    }
+	
+	    const hadListenItem = Array.isArray(listen_data) && listen_data.some(function(item) {
+	        return getAgentUid(item) === uid;
+	    });
+	    const container = document.getElementById("container-" + uid);
+	
+	    if (!hadListenItem && !container) {
+	        return;
+	    }
+	
+	    if (hadListenItem) {
+	        listen_data = listen_data.filter(function(item) {
+	            return getAgentUid(item) !== uid;
+	        });
+	    }
+	
+	    if (container) {
+	        container.remove();
+	    }
+	}
 
     handleAgentDeletePush(msg) {
-        const payload = unwrapMessageData(msg);
-        const uid = String(payload && (payload.uid !== undefined ? payload.uid : "")).trim();
-        if (!uid) {
-            return;
-        }
-
-        msgQueues[uid] = [];
-        resultQueues[uid] = [];
-        fileQueues[uid] = [];
-
-        User_data = Array.isArray(User_data)
-            ? User_data.filter(function(item) {
-                return String(item && item.uid !== undefined ? item.uid : "") !== uid;
-            })
-            : [];
-
-        Object.keys(pendingCheckTimes).forEach(function(key) {
-            if (String(key) === uid) {
-                delete pendingCheckTimes[key];
-            }
-        });
-
-        const userCard = document.getElementById(uid + "info");
-        if (userCard) {
-            userCard.remove();
-        }
-
-        const indexInstance = new lain_index();
-        indexInstance.renderUserList(User_data);
-        net_init();
-        rebuildServerClientCounts(User_data);
-    }
+	    const payload = unwrapMessageData(msg);
+	    const uid = String(payload && (payload.uid !== undefined ? payload.uid : "")).trim();
+	    if (!uid) {
+	        return;
+	    }
+	
+	    const hadUser = Array.isArray(User_data) && User_data.some(function(item) {
+	        return getAgentUid(item) === uid;
+	    });
+	    const hadPendingCheck = Object.prototype.hasOwnProperty.call(pendingCheckTimes, uid);
+	    const hadMsgQueue = Object.prototype.hasOwnProperty.call(msgQueues, uid);
+	    const hadResultQueue = Object.prototype.hasOwnProperty.call(resultQueues, uid);
+	    const hadFileQueue = Object.prototype.hasOwnProperty.call(fileQueues, uid);
+	    const hadNetList = !!window.netListData && Object.prototype.hasOwnProperty.call(window.netListData, uid);
+	    const hadShellInnet = !!window.shellInnetData && Object.prototype.hasOwnProperty.call(window.shellInnetData, uid);
+	    const hadTerminal = !!window.terminalSessions && Object.prototype.hasOwnProperty.call(window.terminalSessions, uid);
+	    const hadFileManager = !!window.fileManagerSessions && Object.prototype.hasOwnProperty.call(window.fileManagerSessions, uid);
+	
+	    const userCard = document.getElementById(uid + "info");
+	    const msgDialog = document.getElementById("msg-dialog-" + uid);
+	
+	    if (
+	        !hadUser &&
+	        !hadPendingCheck &&
+	        !hadMsgQueue &&
+	        !hadResultQueue &&
+	        !hadFileQueue &&
+	        !hadNetList &&
+	        !hadShellInnet &&
+	        !hadTerminal &&
+	        !hadFileManager &&
+	        !userCard &&
+	        !msgDialog
+	    ) {
+	        return;
+	    }
+	
+	    delete msgQueues[uid];
+	    delete resultQueues[uid];
+	    delete fileQueues[uid];
+	    delete pendingCheckTimes[uid];
+	
+	    if (checkTimeTimers[uid]) {
+	        clearTimeout(checkTimeTimers[uid]);
+	        delete checkTimeTimers[uid];
+	    }
+	    delete checkTimeState[uid];
+	
+	    if (window.netListData) {
+	        delete window.netListData[uid];
+	    }
+	    if (window.shellInnetData) {
+	        delete window.shellInnetData[uid];
+	    }
+	    if (window.terminalSessions) {
+	        delete window.terminalSessions[uid];
+	    }
+	    if (window.fileManagerSessions) {
+	        delete window.fileManagerSessions[uid];
+	    }
+	
+	    if (hadUser) {
+	        User_data = User_data.filter(function(item) {
+	            return getAgentUid(item) !== uid;
+	        });
+	    }
+	
+	    if (userCard) {
+	        userCard.remove();
+	    }
+	
+	    if (msgDialog) {
+	        msgDialog._msgClosed = true;
+	        if (msgDialog._msgWatchTimer) {
+	            clearInterval(msgDialog._msgWatchTimer);
+	            msgDialog._msgWatchTimer = null;
+	        }
+	        msgDialog.remove();
+	    }
+	
+	    if (hadUser || userCard || hadPendingCheck || hadNetList || hadShellInnet) {
+	        const indexInstance = new lain_index();
+	        indexInstance.renderUserList(User_data);
+	        net_init();
+	        rebuildServerClientCounts(User_data);
+	    }
+	}
 
     handleAgentList(msg) {
         const nextUserData = this.parseAgentData(msg);
@@ -2590,46 +2653,42 @@ class index{
             return sent ? uid : false;
         }
         async del(index, info = "") {
-            const confirmed = await customConfirm("confirm?");
-            if (!confirmed) {
-                return false;
-            }
-            const responsePromise = webSocketClient.waitForMessage(
-                (msg) => msg.path === "delIndex" &&
-                 msg.code === 200 &&
-                  msg.uid === String(index) &&
-                  msg.taskid === AgentTaskId,
-            )
-            const sent = await webSocketClient.send(
-                "delIndex",
-                {
-                    uid: String(index),
-                    taskid: AgentTaskId
-                }
-            );
-            if (!sent) {
-                customLog("Delete agent failed");
-                return false;
-            }
-            try {
-                const result = await responsePromise;
-                if (result && result.code === 200 && result.uid === String(index) && result.taskid === AgentTaskId) {
-					const uid = String(listen_data[index]?.uid || "");
-					if (uid) {
-					    webSocketClient.handleListenDeletePush({
-					        data: { uid: uid }
-					    });
-					}
-                    customLog("Agent removed");
-                    return true;
-                }
-                customLog("Delete agent failed:", result);
-                return false;
-            } catch (err) {
-                customLog("Delete agent error:", err.message);
-                return false;
-            }
-        }
+		    const confirmed = await customConfirm("confirm?");
+		    if (!confirmed) {
+		        return false;
+		    }
+		
+		    const responsePromise = webSocketClient.waitForMessage(
+		        (msg) =>
+		            msg.path === "delIndex" &&
+		            msg.code === 200 &&
+		            msg.uid === String(index) &&
+		            msg.taskid === AgentTaskId
+		    );
+		
+		    const sent = await webSocketClient.send("delIndex", {
+		        uid: String(index),
+		        taskid: AgentTaskId
+		    });
+		
+		    if (!sent) {
+		        customLog("Delete agent failed");
+		        return false;
+		    }
+		
+		    try {
+		        const result = await responsePromise;
+		        if (result && result.code === 200 && result.uid === String(index) && result.taskid === AgentTaskId) {
+		            customLog("Agent removed");
+		            return true;
+		        }
+		        customLog("Delete agent failed:", result);
+		        return false;
+		    } catch (err) {
+		        customLog("Delete agent error:", err.message);
+		        return false;
+		    }
+		}
     }
       
       class lain_terminal{
@@ -4965,47 +5024,43 @@ class index{
 		    delete pendingCheckTimes[item.uid];
 		}
 		
-        async del(uid){
-            const right = await customConfirm("confirm?");
-            if(!right){
-                return false;
-            }
-            const responsePromise = webSocketClient.waitForMessage(
-                (msg) => msg.path === "delInfo" &&
-                 msg.code === 200 && 
-                 msg.uid === uid &&
-                 msg.taskid === AgentTaskId
-            );
-            const sent = await webSocketClient.send(
-                "delInfo",
-                {
-                    uid: uid,
-                    taskid: AgentTaskId
-                }
-            );
-            if(!sent){
-                customLog("Delete agent failed");
-                return false;
-            }
-            try {
-                const result = await responsePromise;
-                if(result && result.code === 200 && result.uid === uid && result.taskid === AgentTaskId){
-                    webSocketClient.handleAgentDeletePush({
-                        data: {
-                            uid: uid,
-                            taskid: AgentTaskId
-                        }
-                    });
-                    customLog("Agent removed");
-                    return true;
-                }
-                customLog("Delete agent failed:", result);
-                return false;
-            } catch(err) {
-                customLog("Delete agent error:", err.message);
-                return false;
-            }
-        }
+        async del(uid) {
+		    const right = await customConfirm("confirm?");
+		    if (!right) {
+		        return false;
+		    }
+		
+		    const responsePromise = webSocketClient.waitForMessage(
+		        (msg) =>
+		            msg.path === "delInfo" &&
+		            msg.code === 200 &&
+		            msg.uid === uid &&
+		            msg.taskid === AgentTaskId
+		    );
+		
+		    const sent = await webSocketClient.send("delInfo", {
+		        uid: uid,
+		        taskid: AgentTaskId
+		    });
+		
+		    if (!sent) {
+		        customLog("Delete agent failed");
+		        return false;
+		    }
+		
+		    try {
+		        const result = await responsePromise;
+		        if (result && result.code === 200 && result.uid === uid && result.taskid === AgentTaskId) {
+		            customLog("Agent removed");
+		            return true;
+		        }
+		        customLog("Delete agent failed:", result);
+		        return false;
+		    } catch (err) {
+		        customLog("Delete agent error:", err.message);
+		        return false;
+		    }
+		}
     populateLootCard(card, entry) {
         if (!card) {
             return;
