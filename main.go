@@ -786,7 +786,7 @@ func User_index() http.HandlerFunc {
 				case "delIndex":
 					uid, _ := body["uid"].(string)
 					taskid, _ := body["taskid"].(string)
-					del := DeleteEntry_index(uid, true)
+					del := DeleteEntry(uid, true)
 					if del {
 						clientWs.WriteJSON(map[string]interface{}{
 							"code":    200,
