@@ -2097,14 +2097,14 @@ class WebSocketClient {
     handleListenDeletePush(msg) {
         const payload = unwrapMessageData(msg);
         const uid = String(payload && (payload.uid !== undefined ? payload.uid : "")).trim();
-        const rawIndex = payload && payload.index !== undefined ? payload.index : "";
-        const index = Number.parseInt(String(rawIndex), 10);
+        const rawDeleteIndex = payload && payload.index !== undefined ? payload.index : "";
+        const deleteIndex = Number.parseInt(String(rawDeleteIndex), 10);
 
         let changed = false;
 
         if (Array.isArray(listen_data)) {
-            if (Number.isInteger(index) && index >= 0 && index < listen_data.length) {
-                listen_data.splice(index, 1);
+            if (Number.isInteger(deleteIndex) && deleteIndex >= 0 && deleteIndex < listen_data.length) {
+                listen_data.splice(deleteIndex, 1);
                 changed = true;
             } else if (uid) {
                 const currentIndex = listen_data.findIndex(function(item) {
