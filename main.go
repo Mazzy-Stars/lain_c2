@@ -5439,24 +5439,26 @@ func put_innet(uid, target string, shell_innet []string) {
 		}
 	}
 	clientDataMu.RUnlock()
+
+	newInnet := Innet{
+		Uid:        uid,
+		IP:         IP,
+		Target:     target,
+		ShellInnet: append([]string(nil), shell_innet...),
+	}
+
 	changed := false
 	dataInnetmu.Lock()
 	for i := range data_innet.Innets {
-		innet := &data_innet.Innets[i]
-		if uid == innet.Uid && target == innet.Target {
-			innet.IP = IP
-			innet.ShellInnet = append([]string(nil), shell_innet...)
+		if uid == data_innet.Innets[i].Uid && target == data_innet.Innets[i].Target {
+			data_innet.Innets = append(data_innet.Innets[:i], data_innet.Innets[i+1:]...)
+			data_innet.Innets = append(data_innet.Innets, newInnet)
 			changed = true
 			break
 		}
 	}
 	if !changed {
-		data_innet.Innets = append(data_innet.Innets, Innet{
-			Uid:        uid,
-			IP:         IP,
-			Target:     target,
-			ShellInnet: append([]string(nil), shell_innet...),
-		})
+		data_innet.Innets = append(data_innet.Innets, newInnet)
 		changed = true
 	}
 	dataInnetmu.Unlock()
