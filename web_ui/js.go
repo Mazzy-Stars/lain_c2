@@ -1742,18 +1742,13 @@ class WebSocketClient {
                 }
                 break;
             case "getFileCache":
-                if (msg.data) {
-                    let uid = msg.data.uid;
-                    fileQueues[uid] = Array.isArray(msg.data.data) ?
-                        msg.data.data :
-                        [];
-                    const fileManager = window.fileManagerSessions ?
-                        window.fileManagerSessions[uid] :
-                        null;
+                if (msg) {
+                    const uid = msg.uid;
+                    fileQueues[uid] = Array.isArray(msg.data) ? msg.data : [];
+                    const fileManager = window.fileManagerSessions ? window.fileManagerSessions[uid] : null;
                     if (fileManager) {
                         fileManager.history_file(uid);
-                    } else if (window.activeFileManager &&
-                        window.activeFileManager.uid === uid) {
+                    } else if (window.activeFileManager && window.activeFileManager.uid === uid) {
                         window.activeFileManager.history_file(uid);
                     }
                 }
