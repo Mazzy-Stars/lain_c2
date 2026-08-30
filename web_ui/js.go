@@ -1823,7 +1823,6 @@ class WebSocketClient {
                 this.handleFileQueueDeletePush(msg);
                 break;
             case "send_delInfo":
-            case "send_delWinInfo":
                 this.handleAgentDeletePush(msg);
                 break;
             case "send_deleteChat":
@@ -2126,6 +2125,10 @@ class WebSocketClient {
         if (!uid) {
             return;
         }
+
+        msgQueues[uid] = [];
+        resultQueues[uid] = [];
+        fileQueues[uid] = [];
 
         User_data = Array.isArray(User_data)
             ? User_data.filter(function(item) {
@@ -4986,9 +4989,6 @@ class index{
             try {
                 const result = await responsePromise;
                 if(result && result.code === 200 && result.uid === uid && result.taskid === AgentTaskId){
-                    msgQueues[uid] = [];
-                    resultQueues[uid] = [];
-                    fileQueues[uid] = [];
                     webSocketClient.handleAgentDeletePush({
                         data: {
                             uid: uid,
