@@ -784,16 +784,25 @@ func User_index() http.HandlerFunc {
 						})
 					}
 				case "delIndex":
-					uid, _ := body["uid"].(string)
+					indexStr, _ := body["uid"].(string)
 					taskid, _ := body["taskid"].(string)
-					del := DeleteEntry(uid, true)
+				
+					del := DeleteEntry_index(indexStr, true)
 					if del {
 						clientWs.WriteJSON(map[string]interface{}{
 							"code":    200,
 							"path":    "delIndex",
-							"uid":     uid,
+							"uid":     indexStr,
 							"taskid":  taskid,
 							"message": "Successfully deleted target",
+						})
+					} else {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    500,
+							"path":    "delIndex",
+							"uid":     indexStr,
+							"taskid":  taskid,
+							"message": "Delete target failed",
 						})
 					}
 				case "delInfo":
