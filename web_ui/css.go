@@ -946,6 +946,12 @@ button:hover {
     width: 20%;
     min-width: 80px;
     max-width: 80vw;
+    min-height: 0;
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
     font-size: 14px;
     color: #555;
     transition: width 0.1s;
@@ -1946,6 +1952,9 @@ button:hover {
         min-width: 0 !important;
         max-width: none !important;
         max-height: 132px;
+        min-height: 0;
+        overflow-y: auto;
+        overflow-x: hidden;
         margin-right: 0;
         margin-bottom: 10px;
         padding-right: 0;
@@ -2916,6 +2925,11 @@ button:hover {
 .file-dialog .file-history {
     background: linear-gradient(180deg, #fbfdff 0%, #f4f8fb 100%);
     border-right: 1px solid #e4ebf1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
 }
 
 .file-dialog .filecontainer {
