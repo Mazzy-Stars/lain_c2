@@ -706,7 +706,7 @@ function buildClientCardNode(client, index) {
     btnReceive.className = 'btn receive';
     btnReceive.dataset.role = 'receive';
     btnReceive.onclick = () => {
-        await del_conn(String(index));
+        del_conn(String(index));
     };
 
     const btnRemove = document.createElement('button');
