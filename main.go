@@ -4985,10 +4985,10 @@ func getInnet(uid string) []Innet {
 func updateInnet(uid string) Innet {
 	dataInnetmu.RLock()
 	defer dataInnetmu.RUnlock()
-	for i := range data_innet.Innets {
-		innet := &data_innet.Innets[i]
-		if uid == innet.Uid {
-			return *innet
+
+	for i := len(data_innet.Innets) - 1; i >= 0; i-- {
+		if data_innet.Innets[i].Uid == uid {
+			return data_innet.Innets[i]
 		}
 	}
 	return Innet{}
@@ -5425,34 +5425,27 @@ func put_innet(uid, target string, shell_innet []string) {
 	changed := false
 	dataInnetmu.Lock()
 	for i := range data_innet.Innets {
-	    innet := &data_innet.Innets[i]
-	    if uid == innet.Uid && target == innet.Target {
-	        for _, v := range shell_innet {
-	            replaced := false
-	            for idx := range innet.ShellInnet {
-	                if strings.HasPrefix(innet.ShellInnet[idx], v) {
-	                    innet.ShellInnet[idx] = v
-	                    replaced = true
-	                    break
-	                }
-	            }
-	            if !replaced {
-	                innet.ShellInnet = append(innet.ShellInnet, v)
-	            }
-	        }
-	        changed = true
-	        break
-	    }
+		innet := &data_innet.Innets[i]
+		if uid == innet.Uid && target == innet.Target {
+			innet.IP = IP
+			innet.ShellInnet = append([]string(nil), shell_innet...)
+			changed = true
+			break
+		}
 	}
 	if !changed {
-	    data_innet.Innets = append(data_innet.Innets, Innet{
-	        Uid: uid, IP: IP, Target: target, ShellInnet: shell_innet,
-	    })
-	    changed = true
+		data_innet.Innets = append(data_innet.Innets, Innet{
+			Uid:        uid,
+			IP:         IP,
+			Target:     target,
+			ShellInnet: append([]string(nil), shell_innet...),
+		})
+		changed = true
 	}
 	dataInnetmu.Unlock()
+
 	if changed {
-	    go PushAgentData(uid, "updateGetMsgNet")
+		go PushAgentData(uid, "updateGetMsgNet")
 	}
 }
 
