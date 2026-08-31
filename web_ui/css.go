@@ -1570,6 +1570,60 @@ button:hover {
 .chat_message::selection {
     background: rgba(0, 120, 215, 0.3);
 }
+@media (max-width: 768px) {
+    .chat {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding: 0 10px 12px;
+        box-sizing: border-box;
+    }
+
+    .chat_container {
+        width: 100%;
+        max-width: none;
+        max-height: calc(100vh - 220px);
+        padding: 8px;
+        gap: 8px;
+    }
+
+    .chat_input_wrapper {
+        left: auto;
+        bottom: auto;
+        width: 100%;
+        margin: 0;
+        padding: 8px 10px;
+        border-radius: 16px;
+    }
+
+    .chat_input {
+        font-size: 16px;
+        margin: 0 6px;
+    }
+
+    .chat_icon_left,
+    .chat_icon_right {
+        font-size: 14px;
+        padding: 4px 8px;
+    }
+
+    .chat_message {
+        max-width: 88%;
+        min-width: 0;
+        padding: 8px 10px;
+        font-size: 13px;
+        line-height: 1.35;
+    }
+
+    .chat_time {
+        font-size: 11px;
+    }
+
+    .pending_file_preview {
+        font-size: 13px;
+        padding: 5px 8px;
+    }
+}
 .pending_file {
     opacity: 0.6;
     font-style: italic;
