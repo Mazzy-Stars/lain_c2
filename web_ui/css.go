@@ -354,15 +354,17 @@ html, body {
         left: 0px;
         width: 100%; /* 鐠嬪啯鏆ｉ弮銉ョ箶闁劌鍨庨惃鍕啍鎼达拷 */
     }
-    .tle-sidebar {
-        display: none; /* 閸掓繂顫愰梾鎰 */
-        background: #f4f4f4;
-        padding: 10px;
-        border: 1px solid #ccc;
-        width: 200px;
-        position: absolute;
-        top: 50px;
-    }
+    .tle-sidebar{
+        display:none;
+        position:fixed;
+        top:50px;
+        left:0;
+        z-index:2147483647;
+        background:#f4f4f4;
+        padding:10px;
+        border:1px solid #ccc;
+        width:200px;
+        }
     .tel-toggleBtn {
         display: block; /* 缁夎濮╃粩顖涙▔缁€鐑樺瘻闁斤拷 */
         padding: 10px 15px;
@@ -1590,7 +1592,7 @@ button:hover {
     .chat_input_wrapper {
         left: auto;
         bottom: auto;
-        width: 100%;
+        width: 88%;
         margin: 0;
         padding: 8px 10px;
         border-radius: 16px;
