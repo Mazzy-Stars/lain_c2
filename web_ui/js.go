@@ -292,6 +292,69 @@ function appendUniquePrimitiveList(target, incoming) {
 
     return seen;
 }
+
+function buildCombinedAgentData() {
+    const combined = [];
+    const keys = new Set();
+
+    (Array.isArray(User_data) ? User_data : []).forEach(function(item) {
+        const normalizedItem = normalizeAgentRecord(item);
+        if (!normalizedItem) {
+            return;
+        }
+        const key = getAgentUid(normalizedItem);
+        if (!key) {
+            return;
+        }
+        const index = combined.findIndex(function(existing) {
+            return getAgentUid(existing) === key;
+        });
+        if (index >= 0) {
+            combined[index] = Object.assign({}, combined[index], normalizedItem);
+        } else {
+            combined.push(Object.assign({}, normalizedItem));
+        }
+        keys.add(key);
+    });
+
+    return {
+        data: combined,
+        keys: keys
+    };
+}
+
+function syncSnapshotEntries(target, incoming, keyFn) {
+    const list = normalizeIncomingList(incoming);
+    const next = [];
+    const seen = new Set();
+
+    list.forEach(function(item) {
+        if (!item) {
+            return;
+        }
+        const key = keyFn(item);
+        if (!key) {
+            return;
+        }
+        const index = next.findIndex(function(existing) {
+            return keyFn(existing) === key;
+        });
+        if (index >= 0) {
+            next[index] = Object.assign({}, next[index], item);
+        } else {
+            next.push(item);
+        }
+        seen.add(key);
+    });
+
+    target.length = 0;
+    next.forEach(function(item) {
+        target.push(item);
+    });
+
+    return seen;
+}
+
 function removeMissingNodes(container, selector, keepKeys, getKey) {
     if (!container) {
         return;
@@ -697,11 +760,11 @@ function updateClientCardNode(container, client, index) {
     }
 
     const btnRemove = container.querySelector('[data-role="remove"]');
-	if (btnRemove) {
-	    btnRemove.onclick = async () => {
-	        await del_conn(String(index));
-	    };
-	}
+    if (btnRemove) {
+        btnRemove.onclick = async () => {
+            await del_conn(String(index));
+        };
+    }
 }
 
 function buildServerCardHtml(server) {
@@ -2034,44 +2097,41 @@ class WebSocketClient {
     handleListenDeletePush(msg) {
         const payload = unwrapMessageData(msg);
         const uid = String(payload && (payload.uid !== undefined ? payload.uid : "")).trim();
-        const rawDeleteIndex = payload && payload.index !== undefined ? payload.index : "";
-        const deleteIndex = Number.parseInt(String(rawDeleteIndex), 10);
-
+        const rawIndex = payload && payload.index !== undefined ? payload.index : "";
+        const index = Number.parseInt(String(rawIndex), 10);
+        const listenDiv = document.getElementById("div_conn");
+        const listenState = listenDiv ? snapshotViewState(listenDiv, {
+            stickToBottom: true,
+            threshold: 80
+        }) : null;
         let changed = false;
 
         if (Array.isArray(listen_data)) {
-            if (Number.isInteger(deleteIndex) && deleteIndex >= 0 && deleteIndex < listen_data.length) {
-                listen_data.splice(deleteIndex, 1);
+            if (Number.isInteger(index) && index >= 0 && index < listen_data.length) {
+                listen_data.splice(index, 1);
                 changed = true;
             } else if (uid) {
-                const currentIndex = listen_data.findIndex(function(item) {
-                    return getAgentUid(item) === uid;
+                const nextListenData = listen_data.filter(function(item) {
+                    return getAgentUid(item) !== uid;
                 });
-                if (currentIndex >= 0) {
-                    listen_data.splice(currentIndex, 1);
+                if (nextListenData.length !== listen_data.length) {
+                    listen_data.length = 0;
+                    Array.prototype.push.apply(listen_data, nextListenData);
                     changed = true;
                 }
             }
         }
 
-        if (!changed) {
+        if (!changed && !listenDiv) {
             return;
         }
 
-        const listenDiv = document.getElementById("div_conn");
-        if (!listenDiv) {
-            return;
+        if (listenDiv) {
+            listenDiv.innerHTML = "";
+            const indexInstance = new index();
+            indexInstance.renderClients(listen_data);
+            restoreViewState(listenDiv, listenState);
         }
-
-        const listenState = snapshotViewState(listenDiv, {
-            stickToBottom: true,
-            threshold: 80
-        });
-
-        listenDiv.innerHTML = "";
-        const indexInstance = new index();
-        indexInstance.renderClients(listen_data);
-        restoreViewState(listenDiv, listenState);
     }
 
     handleAgentDeletePush(msg) {
@@ -2456,8 +2516,11 @@ class WebSocketClient {
 
         const dialog = document.getElementById("msg-dialog-" + uid);
         if (dialog && !dialog._msgClosed && dialog.isConnected) {
-            if (dialog.querySelector("#msg-request-list")) {
-                scheduleRequestListRender();
+            if (
+                dialog.querySelector("#msg-request-list") &&
+                typeof dialog._scheduleRequestListRender === "function"
+            ) {
+                dialog._scheduleRequestListRender();
             }
         }
     }
@@ -2479,8 +2542,11 @@ class WebSocketClient {
 
         const dialog = document.getElementById("msg-dialog-" + uid);
         if (dialog && !dialog._msgClosed && dialog.isConnected) {
-            if (dialog.querySelector("#msg-result-list")) {
-                scheduleResultListRender();
+            if (
+                dialog.querySelector("#msg-result-list") &&
+                typeof dialog._scheduleResultListRender === "function"
+            ) {
+                dialog._scheduleResultListRender();
             }
         }
     }
@@ -2557,42 +2623,38 @@ window.addEventListener("beforeunload", ()=>{
 
 class index{
     renderClients(clients){
-	    if (typeof clients === "string") {
-	        try {
-	            clients = JSON.parse(clients);
-	        } catch (e) {
-	            console.error("Invalid JSON data", e);
-	            return;
-	        }
-	    }
-	
-	    var div = document.getElementById('div_conn');
-	    if (!div) {
-	        return;
-	    }
-	
-	    if (!clients || !Array.isArray(clients)) {
-	        console.error("Invalid clients data");
-	        return;
-	    }
-	
-	    if (clients.length === 0) {
-	        div.innerHTML = "";
-	        return;
-	    }
-	
-	    for (let i = 0; i < clients.length; i++) {
-	        let c = clients[i];
-	        var oldContainer = document.getElementById("container-" + c.uid);
-	        if (oldContainer && oldContainer.parentNode === div) {
-	            updateClientCardNode(oldContainer, c, i);
-	            div.appendChild(oldContainer);
-	        } else {
-	            var container = buildClientCardNode(c, i);
-	            div.appendChild(container);
-	        }
-	    }
-	}
+        if (typeof clients === "string") {
+            try {
+                clients = JSON.parse(clients);
+            } catch (e) {
+                console.error("Invalid JSON data", e);
+                return;
+            }
+        }
+        var div = document.getElementById('div_conn');
+        if (!div) {
+            return;
+        }
+        if (!clients || !Array.isArray(clients)) {
+            console.error("Invalid clients data");
+            return;
+        }
+        if (clients.length === 0) {
+            div.innerHTML = "";
+            return;
+        }
+        for(let i = 0; i < clients.length; i++){
+            let c = clients[i];
+            var oldContainer = document.getElementById("container-" + c.uid);
+            if (oldContainer && oldContainer.parentNode === div) {
+                updateClientCardNode(oldContainer, c, i);
+                div.appendChild(oldContainer);
+            } else {
+                var container = buildClientCardNode(c, i);
+                div.appendChild(container);
+            }
+        }
+    }
         async get(uid,shellname){
             const confirm1 = await customConfirm("confirm?");
             if(!confirm1){
@@ -4150,6 +4212,8 @@ class index{
                 }
 
                 dialog._msgClosed = true;
+                dialog._scheduleRequestListRender = null;
+                dialog._scheduleResultListRender = null;
 
                 if (dialog._msgWatchTimer) {
                     clearInterval(dialog._msgWatchTimer);
@@ -4496,6 +4560,9 @@ class index{
                 }
                 msgRenderFrame = requestAnimationFrame(flushScheduledMessageRenders);
             }
+
+            dialog._scheduleRequestListRender = scheduleRequestListRender;
+            dialog._scheduleResultListRender = scheduleResultListRender;
 
             async function deleteMsg(msgDiv) {
                 const requestList = getRequestList();
@@ -7861,3 +7928,4 @@ if (!window.fileDialogButtonBound) {
 		}
 	}
 }
+
