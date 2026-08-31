@@ -292,7 +292,6 @@ function appendUniquePrimitiveList(target, incoming) {
 
     return seen;
 }
-
 function removeMissingNodes(container, selector, keepKeys, getKey) {
     if (!container) {
         return;
@@ -698,11 +697,11 @@ function updateClientCardNode(container, client, index) {
     }
 
     const btnRemove = container.querySelector('[data-role="remove"]');
-    if (btnRemove) {
-        btnRemove.onclick = async () => {
-            await del_conn(String(index));
-        };
-    }
+	if (btnRemove) {
+	    btnRemove.onclick = async () => {
+	        await del_conn(String(index));
+	    };
+	}
 }
 
 function buildServerCardHtml(server) {
@@ -2035,41 +2034,44 @@ class WebSocketClient {
     handleListenDeletePush(msg) {
         const payload = unwrapMessageData(msg);
         const uid = String(payload && (payload.uid !== undefined ? payload.uid : "")).trim();
-        const rawIndex = payload && payload.index !== undefined ? payload.index : "";
-        const index = Number.parseInt(String(rawIndex), 10);
-        const listenDiv = document.getElementById("div_conn");
-        const listenState = listenDiv ? snapshotViewState(listenDiv, {
-            stickToBottom: true,
-            threshold: 80
-        }) : null;
+        const rawDeleteIndex = payload && payload.index !== undefined ? payload.index : "";
+        const deleteIndex = Number.parseInt(String(rawDeleteIndex), 10);
+
         let changed = false;
 
         if (Array.isArray(listen_data)) {
-            if (Number.isInteger(index) && index >= 0 && index < listen_data.length) {
-                listen_data.splice(index, 1);
+            if (Number.isInteger(deleteIndex) && deleteIndex >= 0 && deleteIndex < listen_data.length) {
+                listen_data.splice(deleteIndex, 1);
                 changed = true;
             } else if (uid) {
-                const nextListenData = listen_data.filter(function(item) {
-                    return getAgentUid(item) !== uid;
+                const currentIndex = listen_data.findIndex(function(item) {
+                    return getAgentUid(item) === uid;
                 });
-                if (nextListenData.length !== listen_data.length) {
-                    listen_data.length = 0;
-                    Array.prototype.push.apply(listen_data, nextListenData);
+                if (currentIndex >= 0) {
+                    listen_data.splice(currentIndex, 1);
                     changed = true;
                 }
             }
         }
 
-        if (!changed && !listenDiv) {
+        if (!changed) {
             return;
         }
 
-        if (listenDiv) {
-            listenDiv.innerHTML = "";
-            const indexInstance = new index();
-            indexInstance.renderClients(listen_data);
-            restoreViewState(listenDiv, listenState);
+        const listenDiv = document.getElementById("div_conn");
+        if (!listenDiv) {
+            return;
         }
+
+        const listenState = snapshotViewState(listenDiv, {
+            stickToBottom: true,
+            threshold: 80
+        });
+
+        listenDiv.innerHTML = "";
+        const indexInstance = new index();
+        indexInstance.renderClients(listen_data);
+        restoreViewState(listenDiv, listenState);
     }
 
     handleAgentDeletePush(msg) {
@@ -2561,38 +2563,42 @@ window.addEventListener("beforeunload", ()=>{
 
 class index{
     renderClients(clients){
-        if (typeof clients === "string") {
-            try {
-                clients = JSON.parse(clients);
-            } catch (e) {
-                console.error("Invalid JSON data", e);
-                return;
-            }
-        }
-        var div = document.getElementById('div_conn');
-        if (!div) {
-            return;
-        }
-        if (!clients || !Array.isArray(clients)) {
-            console.error("Invalid clients data");
-            return;
-        }
-        if (clients.length === 0) {
-            div.innerHTML = "";
-            return;
-        }
-        for(let i = 0; i < clients.length; i++){
-            let c = clients[i];
-            var oldContainer = document.getElementById("container-" + c.uid);
-            if (oldContainer && oldContainer.parentNode === div) {
-                updateClientCardNode(oldContainer, c, i);
-                div.appendChild(oldContainer);
-            } else {
-                var container = buildClientCardNode(c, i);
-                div.appendChild(container);
-            }
-        }
-    }
+	    if (typeof clients === "string") {
+	        try {
+	            clients = JSON.parse(clients);
+	        } catch (e) {
+	            console.error("Invalid JSON data", e);
+	            return;
+	        }
+	    }
+	
+	    var div = document.getElementById('div_conn');
+	    if (!div) {
+	        return;
+	    }
+	
+	    if (!clients || !Array.isArray(clients)) {
+	        console.error("Invalid clients data");
+	        return;
+	    }
+	
+	    if (clients.length === 0) {
+	        div.innerHTML = "";
+	        return;
+	    }
+	
+	    for (let i = 0; i < clients.length; i++) {
+	        let c = clients[i];
+	        var oldContainer = document.getElementById("container-" + c.uid);
+	        if (oldContainer && oldContainer.parentNode === div) {
+	            updateClientCardNode(oldContainer, c, i);
+	            div.appendChild(oldContainer);
+	        } else {
+	            var container = buildClientCardNode(c, i);
+	            div.appendChild(container);
+	        }
+	    }
+	}
         async get(uid,shellname){
             const confirm1 = await customConfirm("confirm?");
             if(!confirm1){
@@ -7866,4 +7872,3 @@ if (!window.fileDialogButtonBound) {
 		}
 	}
 }
-
