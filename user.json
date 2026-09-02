@@ -1,12 +1,12 @@
 {
-    "users": [
-        {
-            "username": "138498ac70857dc17009596f",
-            "password": "202cb962ac59075b964b0715"
-        },
-        {
-            "username": "8891c81db8392d8e401378ef",
-            "password": "202cb962ac59075b964b0715"
-        }
-    ]
+  "users": [
+    {
+      "username": "21232f297a57a5a743894a0e4a801fc3",
+      "password": "e10adc3949ba59abbe56e057f20f883e"
+    },
+    {
+      "username": "c39d4ff68db6d8db159cddf8032065a5",
+      "password": "c39d4ff68db6d8db159cddf8032065a5"
+    }
+  ]
 }
