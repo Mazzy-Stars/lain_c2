@@ -87,6 +87,9 @@ var (
 	/*不可清理*/
 	logger = &MyLog{}
 	/*不可清理*/ log_word = make(map[string]string)
+
+	/*不可清理*/ loggerMu sync.RWMutex
+	/*不可清理*/ WhiteMu sync.RWMutex
 )
 
 type Msg_file struct {
@@ -2112,97 +2115,112 @@ func User_index() http.HandlerFunc {
 						"data": users,
 					})
 				case "addteamment":
-					username, _ := body["username"].(string)
-					password, _ := body["password"].(string)
-
-					if username == "" || password == "" {
-						clientWs.WriteJSON(map[string]interface{}{
-							"code":    400,
-							"path":    "addteamment",
-							"message": "username or password cannot be empty",
-						})
-						continue
-					}
-
-					userHash := md5.Sum([]byte(username))
-					hashedUsername := hex.EncodeToString(userHash[:])[:24]
-
-					passHash := md5.Sum([]byte(password))
-					hashedPassword := hex.EncodeToString(passHash[:])[:24]
-
-					type User struct {
-						Username string `json:"username"`
-						Password string `json:"password"`
-					}
-
-					type UserFile struct {
-						Users []User `json:"users"`
-					}
-
-					resultCode := 200
-					resultMessage := "user added successfully"
-					userAdded := false
-
-					userFilePath := "user.json"
-					userData := UserFile{Users: []User{}}
-
-					data, err := os.ReadFile(userFilePath)
-					if err == nil && len(data) > 0 {
-						if err := json.Unmarshal(data, &userData); err != nil {
-							resultCode = 500
-							resultMessage = "invalid user.json format"
-							break
+					func() {
+						username, _ := body["username"].(string)
+						password, _ := body["password"].(string)
+				
+						if username == "" || password == "" {
+							clientWs.WriteJSON(map[string]interface{}{
+								"code":    400,
+								"path":    "addteamment",
+								"message": "username or password cannot be empty",
+							})
+							return
 						}
-					} else if err != nil && !os.IsNotExist(err) {
-						resultCode = 500
-						resultMessage = "failed to read user.json"
-						break
-					}
-
-					for _, user := range userData.Users {
-						if user.Username == hashedUsername {
-							resultCode = 400
-							resultMessage = "username already exists"
-							break
+				
+						mutex.Lock()
+						defer mutex.Unlock()
+				
+						userHash := md5.Sum([]byte(username))
+						hashedUsername := fmt.Sprintf("%x", userHash)
+				
+						passHash := md5.Sum([]byte(password))
+						hashedPassword := fmt.Sprintf("%x", passHash)
+				
+						type User struct {
+							Username string `json:"username"`
+							Password string `json:"password"`
 						}
-					}
-
-					if resultCode == 200 {
+						type UserFile struct {
+							Users []User `json:"users"`
+						}
+				
+						userAdded := false
+				
+						userFilePath := "user.json"
+						userData := UserFile{Users: []User{}}
+				
+						data, err := os.ReadFile(userFilePath)
+						if err == nil && len(data) > 0 {
+							if err := json.Unmarshal(data, &userData); err != nil {
+								clientWs.WriteJSON(map[string]interface{}{
+									"code":    500,
+									"path":    "addteamment",
+									"message": "invalid user.json format",
+								})
+								return
+							}
+						} else if err != nil && !os.IsNotExist(err) {
+							clientWs.WriteJSON(map[string]interface{}{
+								"code":    500,
+								"path":    "addteamment",
+								"message": "failed to read user.json",
+							})
+							return
+						}
+				
+						for _, user := range userData.Users {
+							if user.Username == hashedUsername {
+								clientWs.WriteJSON(map[string]interface{}{
+									"code":    400,
+									"path":    "addteamment",
+									"message": "username already exists",
+								})
+								return
+							}
+						}
+				
 						userData.Users = append(userData.Users, User{
 							Username: hashedUsername,
 							Password: hashedPassword,
 						})
-
+				
 						output, err := json.MarshalIndent(userData, "", "  ")
 						if err != nil {
-							resultCode = 500
-							resultMessage = "failed to marshal users"
-							break
+							clientWs.WriteJSON(map[string]interface{}{
+								"code":    500,
+								"path":    "addteamment",
+								"message": "failed to marshal users",
+							})
+							return
 						}
-
+				
 						if err := os.WriteFile(userFilePath, output, 0600); err != nil {
-							resultCode = 500
-							resultMessage = "failed to write user.json"
-							break
+							clientWs.WriteJSON(map[string]interface{}{
+								"code":    500,
+								"path":    "addteamment",
+								"message": "failed to write user.json",
+							})
+							return
 						}
-
+				
 						userAdded = true
-					}
-
-					if userAdded {
-						logger.WriteLog(fmt.Sprintf(
-							log_word["add_user"],
-							username,
-							hashedUsername,
-							hashedPassword,
-						))
-					}
-
-					clientWs.WriteJSON(map[string]interface{}{
-						"code":    resultCode,
-						"path":    "addteamment",
-						"message": resultMessage,
-					})
+				
+						if userAdded {
+							logger.WriteLog(fmt.Sprintf(
+								log_word["add_user"],
+								username,
+								hashedUsername,
+								hashedPassword,
+							))
+						}
+				
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    200,
+							"path":    "addteamment",
+							"message": "user added successfully",
+						})
+					}()
 					// 处理添加白名单逻辑
 				case "getWhitelist":
 					whitelist, err := readWhitelist()
@@ -4640,6 +4658,10 @@ type LogEntry struct {
 
 // 读取日志，返回结构体切片
 func Log_read(maxLines int) []LogEntry {
+
+	loggerMu.RLock()
+    defer loggerMu.RUnlock()
+	
 	file, err := os.Open("server.log")
 	if err != nil {
 		return nil
@@ -4704,6 +4726,10 @@ func (w *MyLog) WriteLog(logStr string) {
 		fmt.Println("marshal log error:", err)
 		return
 	}
+
+	loggerMu.Lock()
+	defer loggerMu.Unlock()
+	
 	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 	if err != nil {
 		fmt.Println("can not log:", err)
@@ -5949,14 +5975,23 @@ func Read_log_word() {
 		return
 	}
 }
+
 func readWhitelist() ([]string, error) {
 	filePath := "white.config"
 
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
-		if err := os.WriteFile(filePath, []byte("127.0.0.1\n::1\n"), 0644); err != nil {
-			return nil, err
+		WhiteMu.Lock()
+		if _, err := os.Stat(filePath); os.IsNotExist(err) {
+			if err := os.WriteFile(filePath, []byte("127.0.0.1\n::1\n"), 0644); err != nil {
+				WhiteMu.Unlock()
+				return nil, err
+			}
 		}
+		WhiteMu.Unlock()
 	}
+
+	WhiteMu.RLock()
+	defer WhiteMu.RUnlock()
 
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -5966,27 +6001,26 @@ func readWhitelist() ([]string, error) {
 
 	var whitelist []string
 	scanner := bufio.NewScanner(file)
-
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
-
 		if line == "" || strings.HasPrefix(line, "//") {
 			continue
 		}
-
 		whitelist = append(whitelist, line)
 	}
-
 	if err := scanner.Err(); err != nil {
 		return nil, err
 	}
-
 	return whitelist, nil
 }
 
 func writeWhitelist(whitelist []string) error {
 	cleaned := make([]string, 0, len(whitelist))
 	seen := make(map[string]struct{}, len(whitelist))
+
+	WhiteMu.Lock()
+    defer WhiteMu.Unlock()
+
 	for _, item := range whitelist {
 		line := strings.TrimSpace(item)
 		if line == "" {
@@ -6041,16 +6075,10 @@ func login(login_route, ui_route, web_css, web_title string) http.HandlerFunc {
 			username := r.FormValue("username")
 			password := r.FormValue("password")
 			userip := getClientIP(r)
-			// 对用户名进行MD5加密并取前24位
-			usernameHash := md5.New()
-			usernameHash.Write([]byte(username))
-			usernameHashBytes := usernameHash.Sum(nil)
-			usernameHashString := hex.EncodeToString(usernameHashBytes)
-			// 对密码进行MD5加密并取前24位
-			passwordHash := md5.New()
-			passwordHash.Write([]byte(password))
-			passwordHashBytes := passwordHash.Sum(nil)
-			passwordHashString := hex.EncodeToString(passwordHashBytes)
+			// 对用户名进行MD5加密
+			usernameHashString := fmt.Sprintf("%x", md5.Sum([]byte(username)))
+			// 对密码进行MD5加密
+			passwordHashString := fmt.Sprintf("%x", md5.Sum([]byte(password)))
 
 			mutex.Lock()
 			defer mutex.Unlock()
@@ -6065,11 +6093,8 @@ func login(login_route, ui_route, web_css, web_title string) http.HandlerFunc {
 
 			for i := range data_user.Users {
 				user := &data_user.Users[i]
-				if len(user.Username) < 24 || len(user.Password) < 24 {
-					continue
-				}
-				if usernameHashString[:24] == user.Username[:24] &&
-					passwordHashString[:24] == user.Password[:24] {
+				if usernameHashString == user.Username &&
+					passwordHashString == user.Password {
 					validUser = true
 					break
 				}
