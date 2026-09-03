@@ -3364,20 +3364,28 @@ class index{
             if (!container) {
                 return;
             }
+
+            const viewState = snapshotViewState(container, {
+                captureShow: true
+            });
+
             const normalizedData = (Array.isArray(data) ? data : []).map(function(item) {
                 return normalizeAgentRecord(item);
             });
-            normalizedData.forEach(key=>{
+
+            normalizedData.forEach(key => {
                 const uid = getAgentUid(key);
                 if (!uid) {
                     return;
                 }
+
                 let userDiv = document.getElementById(uid + "info");
                 if (userDiv) {
                     updateUserCardNode(userDiv, key);
                     container.appendChild(userDiv);
                     return;
                 }
+
                 const preservedState = captureUserCardState(userDiv);
 
                 if (!userDiv) {
@@ -3388,15 +3396,14 @@ class index{
                 userDiv.id = uid + "info";
                 let os = (key.os || "").toLowerCase();
                 let osEmoji = "💻";
-                if(os.includes("linux")){
-                    osEmoji="🐧";
+                if (os.includes("linux")) {
+                    osEmoji = "🐧";
+                } else if (os.includes("macos")) {
+                    osEmoji = "🍎";
+                } else if (os.includes("android")) {
+                    osEmoji = "📱";
                 }
-                else if(os.includes("macos")){
-                    osEmoji="🍎";
-                }
-                else if(os.includes("android")){
-                    osEmoji="📱";
-                }
+
                 let pluginButtons = "";
                 let pluginParam = key.plugin_parameter;
                 let safeUidHtml = escapeHtml(uid);
@@ -3416,6 +3423,7 @@ class index{
                 let safeServerHtml = escapeHtml(key["server"]);
                 let safeDelayHtml = escapeHtml(key["delay"]);
                 let safeJitterHtml = escapeHtml(key["jitter"]);
+
                 if (pluginParam && typeof pluginParam === 'object' && pluginParam[os]) {
                     for (let codeword in pluginParam[os]) {
                         let paramDescList = pluginParam[os][codeword];
@@ -3426,23 +3434,24 @@ class index{
                         let safeCodewordJs = escapeInlineJsArg(codeword);
                         let safeEncodedDescJs = escapeInlineJsArg(encodedDesc);
                         pluginButtons +=
-                        '<button type="button" class="console-link" onclick="showPluginDialog(\'' +
-                        safeUidJs +
-                        '\', \'' +
-                        escapeInlineJsArg(os) +
-                        '\', \'' +
-                        safeEncodedDescJs +
-                        '\', \'' +
-                        safeCodewordJs +
-                        '\')">[' + safeCodewordHtml + ']</button>';
+                            '<button type="button" class="console-link" onclick="showPluginDialog(\'' +
+                            safeUidJs +
+                            '\', \'' +
+                            escapeInlineJsArg(os) +
+                            '\', \'' +
+                            safeEncodedDescJs +
+                            '\', \'' +
+                            safeCodewordJs +
+                            '\')">[' + safeCodewordHtml + ']</button>';
                     }
                 }
+
                 let userHTML = '<div class="conn-container">' +
                                 '<span class="shell-address">' + safeExternalIpHtml + '/</span>' +
                                 '<span class="ip-address">' + safeHostHtml + '/</span>' +
                                 '<span class="ip-address">' + safeUidHtml + '/</span>' +
                                 '<span class="ip-address">' + safeProtocolHtml + '/</span>' +
-                                '<span class="ip-address">'+ safeOsHtml + '/' + escapeHtml(osEmoji) + '</span>' +
+                                '<span class="ip-address">' + safeOsHtml + '/' + escapeHtml(osEmoji) + '</span>' +
                                 '<div class="os-container">' +
                                     '<div class="ip-address" id="' + safeUidHtml + '-img" style="background-color: #8B4513; width: 106px; height: 1px; display: inline-block; vertical-align: middle; position: relative;"><div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; box-shadow: inset 0 0 0 106px #8B4513;"></div></div>' +
                                 '</div>' +
@@ -3473,11 +3482,14 @@ class index{
                                 '<button type="button" class="console-link" onclick="showMsgDialog(\'' + safeUidJs + '\', \'' + safeHostJs + '\')">📩</button>' +
                                 pluginButtons +
                             '</div>' +
-                                '<div class="info-content" id="' + safeUidHtml + '-msg-content"></div>';
-                            userDiv.innerHTML = userHTML;
-                            restoreUserCardState(userDiv, preservedState);
+                            '<div class="info-content" id="' + safeUidHtml + '-msg-content"></div>';
+
+                userDiv.innerHTML = userHTML;
+                restoreUserCardState(userDiv, preservedState);
                 container.appendChild(userDiv);
             });
+
+            restoreViewState(container, viewState);
         }
         showTerminalDialog(uid, host, os) {
 		    const dialogId = "terminal-dialog-" + uid;
