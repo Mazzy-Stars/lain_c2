@@ -1949,7 +1949,7 @@ func User_index() http.HandlerFunc {
 				case "sendChat":
 					username, _ := body["username"].(string)
 					message, _ := body["message"].(string)
-					chatid := strconv.FormatInt(time.Now().UnixNano(), 10)
+					chatid := chatUID()
 					chat := Chat{
 						Username: username,
 						Message:  message,
@@ -2522,7 +2522,7 @@ func User_index() http.HandlerFunc {
 						})
 						continue
 					}
-					chatid := strconv.FormatInt(time.Now().UnixNano(), 10)
+					chatid := chatUID()
 					filename = fmt.Sprintf("%s_%s", chatid, filepath.Base(filename))
 
 					// 不再立即创建文件，而是使用统一的 uploadTask
@@ -4152,6 +4152,13 @@ func Del_shell_innet(target, uid string) bool {
 	}
 	return false
 }
+
+func chatUID() string {
+	ts := time.Now().UnixNano()
+	r := rand.New(rand.NewSource(ts))
+	return fmt.Sprintf("%d-%06d", ts, r.Int63n(1000000))
+}
+
 func LoadHistoryFiles() error {
 	uploadDir := "./chat_uploads/"
 	// 检查目录是否存在
@@ -4168,7 +4175,7 @@ func LoadHistoryFiles() error {
 	}
 	dataChatmu.Lock()
 	defer dataChatmu.Unlock()
-	maxChatID := strconv.FormatInt(time.Now().UnixNano(), 10)
+	maxChatID := chatUID()
 	for _, f := range files {
 		if f.IsDir() {
 			continue
