@@ -2317,7 +2317,7 @@ func User_index() http.HandlerFunc {
 					dupServer := false
 					for i := range server_data.Servers {
 						server := &server_data.Servers[i]
-						if requestData.Port == server.Port || requestData.Remark == server.Remark || requestData.Protocol == server.Protocol {
+						if requestData.Port == server.Port || requestData.Remark == server.Remark {
 							dupServer = true
 							break
 						}
@@ -5538,7 +5538,7 @@ func (s *MyServer) PutServer(
 	defer serverDataMu.Unlock()
 	for i := range server_data.Servers {
 		server := &server_data.Servers[i]
-		if server.Port == port && server.Protocol == protocol && server.Remark == remark {
+		if server.Port == port || server.Remark == remark {
 			log.Printf("Server with port %v and protocol %v already exists.\n", port, protocol)
 			return false
 		}
