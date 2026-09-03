@@ -5539,7 +5539,7 @@ func (s *MyServer) PutServer(
 	for i := range server_data.Servers {
 		server := &server_data.Servers[i]
 		if server.Port == port || server.Remark == remark {
-			log.Printf("Server with port %v and protocol %v already exists.\n", port, protocol)
+			log.Printf("Server with port %v and remark %v already exists.\n", port, protocol)
 			return false
 		}
 	}
