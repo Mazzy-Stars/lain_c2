@@ -153,18 +153,18 @@ func Http_server(handler Handler, ServerManager Putserver, writeLog WLog,
         if certPEM != "" && keyPEM != "" {
             cert, err = tls.X509KeyPair([]byte(certPEM), []byte(keyPEM))
             if err != nil {
-                returnStr = fmt.Sprintf(log_word["cert_err"], err)
+                returnStr = fmt.Sprintf(log_word["cert_err"],port, err)
                 writeLog.WriteLog(returnStr)
                 return
             }
             //获取组织
             cert_g, key_g = certPEM, keyPEM
-            returnStr = log_word["provided_cert"]
+			returnStr = fmt.Sprintf(log_word["provided_cert"],port)
             writeLog.WriteLog(returnStr)
         } else {
             cert, err = tls.X509KeyPair([]byte(DefaultCert), []byte(DefaultKey))
             if err != nil {
-                returnStr = fmt.Sprintf(log_word["default_cert"], err)
+                returnStr = fmt.Sprintf(log_word["default_cert"],port,err)
                 writeLog.WriteLog(returnStr)
                 return
             }
@@ -209,13 +209,13 @@ func Http_server(handler Handler, ServerManager Putserver, writeLog WLog,
                     []byte(keyPEM),
                 )
                 if err != nil {
-                    returnStr = fmt.Sprintf(log_word["cert_err"], err)
+                    returnStr = fmt.Sprintf(log_word["cert_err"],port, err)
                     writeLog.WriteLog(returnStr)
                     return
                 }
                 cert_g = certPEM
                 key_g = keyPEM
-                returnStr = log_word["provided_cert"]
+                returnStr = fmt.Sprintf(log_word["provided_cert"],port)
                 writeLog.WriteLog(returnStr)
             } else {
                 cert, err = tls.X509KeyPair(
@@ -223,7 +223,7 @@ func Http_server(handler Handler, ServerManager Putserver, writeLog WLog,
                     []byte(DefaultKey),
                 )
                 if err != nil {
-                    returnStr = fmt.Sprintf(log_word["default_cert"], err)
+                    returnStr = fmt.Sprintf(log_word["default_cert"],port, err)
                     writeLog.WriteLog(returnStr)
                     return
                 }
