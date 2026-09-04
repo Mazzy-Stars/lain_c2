@@ -611,7 +611,6 @@ func User_index() http.HandlerFunc {
 
 		username := usernameCookie.Value[strings.LastIndex(usernameCookie.Value, "=")+1:]
 		user_ip := getClientIP(r)
-		logger.WriteLog(fmt.Sprintf(log_word["user_join"], user_ip, username))
 
 		// 升级为 websocket
 		conn, err := upgrader.Upgrade(w, r, nil)
@@ -630,6 +629,8 @@ func User_index() http.HandlerFunc {
 		)
 		wsUsersMu.Unlock()
 
+		logger.WriteLog(fmt.Sprintf(log_word["user_join"], user_ip, username))
+		
 		PushData(usernameCookie.Value, "agentList")
 		PushData(usernameCookie.Value, "winAgentList")
 		PushData(usernameCookie.Value, "listen")
@@ -5962,9 +5963,9 @@ func Read_log_word() {
         "http_err":"FAIL TO START HTTP SERVER: %v",
         "https_err":"FAIL TO START HTTPS SERVER: %v",
         "quic_err":"FAIL TO START HTTP3 SERVER: %v",
-        "cert_err":"[*] Failed to parse provided cert or key: %v",
-        "provided_cert":"[*] Using provided certificate and key",
-        "default_cert":"[*] Failed to parse default cert or key: %v",
+        "cert_err":"[*]:%v Failed to parse provided cert or key: %v",
+        "provided_cert":"[*]:%v Using provided certificate and key",
+        "default_cert":"[*]:%v Failed to parse default cert or key: %v",
         "chat_message":"[*] User: %s sent a chat: %s",
         "chat_file":"User: %s upload chat file: %s",
 		"user_join":"[*] User Join: from %s joined %s",
