@@ -229,9 +229,6 @@ func Lain(error_str, web_title, web_js, web_css string, sessionSlice []string) h
                     <div id='div_index'></div>
                     <script>
                         const _index = new lain_index();
-                        function saveInfo(uid){
-                            _index.saveInfo(uid)
-                        }
                         function del(shell){
                             _index.del(shell)
                         }
