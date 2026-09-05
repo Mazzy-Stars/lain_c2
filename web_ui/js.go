@@ -61,12 +61,47 @@ function isNearBottom(element, threshold = 80) {
     return (element.scrollHeight - element.scrollTop - element.clientHeight) <= threshold;
 }
 
+function collectScrollableViewNodes(root) {
+    const nodes = [];
+    const seen = new Set();
+    const addNode = function(element) {
+        if (!element || seen.has(element)) {
+            return;
+        }
+        const hasScroll =
+            element.scrollHeight > element.clientHeight ||
+            element.scrollWidth > element.clientWidth;
+        if (!hasScroll) {
+            return;
+        }
+        seen.add(element);
+        nodes.push(element);
+    };
+
+    let current = root;
+    while (current && current !== document.body && current !== document.documentElement) {
+        addNode(current);
+        current = current.parentElement;
+    }
+
+    return nodes;
+}
+
 function snapshotViewState(root, options = {}) {
+    const scrollNodes = collectScrollableViewNodes(root).map(function(element) {
+        return {
+            element: element,
+            scrollTop: element.scrollTop || 0,
+            scrollLeft: element.scrollLeft || 0
+        };
+    });
     const state = {
         windowX: window.scrollX || window.pageXOffset || 0,
         windowY: window.scrollY || window.pageYOffset || 0,
         scrollTop: root ? (root.scrollTop || 0) : 0,
         scrollLeft: root ? (root.scrollLeft || 0) : 0,
+        rootElement: root || null,
+        scrollNodes: scrollNodes,
         stickToBottom: !!options.stickToBottom && root ?
             isNearBottom(root, options.threshold || 80) :
             false,
@@ -88,12 +123,23 @@ function restoreViewState(root, state) {
         return;
     }
 
-    requestAnimationFrame(function() {
-        if (typeof window.scrollTo === "function") {
-            window.scrollTo(state.windowX || 0, state.windowY || 0);
-        }
+    const restore = function() {
+        if (Array.isArray(state.scrollNodes)) {
+            state.scrollNodes.forEach(function(record) {
+                const element = record && record.element;
+                if (!element || !element.isConnected) {
+                    return;
+                }
 
-        if (root && root.isConnected) {
+                if (state.stickToBottom && element === state.rootElement) {
+                    element.scrollTop = element.scrollHeight;
+                } else {
+                    const maxTop = Math.max(0, element.scrollHeight - element.clientHeight);
+                    element.scrollTop = Math.min(record.scrollTop || 0, maxTop);
+                }
+                element.scrollLeft = record.scrollLeft || 0;
+            });
+        } else if (root && root.isConnected) {
             if (state.stickToBottom) {
                 root.scrollTop = root.scrollHeight;
             } else {
@@ -101,6 +147,10 @@ function restoreViewState(root, state) {
                 root.scrollTop = Math.min(state.scrollTop || 0, maxTop);
             }
             root.scrollLeft = state.scrollLeft || 0;
+        }
+
+        if ((state.windowX || state.windowY) && typeof window.scrollTo === "function") {
+            window.scrollTo(state.windowX || 0, state.windowY || 0);
         }
 
         if (Array.isArray(state.showIds)) {
@@ -111,7 +161,18 @@ function restoreViewState(root, state) {
                 }
             });
         }
-    });
+    };
+
+    let attempts = 0;
+    const restoreAcrossFrames = function() {
+        restore();
+        attempts += 1;
+        if (attempts < 3) {
+            requestAnimationFrame(restoreAcrossFrames);
+        }
+    };
+    restore();
+    requestAnimationFrame(restoreAcrossFrames);
 }
 
 function applyStickyDialogBar(dragBar, options = {}) {
@@ -2185,6 +2246,9 @@ class WebSocketClient {
         if (!Array.isArray(User_data)) {
             User_data = [];
         }
+        const indexInstance = new lain_index();
+        let needsListRender = false;
+
         nextUserData.forEach(function(item) {
             const uid = getAgentUid(item);
             if (!uid) {
@@ -2200,10 +2264,18 @@ class WebSocketClient {
             } else {
                 User_data.push(item);
             }
+
+            const userDiv = document.getElementById(uid + "info");
+            if (userDiv) {
+                updateUserCardNode(userDiv, User_data[existingIndex >= 0 ? existingIndex : User_data.length - 1]);
+            } else {
+                needsListRender = true;
+            }
         });
 
-        const indexInstance = new lain_index();
-        indexInstance.renderUserList(User_data);
+        if (needsListRender) {
+            indexInstance.renderUserList(User_data);
+        }
         net_init();
         rebuildServerClientCounts(User_data);
 
@@ -3373,7 +3445,7 @@ class index{
                 return normalizeAgentRecord(item);
             });
 
-            normalizedData.forEach(key => {
+            normalizedData.forEach((key, position) => {
                 const uid = getAgentUid(key);
                 if (!uid) {
                     return;
@@ -3382,7 +3454,9 @@ class index{
                 let userDiv = document.getElementById(uid + "info");
                 if (userDiv) {
                     updateUserCardNode(userDiv, key);
-                    container.appendChild(userDiv);
+                    if (container.children[position] !== userDiv) {
+                        container.insertBefore(userDiv, container.children[position] || null);
+                    }
                     return;
                 }
 
@@ -3486,7 +3560,7 @@ class index{
 
                 userDiv.innerHTML = userHTML;
                 restoreUserCardState(userDiv, preservedState);
-                container.appendChild(userDiv);
+                container.insertBefore(userDiv, container.children[position] || null);
             });
 
             restoreViewState(container, viewState);
