@@ -528,7 +528,7 @@ function buildUserCardHtml(view) {
             '<p><strong class="s_left">UID:</strong><strong class="s_right" data-role="detail-uid">' + view.safeUidHtml + '</strong></p>' +
             '<p><strong class="s_left">Server:</strong><strong class="s_right" data-role="server">' + view.safeServerHtml + '</strong></p>' +
             '<p><strong class="s_left">Username:</strong><input type="text" value="' + view.safeUsernameHtml + '" id="username_' + view.safeUidHtml + '" class="s_right_input custom-remarks" data-server-value="' + view.safeUsernameHtml + '"></p>' +
-            '<button class="console-link" onclick="saveInfo(\'' + view.safeUidJs + '\')">Save Changes</button>' +
+            '<button type="button" class="console-link" onclick="event.preventDefault(); window.lainIndex.saveInfo(\'' + view.safeUidJs + '\')">Save Changes</button>' +
         '</div>' +
         '<div class="choose-content" id="' + view.safeUidHtml + '-choose-content">' +
             '<button type="button" class="console-link" data-role="terminal-btn" onclick="showTerminalDialog(\'' + view.safeUidJs + '\', \'' + view.safeHostJs + '\', \'' + view.safeOsJs + '\')">💻</button>' +
@@ -3474,7 +3474,7 @@ class index{
                                 '<p><strong class="s_left">UID:</strong><strong class="s_right">' + safeUidHtml + '</strong></p>' +
                                 '<p><strong class="s_left">Server:</strong><strong class="s_right">' + safeServerHtml + '</strong></p>' +
                                 '<p><strong class="s_left">Username:</strong><input type="text" value="' + escapeHtml(key['username']) + '" id="username_' + safeUidHtml + '" class="s_right_input custom-remarks"></p>' +
-                                '<button class="console-link" onclick="saveInfo(\'' + safeUidJs + '\')">Save Changes</button>' +
+                                '<button type="button" class="console-link" onclick="event.preventDefault(); window.lainIndex.saveInfo(\'' + safeUidJs + '\')">Save Changes</button>' +
                             '</div>' +
                             '<div class="choose-content" id="' + safeUidHtml + '-choose-content">' +
                                 '<button type="button" class="console-link" onclick="showTerminalDialog(\'' + safeUidJs + '\', \'' + safeHostJs + '\', \'' + safeOsJs + '\')">💻</button>' +
