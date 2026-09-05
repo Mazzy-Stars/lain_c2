@@ -5807,30 +5807,30 @@ func main() {
 	http.Handle("/"+login_route, withCORS(login(login_route, ui_route, web_css, web_title)))
 
 	// --- 页面路由 ---
-	http.HandleFunc("/"+ui_route, func(w http.ResponseWriter, r *http.Request) {
+	http.Handle("/"+ui_route, withCORS(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mutex.RLock()
-		tempSessions := make([]string, len(sessionSlice))
-		copy(tempSessions, sessionSlice)
+		tempSessions := append([]string(nil), sessionSlice...)
 		mutex.RUnlock()
+		
 		web_ui.Lain(error_str, web_title, web_js, web_css, tempSessions).ServeHTTP(w, r)
-	})
+	})))
 
 	// --- 有权限交互 ---
 	http.Handle("/"+web_route, withCORS(User_index()))
 
 	// --- 调用 JS ---
-	http.HandleFunc("/"+web_js, func(w http.ResponseWriter, r *http.Request) {
+	http.Handle("/"+web_js, withCORS(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mutex.RLock()
-		tempSessions := make([]string, len(sessionSlice))
-		copy(tempSessions, sessionSlice)
+		tempSessions := append([]string(nil), sessionSlice...)
 		mutex.RUnlock()
+	
 		web_ui.Js(error_str, web_route, web_css, tempSessions).ServeHTTP(w, r)
-	})
+	})))
 
 	//调用css
-	http.HandleFunc("/"+web_css, func(w http.ResponseWriter, r *http.Request) {
+	http.Handle("/"+web_css, withCORS(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		web_ui.Css(css_file, error_str).ServeHTTP(w, r)
-	})
+	})))
 
 	// 创建 HTTP Server
 	server := &http.Server{
@@ -5876,14 +5876,12 @@ func main() {
 }
 func withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// 1. 读取白名单
 		whitelistIPs, err := readWhitelist()
 		if err != nil {
 			http.Error(w, "internal config error", http.StatusInternalServerError)
 			return
 		}
 		clientIP := getClientIP(r)
-		// 2. IP 白名单检查
 		allowed := false
 		for i := range whitelistIPs {
 			if clientIP == whitelistIPs[i] || strings.HasPrefix(clientIP, whitelistIPs[i]) {
@@ -5891,33 +5889,23 @@ func withCORS(next http.Handler) http.Handler {
 				break
 			}
 		}
-		// 如果 IP 不在白名单，直接拒绝
 		if !allowed {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		// 3. 【核心修改】：既然 IP 已允许，直接处理跨域
 		origin := r.Header.Get("Origin")
-		// 如果有 Origin，说明是跨域请求，直接镜像返回以允许跨域
 		if origin != "" {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Access-Control-Allow-Credentials", "true")
 		} else {
-			// 如果是非浏览器请求（无 Origin），为了安全或兼容性，可设为 *
-			// 但注意：设置了 Allow-Credentials 时，Origin 不能为 *
 			w.Header().Set("Access-Control-Allow-Origin", "*")
 		}
-		// 4. 标准 CORS 响应头
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		// 注意：Headers 建议根据实际需要写，* 有时在带 Cookie 的请求中会有兼容性问题
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
-		// 5. 处理预检请求 (Preflight)
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
-
-		// 6. 放行
 		next.ServeHTTP(w, r)
 	})
 }
