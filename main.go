@@ -21,6 +21,7 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -5793,8 +5794,7 @@ func main() {
 		}
 		fmt.Println("[*] directory ./html Created successfully")
 	}
-	fs := http.FileServer(http.Dir("./html"))
-	http.Handle("/", fs)
+	http.Handle("/", staticWithCustom404("./html", error_str))
 	fmt.Println(asciiArt)
 
 	//历史聊天文件
@@ -5874,13 +5874,48 @@ func main() {
 		fmt.Printf("FAIL TO START HTTPS SERVER %v\n", err)
 	}
 }
+func staticWithCustom404(root string, notFoundText string) http.Handler {
+	fileServer := http.FileServer(http.Dir(root))
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rec := httptest.NewRecorder()
+		fileServer.ServeHTTP(rec, r)
+
+		if rec.Code == http.StatusNotFound {
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(notFoundText))
+			return
+		}
+
+		for k, values := range rec.Header() {
+			for _, v := range values {
+				w.Header().Add(k, v)
+			}
+		}
+		w.WriteHeader(rec.Code)
+		_, _ = w.Write(rec.Body.Bytes())
+	})
+}
 func withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+		if origin != "" {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+			w.Header().Set("Vary", "Origin")
+		} else {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+		}
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+
 		whitelistIPs, err := readWhitelist()
 		if err != nil {
 			http.Error(w, "internal config error", http.StatusInternalServerError)
 			return
 		}
+
 		clientIP := getClientIP(r)
 		allowed := false
 		for i := range whitelistIPs {
@@ -5889,23 +5924,19 @@ func withCORS(next http.Handler) http.Handler {
 				break
 			}
 		}
+
 		if !allowed {
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(error_str))
 			return
 		}
-		origin := r.Header.Get("Origin")
-		if origin != "" {
-			w.Header().Set("Access-Control-Allow-Origin", origin)
-			w.Header().Set("Access-Control-Allow-Credentials", "true")
-		} else {
-			w.Header().Set("Access-Control-Allow-Origin", "*")
-		}
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
+
 		next.ServeHTTP(w, r)
 	})
 }
