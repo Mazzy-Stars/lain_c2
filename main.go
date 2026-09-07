@@ -5874,17 +5874,43 @@ func main() {
 		fmt.Printf("FAIL TO START HTTPS SERVER %v\n", err)
 	}
 }
+
+func setCORSHeaders(w http.ResponseWriter, r *http.Request) {
+	origin := r.Header.Get("Origin")
+	if origin != "" {
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
+		w.Header().Set("Vary", "Origin")
+	} else {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+	}
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+}
+
+func writeCustomError(w http.ResponseWriter, r *http.Request, status int, body string) {
+	setCORSHeaders(w, r)
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(status)
+	_, _ = w.Write([]byte(body))
+}
+
 func staticWithCustom404(root string, notFoundText string) http.Handler {
 	fileServer := http.FileServer(http.Dir(root))
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		setCORSHeaders(w, r)
+
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
 		rec := httptest.NewRecorder()
 		fileServer.ServeHTTP(rec, r)
 
 		if rec.Code == http.StatusNotFound {
-			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-			w.WriteHeader(http.StatusNotFound)
-			_, _ = w.Write([]byte(notFoundText))
+			writeCustomError(w, r, http.StatusNotFound, notFoundText)
 			return
 		}
 
@@ -5897,18 +5923,10 @@ func staticWithCustom404(root string, notFoundText string) http.Handler {
 		_, _ = w.Write(rec.Body.Bytes())
 	})
 }
+
 func withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		origin := r.Header.Get("Origin")
-		if origin != "" {
-			w.Header().Set("Access-Control-Allow-Origin", origin)
-			w.Header().Set("Access-Control-Allow-Credentials", "true")
-			w.Header().Set("Vary", "Origin")
-		} else {
-			w.Header().Set("Access-Control-Allow-Origin", "*")
-		}
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+		setCORSHeaders(w, r)
 
 		whitelistIPs, err := readWhitelist()
 		if err != nil {
@@ -5926,9 +5944,7 @@ func withCORS(next http.Handler) http.Handler {
 		}
 
 		if !allowed {
-			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-			w.WriteHeader(http.StatusNotFound)
-			_, _ = w.Write([]byte(error_str))
+			writeCustomError(w, r, http.StatusNotFound, error_str)
 			return
 		}
 
