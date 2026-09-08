@@ -5,13 +5,17 @@ import (
 	"net/http"
 )
 
-func Lain(error_str, web_title, web_js, web_css string, sessionSlice []string) http.HandlerFunc {
+func Lain(error_str, web_title, web_js, web_css string, sessionSlice []string, notFoundHeaders map[string]string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
         //必须先登录
         _, ok := CheckUserSession(r, sessionSlice, error_str)
         if !ok {
+            for k, v := range notFoundHeaders {
+                w.Header().Set(k, v)
+            }
+            w.Header().Set("Content-Type", "text/html; charset=utf-8")
             w.WriteHeader(http.StatusNotFound)
-            fmt.Fprint(w, error_str)
+            _, _ = w.Write([]byte(error_str))
             return
         }
 
