@@ -5750,8 +5750,6 @@ type ServerConfig struct {
 	NotFoundHeaders map[string]string `json:"not_found_headers"`
 }
 
-var appConfig = defaultConfig()
-
 func defaultConfig() ServerConfig {
 	return ServerConfig{
 		Port:       "443",
@@ -5828,7 +5826,6 @@ func main() {
 		fmt.Printf("load config failed: %v\n", err)
 		return
 	}
-	appConfig = cfg
 
 	index_port := cfg.Port
 	certPath := cfg.CertPath
@@ -5861,7 +5858,7 @@ func main() {
 	}
 
 	//登录
-	http.Handle("/"+login_route,  withWhitelist(login(login_route, ui_route, web_css, web_title)))
+	http.Handle("/"+login_route,  withWhitelist(login(login_route, ui_route, web_css, web_title),cfg.NotFoundHeaders))
 
 	// --- 页面路由 ---
 	http.Handle("/"+ui_route, withWhitelist(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -5870,10 +5867,10 @@ func main() {
 		mutex.RUnlock()
 		
 		web_ui.Lain(error_str, web_title, web_js, web_css, tempSessions).ServeHTTP(w, r)
-	})))
+	})),cfg.NotFoundHeaders)
 
 	// --- 有权限交互 ---
-	http.Handle("/"+web_route, withWhitelist(User_index()))
+	http.Handle("/"+web_route, withWhitelist(User_index(),cfg.NotFoundHeaders))
 
 	// --- 调用 JS ---
 	http.Handle("/"+web_js, withWhitelist(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -5882,12 +5879,12 @@ func main() {
 		mutex.RUnlock()
 	
 		web_ui.Js(error_str, web_route, web_css, tempSessions).ServeHTTP(w, r)
-	})))
+	})),cfg.NotFoundHeaders)
 
 	//调用css
 	http.Handle("/"+web_css, withWhitelist(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		web_ui.Css(css_file, error_str).ServeHTTP(w, r)
-	})))
+	})),cfg.NotFoundHeaders)
 
 	// 创建 HTTP Server
 	server := &http.Server{
@@ -5963,7 +5960,7 @@ func staticWithCustom404(root string, notFoundText string, notFoundHeaders map[s
 	})
 }
 
-func withWhitelist(next http.Handler) http.Handler {
+func withWhitelist(next http.Handler, notFoundHeaders map[string]string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		whitelistIPs, err := readWhitelist()
 		if err != nil {
@@ -5981,7 +5978,7 @@ func withWhitelist(next http.Handler) http.Handler {
 		}
 
 		if !allowed {
-			writeCustomError(w, http.StatusNotFound, error_str, nil)
+			writeCustomError(w, http.StatusNotFound, error_str, notFoundHeaders)
 			return
 		}
 
