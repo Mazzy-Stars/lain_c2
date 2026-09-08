@@ -5734,6 +5734,67 @@ func readJSONFile(fileName string, v interface{}) error {
 
 /*结构体数据部分结束*/
 
+type ServerConfig struct {
+	Port            string            `json:"port"`
+	CertPath        string            `json:"cert"`
+	KeyPath         string            `json:"key"`
+	DefaultCert     bool              `json:"default_cert"`
+	RespError       string            `json:"resp_error"`
+	CSSFile         string            `json:"css"`
+	Title           string            `json:"title"`
+	UIRoute         string            `json:"ui_route"`
+	WebRoute        string            `json:"web_route"`
+	LoginRoute      string            `json:"login_route"`
+	JSRoute         string            `json:"js_route"`
+	CSSRoute        string            `json:"css_route"`
+	NotFoundHeaders map[string]string `json:"not_found_headers"`
+}
+
+var appConfig = defaultConfig()
+
+func defaultConfig() ServerConfig {
+	return ServerConfig{
+		Port:       "443",
+		RespError:  "404 page not found",
+		Title:      "connect",
+		UIRoute:    "server",
+		WebRoute:   "user_index",
+		LoginRoute: "login",
+		JSRoute:    "lain.js",
+		CSSRoute:   "lain.css",
+		NotFoundHeaders: map[string]string{},
+	}
+}
+
+func ensureConfig(path string) (ServerConfig, error) {
+	cfg := defaultConfig()
+
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		data, err := json.MarshalIndent(cfg, "", "  ")
+		if err != nil {
+			return cfg, err
+		}
+		if err := ioutil.WriteFile(path, append(data, '\n'), 0644); err != nil {
+			return cfg, err
+		}
+		return cfg, nil
+	} else if err != nil {
+		return cfg, err
+	}
+
+	f, err := os.Open(path)
+	if err != nil {
+		return cfg, err
+	}
+	defer f.Close()
+
+	if err := json.NewDecoder(f).Decode(&cfg); err != nil {
+		fmt.Printf("[*] config parse failed, using defaults: %v\n", err)
+		return defaultConfig(), nil
+	}
+	return cfg, nil
+}
+
 func main() {
 	Read_log_word()
 	asciiArt :=
@@ -5757,35 +5818,31 @@ func main() {
 	if user_err != nil {
 		fmt.Println("Failed to read user data")
 	}
-	var index_port string
-	var certPath string
-	var keyPath string
-	var useDefaultCert bool
-	var css_file string
-	var ui_route string
-	var web_route string
-	var login_route string
-	var web_title string
 
-	var web_js string
-	var web_css string
-
-	// 读取命令行参数
-	flag.StringVar(&index_port, "p", "443", "Port")
-	flag.StringVar(&certPath, "cert", "", "Customize public key path")
-	flag.StringVar(&keyPath, "key", "", "Customize private key path")
-	flag.BoolVar(&useDefaultCert, "DefaultCert", false, "Use default public and private keys")
-	flag.StringVar(&error_str, "resp-error", "404 page not found", "web error resp")
-	flag.StringVar(&css_file, "css", "", "Use default css file")
-	flag.StringVar(&web_title, "title", "connect", "web ui title")
-	flag.StringVar(&ui_route, "ui-route", "server", "web ui route")
-	flag.StringVar(&web_route, "web-route", "user_index", "backend communication routing")
-	flag.StringVar(&login_route, "login-route", "login", "login route")
-
-	flag.StringVar(&web_js, "js-route", "lain.js", "customize web js")
-	flag.StringVar(&web_css, "css-route", "lain.css", "customize web css")
-
+	var configPath string
+	flag.StringVar(&configPath, "config", "server-config.json", "config file")
 	flag.Parse()
+
+	cfg, err := ensureConfig(configPath)
+	if err != nil {
+		fmt.Printf("load config failed: %v\n", err)
+		return
+	}
+	appConfig = cfg
+
+	index_port := cfg.Port
+	certPath := cfg.CertPath
+	keyPath := cfg.KeyPath
+	useDefaultCert := cfg.DefaultCert
+	css_file := cfg.CSSFile
+	web_title := cfg.Title
+	ui_route := cfg.UIRoute
+	web_route := cfg.WebRoute
+	login_route := cfg.LoginRoute
+	web_js := cfg.JSRoute
+	web_css := cfg.CSSRoute
+	error_str = cfg.RespError
+
 	if _, err := os.Stat("./html"); os.IsNotExist(err) {
 		err := os.MkdirAll("./html", os.ModePerm)
 		if err != nil {
@@ -5794,7 +5851,7 @@ func main() {
 		}
 		fmt.Println("[*] directory ./html Created successfully")
 	}
-	http.Handle("/", staticWithCustom404("./html", error_str))
+	http.Handle("/", staticWithCustom404("./html", error_str,cfg.NotFoundHeaders))
 	fmt.Println(asciiArt)
 
 	//历史聊天文件
@@ -5804,10 +5861,10 @@ func main() {
 	}
 
 	//登录
-	http.Handle("/"+login_route, withCORS(login(login_route, ui_route, web_css, web_title)))
+	http.Handle("/"+login_route,  withWhitelist(login(login_route, ui_route, web_css, web_title)))
 
 	// --- 页面路由 ---
-	http.Handle("/"+ui_route, withCORS(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	http.Handle("/"+ui_route, withWhitelist(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mutex.RLock()
 		tempSessions := append([]string(nil), sessionSlice...)
 		mutex.RUnlock()
@@ -5816,10 +5873,10 @@ func main() {
 	})))
 
 	// --- 有权限交互 ---
-	http.Handle("/"+web_route, withCORS(User_index()))
+	http.Handle("/"+web_route, withWhitelist(User_index()))
 
 	// --- 调用 JS ---
-	http.Handle("/"+web_js, withCORS(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	http.Handle("/"+web_js, withWhitelist(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mutex.RLock()
 		tempSessions := append([]string(nil), sessionSlice...)
 		mutex.RUnlock()
@@ -5828,7 +5885,7 @@ func main() {
 	})))
 
 	//调用css
-	http.Handle("/"+web_css, withCORS(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	http.Handle("/"+web_css, withWhitelist(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		web_ui.Css(css_file, error_str).ServeHTTP(w, r)
 	})))
 
@@ -5843,17 +5900,17 @@ func main() {
 
 	// 使用 HTTPS
 	var cert tls.Certificate
-	var err error
+	var certerr error
 	if useDefaultCert || (certPath == "" && keyPath == "") {
-		cert, err = tls.X509KeyPair([]byte(protocol.DefaultCert), []byte(protocol.DefaultKey))
-		if err != nil {
-			fmt.Printf("Failed to load default certificate: %v\n", err)
+		cert, certerr = tls.X509KeyPair([]byte(protocol.DefaultCert), []byte(protocol.DefaultKey))
+		if certerr != nil {
+			fmt.Printf("Failed to load default certificate: %v\n", certerr)
 			return
 		}
 	} else if certPath != "" && keyPath != "" {
-		cert, err = tls.LoadX509KeyPair(certPath, keyPath)
-		if err != nil {
-			fmt.Printf("[*] Failed to load custom certificate: %v\n", err)
+		cert, certerr = tls.LoadX509KeyPair(certPath, keyPath)
+		if certerr != nil {
+			fmt.Printf("[*] Failed to load custom certificate: %v\n", certerr)
 			return
 		}
 	} else {
@@ -5869,48 +5926,30 @@ func main() {
 	}
 	server.TLSConfig = tlsConfig
 	fmt.Printf("[*] Start HTTPS server successful, access address https://localhost:%s/%s\n", index_port, login_route)
-	err = server.ListenAndServeTLS("", "")
-	if err != nil {
-		fmt.Printf("FAIL TO START HTTPS SERVER %v\n", err)
+	certerr = server.ListenAndServeTLS("", "")
+	if certerr != nil {
+		fmt.Printf("FAIL TO START HTTPS SERVER %v\n", certerr)
 	}
 }
 
-func setCORSHeaders(w http.ResponseWriter, r *http.Request) {
-	origin := r.Header.Get("Origin")
-	if origin != "" {
-		w.Header().Set("Access-Control-Allow-Origin", origin)
-		w.Header().Set("Access-Control-Allow-Credentials", "true")
-		w.Header().Set("Vary", "Origin")
-	} else {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+func writeCustomError(w http.ResponseWriter, status int, body string, extra map[string]string) {
+	for k, v := range extra {
+		w.Header().Set(k, v)
 	}
-	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
-}
-
-func writeCustomError(w http.ResponseWriter, r *http.Request, status int, body string) {
-	setCORSHeaders(w, r)
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(status)
 	_, _ = w.Write([]byte(body))
 }
 
-func staticWithCustom404(root string, notFoundText string) http.Handler {
+func staticWithCustom404(root string, notFoundText string, notFoundHeaders map[string]string) http.Handler {
 	fileServer := http.FileServer(http.Dir(root))
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		setCORSHeaders(w, r)
-
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-
 		rec := httptest.NewRecorder()
 		fileServer.ServeHTTP(rec, r)
 
 		if rec.Code == http.StatusNotFound {
-			writeCustomError(w, r, http.StatusNotFound, notFoundText)
+			writeCustomError(w, http.StatusNotFound, notFoundText, notFoundHeaders)
 			return
 		}
 
@@ -5924,10 +5963,8 @@ func staticWithCustom404(root string, notFoundText string) http.Handler {
 	})
 }
 
-func withCORS(next http.Handler) http.Handler {
+func withWhitelist(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		setCORSHeaders(w, r)
-
 		whitelistIPs, err := readWhitelist()
 		if err != nil {
 			http.Error(w, "internal config error", http.StatusInternalServerError)
@@ -5944,12 +5981,7 @@ func withCORS(next http.Handler) http.Handler {
 		}
 
 		if !allowed {
-			writeCustomError(w, r, http.StatusNotFound, error_str)
-			return
-		}
-
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
+			writeCustomError(w, http.StatusNotFound, error_str, nil)
 			return
 		}
 
