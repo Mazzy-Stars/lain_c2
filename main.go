@@ -583,7 +583,7 @@ type UploadTask struct {
 }
 
 // 有权限交互,必须先登录
-func User_index() http.HandlerFunc {
+func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
 		var uploadTask *UploadTask
@@ -591,9 +591,13 @@ func User_index() http.HandlerFunc {
 		// 打印请求头
 		usernameCookie, err := r.Cookie("cookie")
 		if err != nil {
-			w.WriteHeader(http.StatusNotFound)
-			fmt.Fprint(w, error_str)
-			return
+			for k, v := range notFoundHeaders {
+                w.Header().Set(k, v)
+            }
+            w.Header().Set("Content-Type", "text/html; charset=utf-8")
+            w.WriteHeader(http.StatusNotFound)
+            _, _ = w.Write([]byte(error_str))
+            return
 		}
 		var foundUser bool
 		mutex.RLock()
@@ -606,8 +610,13 @@ func User_index() http.HandlerFunc {
 		}
 		mutex.RUnlock()
 		if !foundUser {
-			w.WriteHeader(http.StatusNotFound)
-			return
+			for k, v := range notFoundHeaders {
+                w.Header().Set(k, v)
+            }
+            w.Header().Set("Content-Type", "text/html; charset=utf-8")
+            w.WriteHeader(http.StatusNotFound)
+            _, _ = w.Write([]byte(error_str))
+            return
 		}
 
 		username := usernameCookie.Value[strings.LastIndex(usernameCookie.Value, "=")+1:]
@@ -5866,11 +5875,11 @@ func main() {
 		tempSessions := append([]string(nil), sessionSlice...)
 		mutex.RUnlock()
 		
-		web_ui.Lain(error_str, web_title, web_js, web_css, tempSessions).ServeHTTP(w, r)
+		web_ui.Lain(error_str, web_title, web_js, web_css, tempSessions,cfg.NotFoundHeaders).ServeHTTP(w, r)
 	}),cfg.NotFoundHeaders))
 
 	// --- 有权限交互 ---
-	http.Handle("/"+web_route, withWhitelist(User_index(),cfg.NotFoundHeaders))
+	http.Handle("/"+web_route, withWhitelist(User_index(cfg.NotFoundHeaders),cfg.NotFoundHeaders))
 
 	// --- 调用 JS ---
 	http.Handle("/"+web_js, withWhitelist(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -5878,12 +5887,12 @@ func main() {
 		tempSessions := append([]string(nil), sessionSlice...)
 		mutex.RUnlock()
 	
-		web_ui.Js(error_str, web_route, web_css, tempSessions).ServeHTTP(w, r)
+		web_ui.Js(error_str, web_route, web_css, tempSessions,cfg.NotFoundHeaders).ServeHTTP(w, r)
 	}),cfg.NotFoundHeaders))
 
 	//调用css
 	http.Handle("/"+web_css, withWhitelist(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		web_ui.Css(css_file, error_str).ServeHTTP(w, r)
+		web_ui.Css(css_file).ServeHTTP(w, r)
 	}),cfg.NotFoundHeaders))
 
 	// 创建 HTTP Server
