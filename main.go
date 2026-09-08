@@ -5936,7 +5936,7 @@ func writeCustomError(w http.ResponseWriter, status int, body string, extra map[
 	for k, v := range extra {
 		w.Header().Set(k, v)
 	}
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
 	_, _ = w.Write([]byte(body))
 }
