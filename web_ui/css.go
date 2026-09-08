@@ -5,7 +5,7 @@ import (
 	"io/ioutil"
 	"net/http"
 )
-func Css(css_file,error_str string) http.HandlerFunc {
+func Css(css_file string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 			var cssContent string
@@ -13,7 +13,6 @@ func Css(css_file,error_str string) http.HandlerFunc {
 				content, err := ioutil.ReadFile(css_file)
 				if err != nil {
                     w.WriteHeader(http.StatusNotFound)
-					fmt.Fprint(w, error_str)
 					return
 				}
 				cssContent = string(content)
