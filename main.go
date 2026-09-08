@@ -5867,7 +5867,7 @@ func main() {
 		mutex.RUnlock()
 		
 		web_ui.Lain(error_str, web_title, web_js, web_css, tempSessions).ServeHTTP(w, r)
-	})),cfg.NotFoundHeaders)
+	}),cfg.NotFoundHeaders))
 
 	// --- 有权限交互 ---
 	http.Handle("/"+web_route, withWhitelist(User_index(),cfg.NotFoundHeaders))
@@ -5879,12 +5879,12 @@ func main() {
 		mutex.RUnlock()
 	
 		web_ui.Js(error_str, web_route, web_css, tempSessions).ServeHTTP(w, r)
-	})),cfg.NotFoundHeaders)
+	}),cfg.NotFoundHeaders))
 
 	//调用css
 	http.Handle("/"+web_css, withWhitelist(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		web_ui.Css(css_file, error_str).ServeHTTP(w, r)
-	})),cfg.NotFoundHeaders)
+	}),cfg.NotFoundHeaders))
 
 	// 创建 HTTP Server
 	server := &http.Server{
