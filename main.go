@@ -5750,6 +5750,7 @@ type ServerConfig struct {
 	DefaultCert     bool              `json:"default_cert"`
 	RespError       string            `json:"resp_error"`
 	CSSFile         string            `json:"css"`
+	LoginFile		string            `json:"login_file"`
 	Title           string            `json:"title"`
 	UIRoute         string            `json:"ui_route"`
 	WebRoute        string            `json:"web_route"`
@@ -5841,6 +5842,7 @@ func main() {
 	keyPath := cfg.KeyPath
 	useDefaultCert := cfg.DefaultCert
 	css_file := cfg.CSSFile
+	login_file := cfg.LoginFile
 	web_title := cfg.Title
 	ui_route := cfg.UIRoute
 	web_route := cfg.WebRoute
@@ -5867,7 +5869,7 @@ func main() {
 	}
 
 	//登录
-	http.Handle("/"+login_route,  withWhitelist(login(login_route, ui_route, web_css, web_title),cfg.NotFoundHeaders))
+	http.Handle("/"+login_route,  withWhitelist(login(login_route, ui_route, web_css, web_title,login_file),cfg.NotFoundHeaders))
 
 	// --- 页面路由 ---
 	http.Handle("/"+ui_route, withWhitelist(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -6132,26 +6134,57 @@ func writeWhitelist(whitelist []string) error {
 }
 
 // 登录
-func login(login_route, ui_route, web_css, web_title string) http.HandlerFunc {
+func login(login_route, ui_route, web_css, web_title,login_file string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
-			html := fmt.Sprintf(`<!DOCTYPE html>
-            <html lang="en">
-            <head>
-                <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>%s</title>
-                <link rel="stylesheet" href="/`+web_css+`">
-            </head>
-            <body>
-                <form class="form-in" action="/%s" method="post" enctype="application/x-www-form-urlencoded">  
-                    <h1>Login</h1>
-                    <input type="text" name="username" id="username" placeholder="Username" required>
-                    <input type="password" name="password" placeholder="password" required>
-                    <button type="submit">Login</button>
-                </form>
-            </body>
-            </html>`, web_title, login_route)
+			var html string
+			if login_file != "" {
+				fileContent, err := os.ReadFile(login_file)
+				if err != nil {
+					fmt.Printf("Failed to read login_file: %v\n", err)
+					html = fmt.Sprintf(`
+					<!DOCTYPE html>
+						<html lang="en">
+						<head>
+							<meta charset="UTF-8">
+							<meta name="viewport" content="width=device-width, initial-scale=1.0">
+							<title>%s</title>
+							<link rel="stylesheet" href="/`+web_css+`">
+						</head>
+						<body>
+							<form class="form-in" action="/%s" method="post" enctype="application/x-www-form-urlencoded">  
+								<h1>Login</h1>
+								<input type="text" name="username" id="username" placeholder="Username" required>
+								<input type="password" name="password" placeholder="password" required>
+								<button type="submit">Login</button>
+							</form>
+						</body>
+					</html>`,
+					 web_title, login_route)
+				} else {
+					html = string(fileContent)
+				}
+			} else {
+				html = fmt.Sprintf(`
+				<!DOCTYPE html>
+					<html lang="en">
+					<head>
+						<meta charset="UTF-8">
+						<meta name="viewport" content="width=device-width, initial-scale=1.0">
+						<title>%s</title>
+						<link rel="stylesheet" href="/`+web_css+`">
+					</head>
+					<body>
+						<form class="form-in" action="/%s" method="post" enctype="application/x-www-form-urlencoded">  
+							<h1>Login</h1>
+							<input type="text" name="username" id="username" placeholder="Username" required>
+							<input type="password" name="password" placeholder="password" required>
+							<button type="submit">Login</button>
+						</form>
+					</body>
+				</html>`, 
+				web_title, login_route)
+			}
 			w.Header().Set("Content-Type", "text/html")
 			fmt.Fprint(w, html)
 			return
@@ -6219,10 +6252,7 @@ func login(login_route, ui_route, web_css, web_title string) http.HandlerFunc {
 				logger.WriteLog(log_str)
 				http.SetCookie(w, &cookie)
 				http.Redirect(w, r, "/"+ui_route, http.StatusFound)
-				json.NewEncoder(w).Encode(map[string]interface{}{
-					"code":    "200",
-					"message": "Login successful",
-				})
+				return
 			} else {
 				// 没有用户则
 				log_str := fmt.Sprintf(log_word["login_fail"], userip, username, password)
