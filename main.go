@@ -982,10 +982,10 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 						})
 						continue
 					}
-					defer file.Close()
 
 					stat, err := file.Stat()
 					if err != nil {
+						_ = file.Close()
 						clientWs.WriteJSON(map[string]interface{}{
 							"code":    500,
 							"path":    "downloadlog",
@@ -996,6 +996,7 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 
 					offset, sendSize, chunked, err := parseDownloadRange(body, stat.Size())
 					if err != nil {
+						_ = file.Close()
 						clientWs.WriteJSON(map[string]interface{}{
 							"code":    400,
 							"path":    "downloadlog",
@@ -1013,10 +1014,12 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 						"chunkSize": sendSize,
 						"chunked":   chunked,
 					}); err != nil {
+						_ = file.Close()
 						return
 					}
 
 					sentSize, err := writeBinaryRange(clientWs, file, offset, sendSize)
+					file.Close()
 					if err != nil {
 						return
 					}
@@ -1080,7 +1083,6 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 						})
 						return
 					}
-					defer file.Close()
 
 					if err := clientWs.WriteJSON(map[string]interface{}{
 						"code":      200,
@@ -1092,10 +1094,12 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 						"chunkSize": sendSize,
 						"chunked":   chunked,
 					}); err != nil {
+						_ = file.Close()
 						return
 					}
 
 					sentSize, err := writeBinaryRange(clientWs, file, offset, sendSize)
+					file.Close()
 					if err != nil {
 						return
 					}
@@ -1167,7 +1171,6 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 						})
 						return
 					}
-					defer file.Close()
 
 					if err := clientWs.WriteJSON(map[string]interface{}{
 						"code":      200,
@@ -1179,10 +1182,12 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 						"chunkSize": sendSize,
 						"chunked":   chunked,
 					}); err != nil {
+						_ = file.Close()
 						return
 					}
 
 					sentSize, err := writeBinaryRange(clientWs, file, offset, sendSize)
+					file.Close()
 					if err != nil {
 						return
 					}
