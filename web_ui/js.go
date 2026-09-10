@@ -1274,21 +1274,28 @@ class WebSocketClient {
         });
     }
     handleBinaryMessage(data) {
-        if (!this.currentDownload || !this.currentDownload.started) {
+        const task = this.currentDownload;
+        if (!task) {
             return;
         }
 
-        this.currentDownload.chunks.push(data);
+        const range = task.downloadRange;
+        if (!task.started || !range || !(data instanceof ArrayBuffer)) {
+            this.rejectDownload(new Error("Unexpected download data"));
+            return;
+        }
+        if (data.byteLength > range.size - range.received) {
+            this.rejectDownload(new Error("Download chunk exceeds declared size"));
+            return;
+        }
+        task.chunks.push(data);
+        range.received += data.byteLength;
+        task.received += data.byteLength;
         this.refreshDownloadTimer();
     }
-
     async handleDownloadMessage(msg) {
         const task = this.currentDownload;
-        if (!task) {
-            return false;
-        }
-
-        if (msg.path !== task.path) {
+        if (!task || !msg || msg.path !== task.path) {
             return false;
         }
 
@@ -1302,45 +1309,57 @@ class WebSocketClient {
             (msg.path === "downloadlog" && msg.message === "download finished");
 
         if (isEnd) {
-            task.filename = msg.filename || task.filename;
-            task.size = typeof msg.size === "number" ? msg.size : task.size;
-
-            if (typeof msg.nextOffset === "number") {
-                task.offset = msg.nextOffset;
-                task.received = msg.nextOffset;
-            } else if (typeof msg.sentSize === "number") {
-                task.received += msg.sentSize;
-                task.offset += msg.sentSize;
+            const range = task.downloadRange;
+            if (!task.started || !range) {
+                this.rejectDownload(new Error("Download ended without an active chunk"));
+                return true;
             }
 
+            const nextOffset = range.offset + range.size;
+            const complete = nextOffset === range.total;
+            if (range.received !== range.size ||
+                task.received !== nextOffset ||
+                msg.offset !== range.offset ||
+                msg.sentSize !== range.received ||
+                msg.nextOffset !== nextOffset ||
+                msg.size !== range.total ||
+                msg.eof !== complete) {
+                this.rejectDownload(new Error("Download chunk length or offset mismatch"));
+                return true;
+            }
+
+            task.offset = nextOffset;
+            task.started = false;
+            task.downloadRange = null;
             this.notifyDownloadProgress(task);
 
-            const eof = !!msg.eof || (task.size > 0 && task.received >= task.size);
-
-            if (!eof) {
+            if (!complete) {
                 this.refreshDownloadTimer();
                 await this.requestNextDownloadChunk();
                 return true;
             }
 
-            clearTimeout(task.timer);
+            try {
+                const blob = new Blob(task.chunks, {
+                    type: "application/octet-stream"
+                });
+                if (blob.size !== task.received || blob.size !== task.size) {
+                    throw new Error("Final download size mismatch");
+                }
 
-            const blob = new Blob(task.chunks, {
-                type: "application/octet-stream"
-            });
-
-            task.received = task.size || blob.size;
-            this.notifyDownloadProgress(task);
-
-            const result = {
-                filename: task.filename || "download.bin",
-                size: task.received,
-                blob,
-            };
-
-            this.currentDownload = null;
-            this.saveDownloadedFile(result.filename, result.blob);
-            task.resolve(result);
+                const result = {
+                    filename: task.filename || "download.bin",
+                    size: blob.size,
+                    blob,
+                };
+                // Saving can fail; keep the task available for rejection.
+                this.saveDownloadedFile(result.filename, result.blob);
+                clearTimeout(task.timer);
+                this.currentDownload = null;
+                task.resolve(result);
+            } catch (err) {
+                this.rejectDownload(err);
+            }
             return true;
         }
 
@@ -1351,10 +1370,27 @@ class WebSocketClient {
                 typeof msg.size === "number");
 
         if (isStart) {
+            if (task.started ||
+                !Number.isSafeInteger(msg.size) || msg.size < 0 ||
+                !Number.isSafeInteger(msg.offset) || msg.offset < 0 ||
+                !Number.isSafeInteger(msg.chunkSize) || msg.chunkSize < 0 ||
+                msg.offset !== task.offset || msg.offset !== task.received ||
+                msg.offset > msg.size ||
+                msg.chunkSize > msg.size - msg.offset ||
+                (msg.chunkSize === 0 && msg.offset < msg.size)) {
+                this.rejectDownload(new Error("Invalid or non-contiguous download chunk"));
+                return true;
+            }
+
+            task.downloadRange = {
+                offset: msg.offset,
+                size: msg.chunkSize,
+                total: msg.size,
+                received: 0,
+            };
             task.started = true;
             task.filename = msg.filename || task.filename;
-            task.size = typeof msg.size === "number" ? msg.size : task.size;
-            task.offset = typeof msg.offset === "number" ? msg.offset : task.offset;
+            task.size = msg.size;
             this.notifyDownloadProgress(task);
             this.refreshDownloadTimer();
             return true;
