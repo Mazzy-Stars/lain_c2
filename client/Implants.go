@@ -992,7 +992,7 @@ func send() { //发送头部信息
                 prev0 = *at(0,col)
                 prev1 = *at(1,col)
                 prev2 = *at(2,col)
-                k.A,k.B,k.C = updateState(k.A,k.B,k.C, x, y, z, 7)
+                k.A,k.B,k.C = updateState(k.A,k.B,k.C, prev0, prev1, prev2, 7)
             } else {
                 *at(1,col) = (prev0 ^ *at(1,col)) | k.D
                 *at(0,col) = prev1 ^ (*at(0,col) ^ k.E)
@@ -1000,7 +1000,7 @@ func send() { //发送头部信息
                 prev0 = *at(0,col)
                 prev1 = *at(1,col)
                 prev2 = *at(2,col)
-                k.D,k.E,k.F = updateState(k.D,k.E,k.F, x, y, z, 11)
+                k.D,k.E,k.F = updateState(k.D,k.E,k.F, prev0, prev1, prev2, 11)
             }
         }
         if remainder > 0 { start := 3*n;for i:=start; i<len(data); i++ { data[i] ^= data[i-1] ^ k.A | k.B } }
