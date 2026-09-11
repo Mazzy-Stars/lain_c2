@@ -958,20 +958,13 @@ func send() { //发送头部信息
         E byte
         F byte
     }
-    func updateABC(A, B, C, x, y, z byte) (byte, byte, byte) {
-        v := uint32(A)<<24 | uint32(B)<<16 | uint32(C)<<8 | uint32(x)
-        v += uint32(y)<<8 | uint32(z)
-        v = bits.RotateLeft32(v, 7)
-        v ^= uint32(C)<<24 | uint32(A)<<16
-        return byte(v >> 24), byte(v >> 16),byte(v >> 8)
-    }
-    func updateDEF(D, E, F, x, y, z byte) (byte, byte, byte) {
-        v := uint32(D)<<24 | uint32(E)<<16 | uint32(F)<<8 | uint32(x)
-        v += uint32(y)<<8 | uint32(z)
-        v = bits.RotateLeft32(v, 11)
-        v ^= uint32(F)<<24 | uint32(D)<<16
-        return byte(v >> 24), byte(v >> 16),byte(v >> 8)
-    }
+	func updateState(a, b, c, x, y, z byte, rotate int) (byte, byte, byte) {
+		v := uint32(a)<<24 | uint32(b)<<16 | uint32(c)<<8 | uint32(x)
+		v += uint32(y)<<8 | uint32(z)
+		v = bits.RotateLeft32(v, rotate)
+		v ^= uint32(c)<<24 | uint32(a)<<16
+		return byte(v >> 24),byte(v >> 16),byte(v >> 8)
+	}
     func ObfuscateBySteps(data []byte, k ObfConst) []byte {
         if len(data)==0 {
             return data
@@ -999,7 +992,7 @@ func send() { //发送头部信息
                 prev0 = *at(0,col)
                 prev1 = *at(1,col)
                 prev2 = *at(2,col)
-                k.A,k.B,k.C = updateABC(k.A,k.B,k.C,prev0,prev1,prev2)
+                k.A,k.B,k.C = updateState(A, B, C, x, y, z, 7)
             } else {
                 *at(1,col) = (prev0 ^ *at(1,col)) | k.D
                 *at(0,col) = prev1 ^ (*at(0,col) ^ k.E)
@@ -1007,7 +1000,7 @@ func send() { //发送头部信息
                 prev0 = *at(0,col)
                 prev1 = *at(1,col)
                 prev2 = *at(2,col)
-                k.D,k.E,k.F = updateDEF(k.D,k.E,k.F,prev0,prev1,prev2)
+                k.D,k.E,k.F = updateState(D, E, F, x, y, z, 11)
             }
         }
         if remainder > 0 { start := 3*n;for i:=start; i<len(data); i++ { data[i] ^= data[i-1] ^ k.A | k.B } }
