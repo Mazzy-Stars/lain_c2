@@ -4,8 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"crypto/md5"
-	"crypto/tls"
 	crand "crypto/rand"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -90,7 +90,8 @@ var (
 	logger = &MyLog{}
 	/*不可清理*/ log_word = make(map[string]string)
 
-	/*不可清理*/ loggerMu sync.RWMutex
+	/*不可清理*/
+	loggerMu sync.RWMutex
 	/*不可清理*/ WhiteMu sync.RWMutex
 )
 
@@ -592,12 +593,12 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 		usernameCookie, err := r.Cookie("cookie")
 		if err != nil {
 			for k, v := range notFoundHeaders {
-                w.Header().Set(k, v)
-            }
-            w.Header().Set("Content-Type", "text/html; charset=utf-8")
-            w.WriteHeader(http.StatusNotFound)
-            _, _ = w.Write([]byte(error_str))
-            return
+				w.Header().Set(k, v)
+			}
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(error_str))
+			return
 		}
 		var foundUser bool
 		mutex.RLock()
@@ -611,12 +612,12 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 		mutex.RUnlock()
 		if !foundUser {
 			for k, v := range notFoundHeaders {
-                w.Header().Set(k, v)
-            }
-            w.Header().Set("Content-Type", "text/html; charset=utf-8")
-            w.WriteHeader(http.StatusNotFound)
-            _, _ = w.Write([]byte(error_str))
-            return
+				w.Header().Set(k, v)
+			}
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(error_str))
+			return
 		}
 
 		username := usernameCookie.Value[strings.LastIndex(usernameCookie.Value, "=")+1:]
@@ -640,7 +641,7 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 		wsUsersMu.Unlock()
 
 		logger.WriteLog(fmt.Sprintf(log_word["user_join"], user_ip, username))
-		
+
 		PushData(usernameCookie.Value, "agentList")
 		PushData(usernameCookie.Value, "winAgentList")
 		PushData(usernameCookie.Value, "listen")
@@ -801,7 +802,7 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 				case "delIndex":
 					indexStr, _ := body["uid"].(string)
 					taskid, _ := body["taskid"].(string)
-				
+
 					index, err := strconv.Atoi(indexStr)
 					if err != nil {
 						clientWs.WriteJSON(map[string]interface{}{
@@ -813,7 +814,7 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 						})
 						break
 					}
-				
+
 					del := deleteConnAtIndex(index, true)
 					if del {
 						clientWs.WriteJSON(map[string]interface{}{
@@ -2135,7 +2136,7 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 					func() {
 						username, _ := body["username"].(string)
 						password, _ := body["password"].(string)
-				
+
 						if username == "" || password == "" {
 							clientWs.WriteJSON(map[string]interface{}{
 								"code":    400,
@@ -2144,16 +2145,16 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 							})
 							return
 						}
-				
+
 						mutex.Lock()
 						defer mutex.Unlock()
-				
+
 						userHash := md5.Sum([]byte(username))
 						hashedUsername := fmt.Sprintf("%x", userHash)
-				
+
 						passHash := md5.Sum([]byte(password))
 						hashedPassword := fmt.Sprintf("%x", passHash)
-				
+
 						type User struct {
 							Username string `json:"username"`
 							Password string `json:"password"`
@@ -2161,12 +2162,12 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 						type UserFile struct {
 							Users []User `json:"users"`
 						}
-				
+
 						userAdded := false
-				
+
 						userFilePath := "user.json"
 						userData := UserFile{Users: []User{}}
-				
+
 						data, err := os.ReadFile(userFilePath)
 						if err == nil && len(data) > 0 {
 							if err := json.Unmarshal(data, &userData); err != nil {
@@ -2185,9 +2186,9 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 							})
 							return
 						}
-				
-						for _, user := range userData.Users {
-							if user.Username == hashedUsername {
+
+						for i := range userData.Users {
+							if userData.Users[i].Username == hashedUsername {
 								clientWs.WriteJSON(map[string]interface{}{
 									"code":    400,
 									"path":    "addteamment",
@@ -2196,12 +2197,12 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 								return
 							}
 						}
-				
+
 						userData.Users = append(userData.Users, User{
 							Username: hashedUsername,
 							Password: hashedPassword,
 						})
-				
+
 						output, err := json.MarshalIndent(userData, "", "  ")
 						if err != nil {
 							clientWs.WriteJSON(map[string]interface{}{
@@ -2211,7 +2212,7 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 							})
 							return
 						}
-				
+
 						if err := os.WriteFile(userFilePath, output, 0600); err != nil {
 							clientWs.WriteJSON(map[string]interface{}{
 								"code":    500,
@@ -2220,9 +2221,9 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 							})
 							return
 						}
-				
+
 						userAdded = true
-				
+
 						if userAdded {
 							logger.WriteLog(fmt.Sprintf(
 								log_word["add_user"],
@@ -2231,7 +2232,7 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 								hashedPassword,
 							))
 						}
-				
+
 						clientWs.WriteJSON(map[string]interface{}{
 							"code":    200,
 							"path":    "addteamment",
@@ -3380,6 +3381,7 @@ func DeleteEntry(delshell string, delbase bool) {
 
 	cleanupDeletedUID(uid, index, delbase)
 }
+
 // 写入目录列表
 func Put_file_list(uid, file, taskid string, code_rounds map[byte]int) {
 	keyMu.RLock()
@@ -3513,7 +3515,7 @@ func save_file_list(uid, file, list string) {
 			item.File = file
 
 			go PushAgentData(uid, "updateGetMsgCache")
-			
+
 			return
 		}
 	}
@@ -4171,19 +4173,19 @@ func Del_shell_innet(target, uid string) bool {
 }
 
 func chatUID() string {
-    b := make([]byte, 16)
-    if _, err := crand.Read(b); err != nil {
-        return fmt.Sprintf("%d", time.Now().UnixNano())
-    }
-    b[6] = (b[6] & 0x0f) | 0x40
-    b[8] = (b[8] & 0x3f) | 0x80
-    return fmt.Sprintf("%x-%x-%x-%x-%x",
-        b[0:4],
-        b[4:6],
-        b[6:8],
-        b[8:10],
-        b[10:],
-    )
+	b := make([]byte, 16)
+	if _, err := crand.Read(b); err != nil {
+		return fmt.Sprintf("%d", time.Now().UnixNano())
+	}
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x",
+		b[0:4],
+		b[4:6],
+		b[6:8],
+		b[8:10],
+		b[10:],
+	)
 }
 
 func LoadHistoryFiles() error {
@@ -4694,8 +4696,8 @@ type LogEntry struct {
 func Log_read(maxLines int) []LogEntry {
 
 	loggerMu.RLock()
-    defer loggerMu.RUnlock()
-	
+	defer loggerMu.RUnlock()
+
 	file, err := os.Open("server.log")
 	if err != nil {
 		return nil
@@ -4763,7 +4765,7 @@ func (w *MyLog) WriteLog(logStr string) {
 
 	loggerMu.Lock()
 	defer loggerMu.Unlock()
-	
+
 	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 	if err != nil {
 		fmt.Println("can not log:", err)
@@ -5755,7 +5757,7 @@ type ServerConfig struct {
 	DefaultCert     bool              `json:"default_cert"`
 	RespError       string            `json:"resp_error"`
 	CSSFile         string            `json:"css"`
-	LoginFile		string            `json:"login_file"`
+	LoginFile       string            `json:"login_file"`
 	Title           string            `json:"title"`
 	UIRoute         string            `json:"ui_route"`
 	WebRoute        string            `json:"web_route"`
@@ -5767,14 +5769,14 @@ type ServerConfig struct {
 
 func defaultConfig() ServerConfig {
 	return ServerConfig{
-		Port:       "443",
-		RespError:  "404 page not found",
-		Title:      "connect",
-		UIRoute:    "server",
-		WebRoute:   "user_index",
-		LoginRoute: "login",
-		JSRoute:    "lain.js",
-		CSSRoute:   "lain.css",
+		Port:            "443",
+		RespError:       "404 page not found",
+		Title:           "connect",
+		UIRoute:         "server",
+		WebRoute:        "user_index",
+		LoginRoute:      "login",
+		JSRoute:         "lain.js",
+		CSSRoute:        "lain.css",
 		NotFoundHeaders: map[string]string{},
 	}
 }
@@ -5864,7 +5866,7 @@ func main() {
 		}
 		fmt.Println("[*] directory ./html Created successfully")
 	}
-	http.Handle("/", staticWithCustom404("./html", error_str,cfg.NotFoundHeaders))
+	http.Handle("/", staticWithCustom404("./html", error_str, cfg.NotFoundHeaders))
 	fmt.Println(asciiArt)
 
 	//历史聊天文件
@@ -5874,33 +5876,33 @@ func main() {
 	}
 
 	//登录
-	http.Handle("/"+login_route,  withWhitelist(login(login_route, ui_route, web_css, web_title,login_file),cfg.NotFoundHeaders))
+	http.Handle("/"+login_route, withWhitelist(login(login_route, ui_route, web_css, web_title, login_file), cfg.NotFoundHeaders))
 
 	// --- 页面路由 ---
 	http.Handle("/"+ui_route, withWhitelist(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mutex.RLock()
 		tempSessions := append([]string(nil), sessionSlice...)
 		mutex.RUnlock()
-		
-		web_ui.Lain(error_str, web_title, web_js, web_css, tempSessions,cfg.NotFoundHeaders).ServeHTTP(w, r)
-	}),cfg.NotFoundHeaders))
+
+		web_ui.Lain(error_str, web_title, web_js, web_css, tempSessions, cfg.NotFoundHeaders).ServeHTTP(w, r)
+	}), cfg.NotFoundHeaders))
 
 	// --- 有权限交互 ---
-	http.Handle("/"+web_route, withWhitelist(User_index(cfg.NotFoundHeaders),cfg.NotFoundHeaders))
+	http.Handle("/"+web_route, withWhitelist(User_index(cfg.NotFoundHeaders), cfg.NotFoundHeaders))
 
 	// --- 调用 JS ---
 	http.Handle("/"+web_js, withWhitelist(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mutex.RLock()
 		tempSessions := append([]string(nil), sessionSlice...)
 		mutex.RUnlock()
-	
-		web_ui.Js(error_str, web_route, web_css, tempSessions,cfg.NotFoundHeaders).ServeHTTP(w, r)
-	}),cfg.NotFoundHeaders))
+
+		web_ui.Js(error_str, web_route, web_css, tempSessions, cfg.NotFoundHeaders).ServeHTTP(w, r)
+	}), cfg.NotFoundHeaders))
 
 	//调用css
 	http.Handle("/"+web_css, withWhitelist(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		web_ui.Css(css_file).ServeHTTP(w, r)
-	}),cfg.NotFoundHeaders))
+	}), cfg.NotFoundHeaders))
 
 	// 创建 HTTP Server
 	server := &http.Server{
@@ -6118,7 +6120,7 @@ func writeWhitelist(whitelist []string) error {
 	seen := make(map[string]struct{}, len(whitelist))
 
 	WhiteMu.Lock()
-    defer WhiteMu.Unlock()
+	defer WhiteMu.Unlock()
 
 	for _, item := range whitelist {
 		line := strings.TrimSpace(item)
@@ -6139,7 +6141,7 @@ func writeWhitelist(whitelist []string) error {
 }
 
 // 登录
-func login(login_route, ui_route, web_css, web_title,login_file string) http.HandlerFunc {
+func login(login_route, ui_route, web_css, web_title, login_file string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 			var html string
@@ -6165,7 +6167,7 @@ func login(login_route, ui_route, web_css, web_title,login_file string) http.Han
 							</form>
 						</body>
 					</html>`,
-					 web_title, login_route)
+						web_title, login_route)
 				} else {
 					html = string(fileContent)
 				}
@@ -6187,8 +6189,8 @@ func login(login_route, ui_route, web_css, web_title,login_file string) http.Han
 							<button type="submit">Login</button>
 						</form>
 					</body>
-				</html>`, 
-				web_title, login_route)
+				</html>`,
+					web_title, login_route)
 			}
 			w.Header().Set("Content-Type", "text/html")
 			fmt.Fprint(w, html)
