@@ -1666,10 +1666,6 @@ button:hover {
         font-size: 11px;
     }
 
-    .pending_file_preview {
-        font-size: 13px;
-        padding: 5px 8px;
-    }
 }
 .pending_file {
     opacity: 0.6;
@@ -1682,6 +1678,13 @@ button:hover {
     margin: 6px 0;
     border-radius: 4px;
     font-size: 14px;
+}
+
+@media (max-width: 768px) {
+    .pending_file_preview {
+        font-size: 13px;
+        padding: 5px 8px;
+    }
 }
 
 /* plugin dialog */
