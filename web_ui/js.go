@@ -6971,9 +6971,11 @@ document.addEventListener("DOMContentLoaded", function () {
     const logHandle = logDiv.querySelector(".resize-handle");
     const serverIndexDiv = document.querySelector(".server_index");
     const contentDiv = serverIndexDiv.querySelector(".content");
+    const touchEventOptions = { passive: false };
     let isResizingLog = false, startY, startContentHeight, startLogHeight, totalHeight;
 
     function startResize(e) {
+        if (e.cancelable) e.preventDefault();
         isResizingLog = true;
         startY = e.touches ? e.touches[0].clientY : e.clientY;
         startContentHeight = contentDiv.offsetHeight;
@@ -6981,12 +6983,13 @@ document.addEventListener("DOMContentLoaded", function () {
         totalHeight = serverIndexDiv.offsetHeight;
         document.addEventListener("mousemove", resizeLog);
         document.addEventListener("mouseup", stopResize);
-        document.addEventListener("touchmove", resizeLog);
+        document.addEventListener("touchmove", resizeLog, touchEventOptions);
         document.addEventListener("touchend", stopResize);
     }
 
     function resizeLog(e) {
         if (!isResizingLog) return;
+        if (e.cancelable) e.preventDefault();
         let currentY = e.touches ? e.touches[0].clientY : e.clientY;
         let deltaY = startY - currentY;
         let newContentHeight = Math.max(60, startContentHeight - deltaY);
@@ -7001,7 +7004,7 @@ document.addEventListener("DOMContentLoaded", function () {
         isResizingLog = false;
         document.removeEventListener("mousemove", resizeLog);
         document.removeEventListener("mouseup", stopResize);
-        document.removeEventListener("touchmove", resizeLog);
+        document.removeEventListener("touchmove", resizeLog, touchEventOptions);
         document.removeEventListener("touchend", stopResize);
     }
 
@@ -7017,7 +7020,7 @@ document.addEventListener("DOMContentLoaded", function () {
     window.addEventListener('resize', setInitialHeights);
 
     logHandle.addEventListener("mousedown", startResize);
-    logHandle.addEventListener("touchstart", startResize);
+    logHandle.addEventListener("touchstart", startResize, touchEventOptions);
 
     // **iframe 鎷栧姩**
     const iframePanel = document.getElementById("iframePanel");
