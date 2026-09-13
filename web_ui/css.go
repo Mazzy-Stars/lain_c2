@@ -337,7 +337,6 @@ html, body {
     .content {
         margin-left: 0; /* 缁夎濮╃粩顖氬絿濞戝牆涔忔笟褔妫跨捄锟?*/
         width: 100%; /* 閸愬懎顔愰崠鍝勵啍鎼达拷 100% */
-        padding-top: 15px。
     }
     .sidebar {
         display: none; /* 娑撹櫣些閸斻劎顏拋鍓х枂鏉堝啰鐛庨惃锟?sidebar */
