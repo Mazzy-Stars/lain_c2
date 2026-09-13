@@ -121,9 +121,13 @@ html, body {
     width: 0;
 }
 .content {
+    display: flex;
+    flex-direction: column;
     flex: 1;
     height: 100vh;
-    padding: 20px;
+    min-height: 0;
+    --chat-log-gap: 8px;
+    padding: 20px 20px var(--chat-log-gap);
     box-sizing: border-box;
     overflow-y: auto;
     position: relative; /* 娴ｏ拷 .toggle-button 閻╃顕潻娆庨嚋閻栬泛鍘撶槐鐘茬暰娴ｏ拷 */
@@ -244,6 +248,9 @@ html, body {
     bottom: 0;
     z-index: 10;
     cursor: ns-resize;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
 }
 .hidden {
     display: none;
@@ -330,6 +337,7 @@ html, body {
     .content {
         margin-left: 0; /* 缁夎濮╃粩顖氬絿濞戝牆涔忔笟褔妫跨捄锟?*/
         width: 100%; /* 閸愬懎顔愰崠鍝勵啍鎼达拷 100% */
+        padding-top: 15px。
     }
     .sidebar {
         display: none; /* 娑撹櫣些閸斻劎顏拋鍓х枂鏉堝啰鐛庨惃锟?sidebar */
@@ -365,6 +373,11 @@ html, body {
         width:200px;
         }
     .tel-toggleBtn {
+        position: absolute;
+        top: 9px;
+        left: 11px;
+        z-index: 1001;
+        margin: 0;
         display: block; /* 缁夎濮╃粩顖涙▔缁€鐑樺瘻闁斤拷 */
         padding: 10px 15px;
         background: #007bff;
@@ -1437,24 +1450,49 @@ button:hover {
 }
 .chat {
     width: 100%;
-    height: 100%;            /* 閸楃姵寮ч弫缈犻嚋閸欘垵顫嬫妯哄 */
+    height: auto;            /* 閸楃姵寮ч弫缈犻嚋閸欘垵顫嬫妯哄 */
+    min-height: 0;
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
     box-sizing: border-box;
+    overflow: hidden;
+}
+#chat {
+    height: auto;
+    flex: 1 1 0;
+    min-height: 0;
+    box-sizing: border-box;
+    overflow: hidden;
+}
+#chat:not(.hidden) {
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    height: auto;
+    min-height: 0;
 }
 .chat_container {
-    margin: 0 auto;
-    width: 65%;
-    max-height: 80vh; /* 閻ｆ瑥鍤潏鎾冲弳濡楀棝鐝惔锟?闂傜绐?*/
-    padding: 10px;
+    margin: 0;
+    width: 100%;
+    max-width: none;
+    --chat-message-inset: 12%;
+    height: auto;
+    flex: 1 1 0;
+    min-height: 0;
+    padding: 10px 36px 10px 10px;
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
+    overflow-x: hidden;
     overflow-y: auto;  /* 閸愬懎顔愭径姘啊濠婃艾濮?*/
+    scrollbar-gutter: stable;
 }
 /* 鏉堟挸鍙嗗鍡楊啇閸ｏ拷 */
 .chat_input_wrapper {
-    position: absolute;
-    left: 15%; 
-    bottom: 20px !important; 
+    position: static;
+    flex: 0 0 auto;
+    align-self: center;
     width: 75%;
     background: #fff;
     border: 1px solid #ccc;
@@ -1464,6 +1502,7 @@ button:hover {
     padding: 5px 10px;
     box-sizing: border-box;
     z-index: 2;
+    margin: 0 var(--chat-log-gap);
 }
 
 /* 鏉堟挸鍙嗗锟?*/
@@ -1513,7 +1552,7 @@ button:hover {
     box-shadow: 0 1px 2px rgba(0,0,0,0.08);
     word-wrap: break-word;
     position: relative;
-    margin: 6px 0;             /* 娑撳﹣绗呴梻纾嬬獩 */
+    margin: 6px 0 6px var(--chat-message-inset); /* 娑撳﹣绗呴梻纾嬬獩 */
     align-self: flex-start;     /* 姒涙顓婚棃鐘蹭箯 */
 }
 
@@ -1523,6 +1562,8 @@ button:hover {
     border-color: #c8e6ff;
     text-align: right;
     align-self: flex-end;       /* 闂堢姴褰?*/
+    margin-left: 0;
+    margin-right: var(--chat-message-inset);
 }
 /* 閻劍鍩涢崥锟?*/
 .chat_message strong {
@@ -1573,28 +1614,34 @@ button:hover {
 }
 @media (max-width: 768px) {
     .chat {
+        width: 100%;
+        height: auto;
+        min-height: 0;
+        flex: 1 1 auto;
         display: flex;
         flex-direction: column;
         gap: 10px;
-        padding: 0 10px 12px;
+        padding: 0;
         box-sizing: border-box;
     }
 
     .chat_container {
         width: 100%;
         max-width: none;
-        max-height: calc(100vh - 220px);
-        padding: 8px;
+        --chat-message-inset: 6%;
+        height: auto;
+        min-height: 0;
+        flex: 1 1 0;
+        margin: 0;
+        padding: 8px 36px 8px 8px;
         gap: 8px;
     }
 
     .chat_input_wrapper {
-        left: auto;
-        bottom: auto;
         width: 88%;
-        margin: 0;
         padding: 8px 10px;
         border-radius: 16px;
+        margin: 0 var(--chat-log-gap);
     }
 
     .chat_input {
