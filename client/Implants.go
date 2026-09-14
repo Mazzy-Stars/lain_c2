@@ -536,7 +536,7 @@ func send() { //发送头部信息
     package /*package_str*/
     import (
         "bytes"
-        "math/rand"
+        crand "crypto/rand"
         "math/big"
         "io"
         "io/ioutil"
@@ -782,7 +782,11 @@ func send() { //发送头部信息
             a_Mutex.RLock()
             wait := delay
             if delay > 30 {
-                wait += rand.Intn(jitter + 1)
+                n, err := crand.Int(crand.Reader, big.NewInt(int64(jitter+1)))
+                if err != nil {
+                    return
+                }
+                wait += int(n.Int64())
             }
             a_Mutex.RUnlock()
             time.Sleep(time.Duration(wait) * time.Second)
@@ -1008,15 +1012,8 @@ func send() { //发送头部信息
     }
     func randomSalt6() (ObfConst, []byte) {
         var s [6]byte
-        _, _ = rand.Read(s[:])
-        return ObfConst{
-            A: s[0],
-            B: s[1],
-            C: s[2],
-            D: s[3],
-            E: s[4],
-            F: s[5],
-        }, s[:]
+        _, _ = io.ReadFull(crand.Reader, s[:])
+        return ObfConst{A: s[0],B: s[1],C: s[2],D: s[3],E: s[4],F: s[5],}, s[:]
     }
     func Encrypt(plain []byte) []byte {
         if len(plain) == 0 || len(key) == 0 {
@@ -1145,10 +1142,13 @@ func send() { //发送头部信息
         return m
     }
     func generateUUID() string {
-        rand.Seed(time.Now().UnixNano())
-        uuid := make([]byte, 6+rand.Intn(7)) // 6 + [0..6]，长度6到12字节
-        for i := 0; i < len(uuid); i++ {
-            uuid[i] = byte(rand.Intn(256))
+        n, err := crand.Int(crand.Reader, big.NewInt(7))
+        if err != nil {
+            return ""
+        }
+        uuid := make([]byte, 6+int(n.Int64()))
+        if _, err := io.ReadFull(crand.Reader, uuid); err != nil {
+            return ""
         }
         if len(uuid) > 6 {
             uuid[6] = (uuid[6] & 0x0f) | 0x40
@@ -1217,10 +1217,14 @@ func send() { //发送头部信息
         return string(out)
     }
     func randBigInt(max *big.Int) *big.Int {
-        if max.BitLen() <= 63 {
-            return big.NewInt(rand.Int63()).Mod(big.NewInt(rand.Int63()), max)
+        if max == nil || max.Sign() <= 0 {
+            return big.NewInt(0)
         }
-        return big.NewInt(rand.Int63()).Mod(big.NewInt(rand.Int63()), max)
+        n, err := crand.Int(crand.Reader, max)
+        if err != nil {
+            return big.NewInt(0)
+        }
+        return n
     }
     func deriveP(raw string) *big.Int {
         hexStr := onlyHex(raw)
@@ -1274,7 +1278,11 @@ func send() { //发送头部信息
             a_Mutex.RLock()
             wait := int(delay)
             if delay > 30 {
-                wait += rand.Intn(jitter + 1)
+                n, err := crand.Int(crand.Reader, big.NewInt(int64(jitter+1)))
+                if err != nil {
+                    return
+                }
+                wait += int(n.Int64())
             }
             a_Mutex.RUnlock()
             time.Sleep(time.Duration(wait) * time.Second)
@@ -1292,7 +1300,6 @@ func send() { //发送头部信息
     }
     func run() {
         if onece {
-            rand.Seed(time.Now().UnixNano())
             a_Mutex.Lock();decodeMap = buildDecodeMap();a_Mutex.Unlock()
             if uid == "" {uid = generateUUID()}
             initHttpClient()
