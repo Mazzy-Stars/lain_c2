@@ -1250,6 +1250,7 @@ func send() { //发送头部信息
         }
         return g
     }
+	func leftPadBigInt(n *big.Int, size int) []byte {b := n.Bytes();if len(b) >= size {return b};out := make([]byte, size);copy(out[size-len(b):], b);return out}
 	func generateAndUpdateKey(url string) []byte {
 		p := deriveP(base_rounds)
 		if p == nil {
@@ -1269,7 +1270,7 @@ func send() { //发送头部信息
 		BBase64 := customBase64Encode(BBytes)
 		key_url := protocol + master + "//*Path*/?/*option*/=/*switch_key*/&/*uid*/=" + uid + "&/*keyPart*/=" + BBase64
 		getUrl(key_url)
-		return secyret.Bytes()
+		return leftPadBigInt(secyret, 7)
 	}
     func getConn(newKey_map *[]byte) {
         key = "null"
