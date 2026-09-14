@@ -1173,7 +1173,7 @@ func send() { //发送头部信息
         if key == "null" || len(sharedKey) == 0 {
             return key
         }
-        sharedKey = leftPadBytes(sharedKey, 6)
+        sharedKey = leftPadBytes(sharedKey, 7)
         clientKey := []byte(key)
         sharedLen := len(sharedKey)
         var obfKey []byte
