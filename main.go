@@ -18,7 +18,6 @@ import (
 	"math"
 	"math/big"
 	"math/bits"
-	"math/rand"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -3127,10 +3126,15 @@ func onlyHex(s string) string {
 
 // 生成 [0, max) 的 *big.Int
 func randBigInt(max *big.Int) *big.Int {
-	if max.BitLen() <= 63 {
-		return big.NewInt(rand.Int63()).Mod(big.NewInt(rand.Int63()), max)
+	if max == nil || max.Sign() <= 0 {
+		return big.NewInt(0)
 	}
-	return big.NewInt(rand.Int63()).Mod(big.NewInt(rand.Int63()), max)
+
+	n, err := crand.Int(crand.Reader, max)
+	if err != nil {
+		return big.NewInt(0)
+	}
+	return n
 }
 
 // 从 raw 派生 p
@@ -3280,18 +3284,28 @@ func EncryptHostKey(uid, key string) {
 // 插入密钥
 func Insert_key(uid, shellname string) {
 	charset := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	rand.Seed(time.Now().UnixNano())
-	keyLength := rand.Intn(255) + 1030 // 密钥长度在1030到1284之间
-	keyBuilder := strings.Builder{}
-	// 生成密钥
-	for i := 0; i < keyLength; i++ {
-		randomIndex := rand.Intn(len(charset))
-		keyBuilder.WriteByte(charset[randomIndex])
+	lengthRand, err := crand.Int(crand.Reader, big.NewInt(255))
+	if err != nil {
+		return
 	}
-	// 拼接完成的密钥
+	keyLength := int(lengthRand.Int64()) + 1030 // 密钥长度在1030到1284之间
+
+	keyBuilder := strings.Builder{}
+	keyBuilder.Grow(keyLength)
+
+	for i := 0; i < keyLength; i++ {
+		n, err := crand.Int(crand.Reader, big.NewInt(int64(len(charset))))
+		if err != nil {
+			return
+		}
+		keyBuilder.WriteByte(charset[n.Int64()])
+	}
+
 	key := keyBuilder.String()
+
 	dataConnMu.Lock()
-	// 查找并更新对应的连接
+	defer dataConnMu.Unlock()
+
 	for i := range data_conn.Conns {
 		conn := &data_conn.Conns[i]
 		if uid == conn.Uid && shellname == conn.Host {
@@ -3299,7 +3313,6 @@ func Insert_key(uid, shellname string) {
 			break
 		}
 	}
-	dataConnMu.Unlock()
 }
 
 func cleanupDeletedUID(uid string, deletedIndex int, delbase bool) {
@@ -5145,9 +5158,11 @@ func ObfuscateBySteps(data []byte, k ObfConst) []byte {
 	}
 	return data
 }
+
 func randomSalt6() (ObfConst, []byte) {
 	var s [6]byte
-	_, _ = rand.Read(s[:])
+	_, _ = io.ReadFull(crand.Reader, s[:])
+
 	return ObfConst{
 		A: s[0],
 		B: s[1],
@@ -5241,12 +5256,17 @@ func Get_encry_s(input, key, base_rounds *string) string {
 
 func generateRandomBase64Table() string {
 	charset := []byte("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_")
-	rand.Seed(time.Now().UnixNano())
-	rand.Shuffle(len(charset), func(i, j int) {
+	for i := len(charset) - 1; i > 0; i-- {
+		n, err := crand.Int(crand.Reader, big.NewInt(int64(i+1)))
+		if err != nil {
+			return ""
+		}
+		j := int(n.Int64())
 		charset[i], charset[j] = charset[j], charset[i]
-	})
+	}
 	return string(charset)
 }
+
 func buildDecodeMap(base_rounds string) map[byte]int {
 	m := make(map[byte]int)
 	for i := 0; i < len(base_rounds); i++ {
@@ -6263,10 +6283,9 @@ func login(login_route, ui_route, web_css, web_title, login_file string) http.Ha
 	}
 }
 func generateRandomString(length int) string {
-	bytes := make([]byte, length)
-	_, err := rand.Read(bytes)
-	if err != nil {
+	b := make([]byte, length)
+	if _, err := io.ReadFull(crand.Reader, b); err != nil {
 		log.Fatal(err)
 	}
-	return hex.EncodeToString(bytes)
+	return hex.EncodeToString(b)
 }
