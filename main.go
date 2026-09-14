@@ -3186,51 +3186,39 @@ func insert_key1_map(uid, base_rounds string) bool {
 	return true
 }
 
-func leftPadBigInt(n *big.Int, size int) []byte {
-	b := n.Bytes()
-	if len(b) >= size {
-		return b
-	}
-	out := make([]byte, size)
-	copy(out[size-len(b):], b)
-	return out
-}
-
+// 接收客户端中间值添加与服务器私钥交互计算出最终密钥再与data_conn.Conns[i].HostKey交互返回给客户端
 func Switch_key(uid string, clientPubKeyBytes []byte, base_rounds string) error {
 	dataConnMu.RLock()
 	defer dataConnMu.RUnlock()
-
 	for i := range data_conn.Conns {
 		conn := &data_conn.Conns[i]
 		if uid != conn.Uid {
 			continue
 		}
 
+		// 取私钥 a
 		key1Mu.RLock()
 		privateKeyBytes, exists := key1_map[uid]
 		key1Mu.RUnlock()
 		if !exists || len(privateKeyBytes) == 0 {
 			return nil
 		}
+
+		serverPrivateKey := new(big.Int).SetBytes(privateKeyBytes)
+
+		// 客户端公钥
 		if len(clientPubKeyBytes) == 0 {
 			return nil
 		}
-
+		clientPubKey := new(big.Int).SetBytes(clientPubKeyBytes)
 		p := deriveP(base_rounds)
 		if p == nil {
 			return nil
 		}
 
-		serverPrivateKey := new(big.Int).SetBytes(privateKeyBytes)
-		clientPubKey := new(big.Int).SetBytes(clientPubKeyBytes)
-
-		one := big.NewInt(1)
-		if clientPubKey.Cmp(one) <= 0 || clientPubKey.Cmp(p) >= 0 {
-			return nil
-		}
-
+		// shared = clientPubKey^a mod p
 		shared := new(big.Int).Exp(clientPubKey, serverPrivateKey, p)
-		sharedBytes := leftPadBigInt(shared, 7)
+		sharedBytes := shared.Bytes()
 
 		key3Mu.Lock()
 		key3_map[uid] = sharedBytes
@@ -3238,10 +3226,17 @@ func Switch_key(uid string, clientPubKeyBytes []byte, base_rounds string) error 
 
 		return nil
 	}
-
 	return nil
 }
+func leftPadBytes(b []byte, size int) []byte {
+	if len(b) >= size {
+		return b
+	}
 
+	out := make([]byte, size)
+	copy(out[size-len(b):], b)
+	return out
+}
 func EncryptHostKey(uid, key string) {
 	key3Mu.RLock()
 	sharedKeyInts, exists := key3_map[uid]
@@ -3249,6 +3244,8 @@ func EncryptHostKey(uid, key string) {
 	if !exists || len(sharedKeyInts) == 0 {
 		return
 	}
+
+	sharedKeyInts = leftPadBytes(sharedKeyInts, 7)
 	clientKey := []byte(key)
 	sharedLen := len(sharedKeyInts)
 
@@ -3257,11 +3254,19 @@ func EncryptHostKey(uid, key string) {
 
 	last6 := sharedKeyInts[sharedLen-6:]
 	prefix := sharedKeyInts[:sharedLen-6]
+
 	pLen := len(prefix)
 	cLen := len(clientKey)
+
 	newKey := make([]byte, 0, pLen+cLen)
-	base := cLen / (pLen + 1)
-	rem := cLen % (pLen + 1)
+
+	base := 0
+	rem := 0
+	if pLen+1 > 0 {
+		base = cLen / (pLen + 1)
+		rem = cLen % (pLen + 1)
+	}
+
 	ci := 0
 	for i := 0; i < pLen; i++ {
 		segLen := base
@@ -3274,10 +3279,12 @@ func EncryptHostKey(uid, key string) {
 		}
 		newKey = append(newKey, byte(prefix[i]))
 	}
+
 	for ci < cLen {
 		newKey = append(newKey, clientKey[ci])
 		ci++
 	}
+
 	obfKey = newKey
 	obfConst = ObfConst{
 		A: byte(last6[0]),
@@ -3289,6 +3296,7 @@ func EncryptHostKey(uid, key string) {
 	}
 
 	result := ObfuscateBySteps(obfKey, obfConst)
+
 	keyMu.Lock()
 	key_map[uid] = string(result)
 	keyMu.Unlock()
