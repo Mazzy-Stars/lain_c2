@@ -1168,43 +1168,51 @@ func send() { //发送头部信息
         }
         return string(result)
     }
+    func leftPadBytes(b []byte, size int) []byte {if len(b) >= size {return b};out := make([]byte, size);copy(out[size-len(b):], b);return out}
     func decryptString(key string, sharedKey []byte) string {
-		if key == "null" || len(sharedKey) == 0 {
-			return key
-		}
-		clientKey := []byte(key)
-		sharedLen := len(sharedKey)
-		var obfKey []byte
-		var obfConst ObfConst
-		
-		last6 := sharedKey[sharedLen-6:]
-		prefix := sharedKey[:sharedLen-6]
-		pLen := len(prefix)
-		cLen := len(clientKey)
-		newKey := make([]byte, 0, pLen+cLen)
-		base := cLen / (pLen + 1)
-		rem := cLen % (pLen + 1)
-		ci := 0
-		for i := 0; i < pLen; i++ {
-			segLen := base
-			if i < rem {
-				segLen++
-			}
-			for j := 0; j < segLen && ci < cLen; j++ {
-				newKey = append(newKey, clientKey[ci])
-				ci++
-			}
-			newKey = append(newKey, byte(prefix[i]))
-		}
-		for ci < cLen {
-			newKey = append(newKey, clientKey[ci])
-			ci++
-		}
-		obfKey = newKey
-		obfConst = ObfConst{A: byte(last6[0]),B: byte(last6[1]),C: byte(last6[2]),D: byte(last6[3]),E: byte(last6[4]),F: byte(last6[5]),}
-		result := ObfuscateBySteps(obfKey, obfConst)
-		return string(result)
-	}
+        if key == "null" || len(sharedKey) == 0 {
+            return key
+        }
+        sharedKey = leftPadBytes(sharedKey, 6)
+        clientKey := []byte(key)
+        sharedLen := len(sharedKey)
+        var obfKey []byte
+        var obfConst ObfConst
+        last6 := sharedKey[sharedLen-6:]
+        prefix := sharedKey[:sharedLen-6]
+        pLen := len(prefix)
+        cLen := len(clientKey)
+        newKey := make([]byte, 0, pLen+cLen)
+        base := cLen / (pLen + 1)
+        rem := cLen % (pLen + 1)
+        ci := 0
+        for i := 0; i < pLen; i++ {
+            segLen := base
+            if i < rem {
+                segLen++
+            }
+            for j := 0; j < segLen && ci < cLen; j++ {
+                newKey = append(newKey, clientKey[ci])
+                ci++
+            }
+            newKey = append(newKey, byte(prefix[i]))
+        }
+        for ci < cLen {
+            newKey = append(newKey, clientKey[ci])
+            ci++
+        }
+        obfKey = newKey
+        obfConst = ObfConst{
+            A: byte(last6[0]),
+            B: byte(last6[1]),
+            C: byte(last6[2]),
+            D: byte(last6[3]),
+            E: byte(last6[4]),
+            F: byte(last6[5]),
+        }
+        result := ObfuscateBySteps(obfKey, obfConst)
+        return string(result)
+    }
     func onlyHex(s string) string {
         out := make([]rune, 0, len(s))
         for _, c := range s {
@@ -1250,7 +1258,6 @@ func send() { //发送头部信息
         }
         return g
     }
-	func leftPadBigInt(n *big.Int, size int) []byte {b := n.Bytes();if len(b) >= size {return b};out := make([]byte, size);copy(out[size-len(b):], b);return out}
 	func generateAndUpdateKey(url string) []byte {
 		p := deriveP(base_rounds)
 		if p == nil {
@@ -1270,7 +1277,7 @@ func send() { //发送头部信息
 		BBase64 := customBase64Encode(BBytes)
 		key_url := protocol + master + "//*Path*/?/*option*/=/*switch_key*/&/*uid*/=" + uid + "&/*keyPart*/=" + BBase64
 		getUrl(key_url)
-		return leftPadBigInt(secyret, 7)
+		return secyret.Bytes()
 	}
     func getConn(newKey_map *[]byte) {
         key = "null"
