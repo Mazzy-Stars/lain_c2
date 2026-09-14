@@ -3186,39 +3186,51 @@ func insert_key1_map(uid, base_rounds string) bool {
 	return true
 }
 
-// 接收客户端中间值添加与服务器私钥交互计算出最终密钥再与data_conn.Conns[i].HostKey交互返回给客户端
+func leftPadBigInt(n *big.Int, size int) []byte {
+	b := n.Bytes()
+	if len(b) >= size {
+		return b
+	}
+	out := make([]byte, size)
+	copy(out[size-len(b):], b)
+	return out
+}
+
 func Switch_key(uid string, clientPubKeyBytes []byte, base_rounds string) error {
 	dataConnMu.RLock()
 	defer dataConnMu.RUnlock()
+
 	for i := range data_conn.Conns {
 		conn := &data_conn.Conns[i]
 		if uid != conn.Uid {
 			continue
 		}
 
-		// 取私钥 a
 		key1Mu.RLock()
 		privateKeyBytes, exists := key1_map[uid]
 		key1Mu.RUnlock()
 		if !exists || len(privateKeyBytes) == 0 {
 			return nil
 		}
-
-		serverPrivateKey := new(big.Int).SetBytes(privateKeyBytes)
-
-		// 客户端公钥
 		if len(clientPubKeyBytes) == 0 {
 			return nil
 		}
-		clientPubKey := new(big.Int).SetBytes(clientPubKeyBytes)
+
 		p := deriveP(base_rounds)
 		if p == nil {
 			return nil
 		}
 
-		// shared = clientPubKey^a mod p
+		serverPrivateKey := new(big.Int).SetBytes(privateKeyBytes)
+		clientPubKey := new(big.Int).SetBytes(clientPubKeyBytes)
+
+		one := big.NewInt(1)
+		if clientPubKey.Cmp(one) <= 0 || clientPubKey.Cmp(p) >= 0 {
+			return nil
+		}
+
 		shared := new(big.Int).Exp(clientPubKey, serverPrivateKey, p)
-		sharedBytes := shared.Bytes()
+		sharedBytes := leftPadBigInt(shared, 7)
 
 		key3Mu.Lock()
 		key3_map[uid] = sharedBytes
@@ -3226,6 +3238,7 @@ func Switch_key(uid string, clientPubKeyBytes []byte, base_rounds string) error 
 
 		return nil
 	}
+
 	return nil
 }
 
