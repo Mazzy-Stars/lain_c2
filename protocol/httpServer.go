@@ -2,300 +2,677 @@ package protocol
 
 import (
 	"crypto/tls"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"net"
 	"net/http"
-	"time"
+	"strconv"
 	"strings"
-    "sync"
-    "encoding/json"
-    "strconv"
-    "sync/atomic"
-    "os"
-    // quic-go
-    "github.com/quic-go/quic-go"
-    "github.com/quic-go/quic-go/http3"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/quic-go/quic-go"
+	"github.com/quic-go/quic-go/http3"
 )
+
 var (
-    serverMap = make(map[string]interface{})
-    mutex     sync.Mutex
+	serverMap = make(map[string]interface{})
+	mutex     sync.Mutex
 )
+
 type Handler interface {
-    Index(conn, Get_Msg,switch_key,encry_key,download,result,net,info,upload,list,option,uid,hostname,keyPart,filekey,windows_pro,port string) http.HandlerFunc
+	Index(
+		conn,
+		Get_Msg,
+		switch_key,
+		encry_key,
+		download,
+		result,
+		net,
+		info,
+		upload,
+		list,
+		option,
+		uid,
+		hostname,
+		keyPart,
+		filekey,
+		windows_pro,
+		port string,
+	) http.HandlerFunc
 }
+
 type Putserver interface {
-    PutServer(port, path, connPath, msgPath,switch_key,encry_key,download,result,net,info,upload,list,option,protocol,remark,cert, key,uid,hostname,keyPart,filekey,windows_pro,baseRounds,resphead,username string) bool
+	PutServer(
+		port,
+		path,
+		connPath,
+		msgPath,
+		switch_key,
+		encry_key,
+		download,
+		result,
+		net,
+		info,
+		upload,
+		list,
+		option,
+		protocol,
+		remark,
+		cert,
+		key,
+		uid,
+		hostname,
+		keyPart,
+		filekey,
+		windows_pro,
+		baseRounds,
+		resphead,
+		username string,
+	) bool
 }
-type WLog interface{
-    WriteLog(logStr string)
+
+type WLog interface {
+	WriteLog(logStr string)
 }
+
 type ServerConfig struct {
-    RespHead atomic.Value // 存 string
+	RespHead atomic.Value
 }
+
+type serverHandle struct {
+	closeOnce     sync.Once
+	closeErr      error
+	closeFn       func() error
+	stopRequested bool
+	stoppedOnce   sync.Once
+	onStopped     func()
+}
+
+func (h *serverHandle) Close() error {
+	if h == nil {
+		return nil
+	}
+
+	h.closeOnce.Do(func() {
+		if h.closeFn != nil {
+			h.closeErr = h.closeFn()
+		}
+	})
+	return h.closeErr
+}
+
+func (h *serverHandle) runStopped() {
+	if h == nil || h.onStopped == nil {
+		return
+	}
+	h.stoppedOnce.Do(h.onStopped)
+}
+
 var (
-    serverConfigMu sync.RWMutex
-    serverConfigs  = make(map[string]*ServerConfig)
+	serverConfigMu sync.RWMutex
+	serverConfigs  = make(map[string]*ServerConfig)
 )
-func writeTempCertFiles(certPEM, keyPEM string) (certPath, keyPath string, err error) {
-    cf, err := os.CreateTemp("", "lain_cert_*.pem")
-    if err != nil {
-        return "", "", err
-    }
-    if _, err = cf.Write([]byte(certPEM)); err != nil {
-        cf.Close()
-        os.Remove(cf.Name())
-        return "", "", err
-    }
-    cf.Close()
-    kf, err := os.CreateTemp("", "lain_key_*.pem")
-    if err != nil {
-        os.Remove(cf.Name())
-        return "", "", err
-    }
-    if _, err = kf.Write([]byte(keyPEM)); err != nil {
-        kf.Close()
-        os.Remove(cf.Name())
-        os.Remove(kf.Name())
-        return "", "", err
-    }
-    kf.Close()
-    return cf.Name(), kf.Name(), nil
+
+func logf(writeLog WLog, format string, args ...interface{}) {
+	if writeLog != nil {
+		writeLog.WriteLog(fmt.Sprintf(format, args...))
+	}
 }
+
+func isClosedError(err error) bool {
+	return err != nil &&
+		(errors.Is(err, http.ErrServerClosed) ||
+			errors.Is(err, net.ErrClosed) ||
+			errors.Is(err, quic.ErrServerClosed))
+}
+
+func closeErrors(errs ...error) error {
+	filtered := make([]error, 0, len(errs))
+	for _, err := range errs {
+		if err != nil && !isClosedError(err) {
+			filtered = append(filtered, err)
+		}
+	}
+	return errors.Join(filtered...)
+}
+
+func unregisterServer(port string, server interface{}) bool {
+	if server == nil {
+		return false
+	}
+
+	mutex.Lock()
+	current, exists := serverMap[port]
+	if !exists || current != server {
+		mutex.Unlock()
+		return false
+	}
+
+	if handle, ok := server.(*serverHandle); ok && handle.stopRequested {
+		mutex.Unlock()
+		return true
+	}
+	handle, _ := server.(*serverHandle)
+	mutex.Unlock()
+
+	if handle != nil {
+		handle.runStopped()
+	}
+
+	mutex.Lock()
+	if current, stillExists := serverMap[port]; stillExists && current == server {
+		delete(serverMap, port)
+	}
+	mutex.Unlock()
+	return true
+}
+func startRegisteredServerLocked(
+	port string,
+	handle *serverHandle,
+	serveFn func() error,
+	commitFn func() error,
+	onServeError func(error),
+	onStopped func(),
+) error {
+	if handle == nil || serveFn == nil {
+		return errors.New("invalid server startup state")
+	}
+
+	if _, exists := serverMap[port]; exists {
+		return fmt.Errorf("server already exists on port %s", port)
+	}
+
+	serverMap[port] = handle
+	handle.onStopped = onStopped
+
+	if commitFn != nil {
+		if err := commitFn(); err != nil {
+			delete(serverMap, port)
+			_ = handle.Close()
+			return err
+		}
+	}
+
+	go func() {
+		err := serveFn()
+		if err != nil && !isClosedError(err) && onServeError != nil {
+			onServeError(err)
+		}
+
+		_ = handle.Close()
+		unregisterServer(port, handle)
+	}()
+
+	return nil
+}
+
 func GetOrCreateConfig(port string) *ServerConfig {
-    // 先用读锁查
-    serverConfigMu.RLock()
-    if cfg, ok := serverConfigs[port]; ok {
-        serverConfigMu.RUnlock()
-        return cfg
-    }
-    serverConfigMu.RUnlock()
+	serverConfigMu.RLock()
+	if cfg, ok := serverConfigs[port]; ok {
+		serverConfigMu.RUnlock()
+		return cfg
+	}
+	serverConfigMu.RUnlock()
 
-    serverConfigMu.Lock()
-    defer serverConfigMu.Unlock()
-    if cfg, ok := serverConfigs[port]; ok {
-        return cfg
-    }
-    cfg := &ServerConfig{}
-    cfg.RespHead.Store("")
-    serverConfigs[port] = cfg
-    return cfg
+	serverConfigMu.Lock()
+	defer serverConfigMu.Unlock()
+
+	if cfg, ok := serverConfigs[port]; ok {
+		return cfg
+	}
+
+	cfg := &ServerConfig{}
+	cfg.RespHead.Store("")
+	serverConfigs[port] = cfg
+	return cfg
 }
-// 供 main.go 调用的更新函数
+
 func UpdateRespHead(port, resphead string) {
-    cfg := GetOrCreateConfig(port)
-    cfg.RespHead.Store(resphead)
+	cfg := GetOrCreateConfig(port)
+	cfg.RespHead.Store(resphead)
 }
-func Http_server(handler Handler, ServerManager Putserver, writeLog WLog,
-    port, path, conn_path, GetMsg,switch_key,encry_key,download,result,net,info,upload,list,option,
-    protocol,uid,hostname,keyPart,filekey,remark,certPEM, keyPEM,windows_pro,baseRounds,resphead,username string,log_word map[string]string) {
-    var err error
-    var returnStr string
-    // 确保 path 以 "/" 开头
-    if !strings.HasPrefix(path, "/") {
-        path = "/" + path
-    }
-    cfg := GetOrCreateConfig(port)
-    // 初始值写进去
-    cfg.RespHead.Store(resphead)
-    mux := http.NewServeMux()
-    mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
-        // 每次请求都从 atomic 读最新值
-        currentRespHead := cfg.RespHead.Load().(string)
-        
-        var headers map[string]string
-        var statusCode int
-        if currentRespHead != "" {
-            if err := json.Unmarshal([]byte(currentRespHead), &headers); err == nil {
-                for k, v := range headers {
-                    if strings.ToLower(k) == "status" {
-                        if code, err := strconv.Atoi(v); err == nil {
-                            statusCode = code
-                        }
-                        continue
-                    }
-                    w.Header().Set(k, v)
-                }
-            }
-        }
-        if statusCode != 0 {
-            w.WriteHeader(statusCode)
-        }
-        handler.Index(
-            conn_path, GetMsg, switch_key, encry_key,
-            download, result, net, info, upload, list, option,
-            uid, hostname, keyPart, filekey, windows_pro, port,
-        ).ServeHTTP(w, r)
-    })
-    if protocol == "http" {
-        server := &http.Server{
-            Addr:         ":" + port,
-            Handler:      mux,
-            IdleTimeout:  0,
-            ReadTimeout:  30 * time.Second,
-            WriteTimeout: 30 * time.Second,
-        }
-        mutex.Lock()
-        serverMap[port] = server
-        mutex.Unlock()
-        returnStr = fmt.Sprintf(log_word["http_server"],
-        port, path,conn_path,GetMsg,switch_key,encry_key,download,result,net,info,upload,list,option)
-        writeLog.WriteLog(returnStr)
-        go func(){
-			ServerManager.PutServer(port, path, conn_path, GetMsg, switch_key, encry_key, download, result, net, info, upload, list, option, protocol, remark,"null","null",uid,hostname,keyPart,filekey,windows_pro,baseRounds,resphead,username)
-		}()
-		err = server.ListenAndServe()
-		if err != nil {
-			returnStr = fmt.Sprintf(log_word["http_err"], err)
-			writeLog.WriteLog(returnStr)
-		}
-    } else if protocol == "https" {
-        var cert tls.Certificate
-        var cert_g, key_g string
-        if certPEM != "" && keyPEM != "" {
-            cert, err = tls.X509KeyPair([]byte(certPEM), []byte(keyPEM))
-            if err != nil {
-                returnStr = fmt.Sprintf(log_word["cert_err"],port, err)
-                writeLog.WriteLog(returnStr)
-                return
-            }
-            //获取组织
-            cert_g, key_g = certPEM, keyPEM
-			returnStr = fmt.Sprintf(log_word["provided_cert"],port)
-            writeLog.WriteLog(returnStr)
-        } else {
-            cert, err = tls.X509KeyPair([]byte(DefaultCert), []byte(DefaultKey))
-            if err != nil {
-                returnStr = fmt.Sprintf(log_word["default_cert"],port,err)
-                writeLog.WriteLog(returnStr)
-                return
-            }
-            //获取组织
-            cert_g, key_g = "defaultCert", "defaultKey"
-        }
-        tlsConfig := &tls.Config{
-            MinVersion:         tls.VersionTLS12,
-            GetCertificate:     func(chi *tls.ClientHelloInfo) (*tls.Certificate, error) { return &cert, nil },
-            ClientAuth:         tls.NoClientCert,
-            InsecureSkipVerify: true,
-        }
 
-        server := &http.Server{
-            Addr:         ":" + port,
-            Handler:      mux,
-            IdleTimeout:  0,
-            ReadTimeout:  30 * time.Second,
-            WriteTimeout: 30 * time.Second,
-            TLSConfig:    tlsConfig,
-        }
-        mutex.Lock()
-        serverMap[port] = server
-        mutex.Unlock()
-        returnStr = fmt.Sprintf(log_word["https_server"],
-        port, path,conn_path,GetMsg,switch_key,encry_key,download,result,net,info,upload,list,option)
-        writeLog.WriteLog(returnStr)
-        go func (){
-			ServerManager.PutServer(port,path,conn_path,GetMsg,switch_key,encry_key,download,result,net,info,upload,list,option,protocol,remark,cert_g,key_g,uid,hostname,keyPart,filekey,windows_pro,baseRounds,resphead,username)
-		}()
-		err = server.ListenAndServeTLS("", "")
-		if err != nil {
-			returnStr = fmt.Sprintf(log_word["https_err"], err)
-			writeLog.WriteLog(returnStr)
+func Http_server(
+	handler Handler,
+	ServerManager Putserver,
+	writeLog WLog,
+	port,
+	path,
+	connPath,
+	getMsg,
+	switchKey,
+	encryKey,
+	download,
+	result,
+	netPath,
+	info,
+	upload,
+	list,
+	option,
+	protocolName,
+	uid,
+	hostname,
+	keyPart,
+	filekey,
+	remark,
+	certPEM,
+	keyPEM,
+	windowsPro,
+	baseRounds,
+	resphead,
+	username string,
+	logWord map[string]string,
+	onReady func(),
+	onStopped func(),
+) error {
+	if handler == nil {
+		return errors.New("nil request handler")
+	}
+	if ServerManager == nil {
+		return errors.New("nil server manager")
+	}
+	if port == "" {
+		return errors.New("empty server port")
+	}
+	if path == "" {
+		return errors.New("empty server path")
+	}
+
+	switch protocolName {
+	case "http", "https", "quic":
+	default:
+		return fmt.Errorf("unsupported protocol %q", protocolName)
+	}
+
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+
+	cfg := GetOrCreateConfig(port)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
+		currentRespHead, _ := cfg.RespHead.Load().(string)
+
+		var headers map[string]string
+		var statusCode int
+		if currentRespHead != "" {
+			if err := json.Unmarshal([]byte(currentRespHead), &headers); err == nil {
+				for key, value := range headers {
+					if strings.EqualFold(key, "status") {
+						if code, err := strconv.Atoi(value); err == nil {
+							statusCode = code
+						}
+						continue
+					}
+					w.Header().Set(key, value)
+				}
+			}
 		}
-        }else if protocol == "quic" {
-            var cert tls.Certificate
-            var cert_g, key_g string
-            if certPEM != "" && keyPEM != "" {
-                cert, err = tls.X509KeyPair(
-                    []byte(certPEM),
-                    []byte(keyPEM),
-                )
-                if err != nil {
-                    returnStr = fmt.Sprintf(log_word["cert_err"],port, err)
-                    writeLog.WriteLog(returnStr)
-                    return
-                }
-                cert_g = certPEM
-                key_g = keyPEM
-                returnStr = fmt.Sprintf(log_word["provided_cert"],port)
-                writeLog.WriteLog(returnStr)
-            } else {
-                cert, err = tls.X509KeyPair(
-                    []byte(DefaultCert),
-                    []byte(DefaultKey),
-                )
-                if err != nil {
-                    returnStr = fmt.Sprintf(log_word["default_cert"],port, err)
-                    writeLog.WriteLog(returnStr)
-                    return
-                }
-                cert_g = "defaultCert"
-                key_g = "defaultKey"
-            }
-            tlsConfig := &tls.Config{
-                MinVersion: tls.VersionTLS13,
-                Certificates: []tls.Certificate{
-                    cert,
-                },
-                NextProtos: []string{
-                    "h3",
-                },
-            }
-            server := &http3.Server{
-                Addr: ":" + port,
-                Handler: mux,
-                TLSConfig: tlsConfig,
-                QUICConfig:&quic.Config{
-                    MaxIdleTimeout: 60 * time.Second,
-                },
-            }
-            mutex.Lock()
-            serverMap[port] = server
-            mutex.Unlock()
-            // 修正日志拼接，避免 EXTRA 输出
-            returnStr = fmt.Sprintf(log_word["quic_server"],
-            port, path,conn_path,GetMsg,switch_key,encry_key,download,result,net,info,upload,list,option,
-            )
-            writeLog.WriteLog(returnStr)
-            go func(){
-                ServerManager.PutServer(port,path,conn_path,GetMsg,switch_key,encry_key,download,result,net,info,upload,list,option,protocol,remark,cert_g,key_g,uid,hostname,keyPart,filekey,windows_pro,baseRounds,resphead,username)
-            }()
-            // 写临时证书文件并启动（避免传空路径导致底层尝试打开空路径出错）
-            certFilePath, keyFilePath, werr := writeTempCertFiles(
-                func() string {
-                    if certPEM != "" && keyPEM != "" { return certPEM }
-                    return DefaultCert
-                }(),
-                func() string {
-                    if certPEM != "" && keyPEM != "" { return keyPEM }
-                    return DefaultKey
-                }(),
-            )
-            if werr == nil {
-                err = server.ListenAndServeTLS(certFilePath, keyFilePath)
-                _ = os.Remove(certFilePath)
-                _ = os.Remove(keyFilePath)
-            } else {
-                writeLog.WriteLog(fmt.Sprintf("failed to write temp cert files: %v", werr))
-                err = server.ListenAndServeTLS("", "")
-            }
-            if err != nil {
-                returnStr = fmt.Sprintf(log_word["quic_err"], err)
-                writeLog.WriteLog(returnStr)
-            }
-        }
+		if statusCode != 0 {
+			w.WriteHeader(statusCode)
+		}
+
+		handler.Index(
+			connPath,
+			getMsg,
+			switchKey,
+			encryKey,
+			download,
+			result,
+			netPath,
+			info,
+			upload,
+			list,
+			option,
+			uid,
+			hostname,
+			keyPart,
+			filekey,
+			windowsPro,
+			port,
+		).ServeHTTP(w, r)
+	})
+
+	commitServer := func(certPath, keyPath string) error {
+		if ok := ServerManager.PutServer(
+			port,
+			path,
+			connPath,
+			getMsg,
+			switchKey,
+			encryKey,
+			download,
+			result,
+			netPath,
+			info,
+			upload,
+			list,
+			option,
+			protocolName,
+			remark,
+			certPath,
+			keyPath,
+			uid,
+			hostname,
+			keyPart,
+			filekey,
+			windowsPro,
+			baseRounds,
+			resphead,
+			username,
+		); !ok {
+			return fmt.Errorf("failed to save server metadata on port %s", port)
+		}
+
+		if onReady != nil {
+			onReady()
+		}
+		return nil
+	}
+
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	if _, exists := serverMap[port]; exists {
+		return fmt.Errorf("server already exists on port %s", port)
+	}
+
+	switch protocolName {
+	case "http":
+		server := &http.Server{
+			Addr:         ":" + port,
+			Handler:      mux,
+			IdleTimeout:  0,
+			ReadTimeout:  30 * time.Second,
+			WriteTimeout: 30 * time.Second,
+		}
+
+		listener, err := net.Listen("tcp", server.Addr)
+		if err != nil {
+			logf(writeLog, logWord["http_err"], err)
+			return err
+		}
+		cfg.RespHead.Store(resphead)
+
+		handle := &serverHandle{
+			closeFn: func() error {
+				return closeErrors(server.Close(), listener.Close())
+			},
+		}
+		if err := startRegisteredServerLocked(
+			port,
+			handle,
+			func() error {
+				return server.Serve(listener)
+			},
+			func() error {
+				return commitServer("null", "null")
+			},
+			func(err error) {
+				logf(writeLog, logWord["http_err"], err)
+			},
+			onStopped,
+		); err != nil {
+			_ = handle.Close()
+			logf(writeLog, logWord["http_err"], err)
+			return err
+		}
+
+		logf(
+			writeLog,
+			logWord["http_server"],
+			port,
+			path,
+			connPath,
+			getMsg,
+			switchKey,
+			encryKey,
+			download,
+			result,
+			netPath,
+			info,
+			upload,
+			list,
+			option,
+		)
+		return nil
+
+	case "https":
+		cert, certLabel, keyLabel, err := loadCertificate(
+			certPEM,
+			keyPEM,
+			func(port string, err error) {
+				logf(writeLog, logWord["cert_err"], port, err)
+			},
+			func(port string) {
+				logf(writeLog, logWord["provided_cert"], port)
+			},
+			func(port string, err error) {
+				logf(writeLog, logWord["default_cert"], port, err)
+			},
+			port,
+		)
+		if err != nil {
+			return err
+		}
+
+		tlsConfig := &tls.Config{
+			MinVersion:   tls.VersionTLS12,
+			Certificates: []tls.Certificate{cert},
+			ClientAuth:   tls.NoClientCert,
+		}
+		server := &http.Server{
+			Addr:         ":" + port,
+			Handler:      mux,
+			IdleTimeout:  0,
+			ReadTimeout:  30 * time.Second,
+			WriteTimeout: 30 * time.Second,
+			TLSConfig:    tlsConfig,
+		}
+
+		listener, err := net.Listen("tcp", server.Addr)
+		if err != nil {
+			logf(writeLog, logWord["https_err"], err)
+			return err
+		}
+		tlsListener := tls.NewListener(listener, tlsConfig)
+		cfg.RespHead.Store(resphead)
+
+		handle := &serverHandle{
+			closeFn: func() error {
+				return closeErrors(server.Close(), tlsListener.Close())
+			},
+		}
+		if err := startRegisteredServerLocked(
+			port,
+			handle,
+			func() error {
+				return server.Serve(tlsListener)
+			},
+			func() error {
+				return commitServer(certLabel, keyLabel)
+			},
+			func(err error) {
+				logf(writeLog, logWord["https_err"], err)
+			},
+			onStopped,
+		); err != nil {
+			_ = handle.Close()
+			logf(writeLog, logWord["https_err"], err)
+			return err
+		}
+
+		logf(
+			writeLog,
+			logWord["https_server"],
+			port,
+			path,
+			connPath,
+			getMsg,
+			switchKey,
+			encryKey,
+			download,
+			result,
+			netPath,
+			info,
+			upload,
+			list,
+			option,
+		)
+		return nil
+
+	case "quic":
+		cert, certLabel, keyLabel, err := loadCertificate(
+			certPEM,
+			keyPEM,
+			func(port string, err error) {
+				logf(writeLog, logWord["cert_err"], port, err)
+			},
+			func(port string) {
+				logf(writeLog, logWord["provided_cert"], port)
+			},
+			func(port string, err error) {
+				logf(writeLog, logWord["default_cert"], port, err)
+			},
+			port,
+		)
+		if err != nil {
+			return err
+		}
+
+		tlsConfig := http3.ConfigureTLSConfig(&tls.Config{
+			MinVersion:   tls.VersionTLS13,
+			Certificates: []tls.Certificate{cert},
+		})
+		quicConfig := &quic.Config{
+			MaxIdleTimeout: 60 * time.Second,
+		}
+		server := &http3.Server{
+			Addr:       ":" + port,
+			Handler:    mux,
+			TLSConfig:  tlsConfig,
+			QUICConfig: quicConfig,
+		}
+
+		listener, err := quic.ListenAddr(server.Addr, tlsConfig, quicConfig)
+		if err != nil {
+			logf(writeLog, logWord["quic_err"], err)
+			return err
+		}
+		cfg.RespHead.Store(resphead)
+
+		handle := &serverHandle{
+			closeFn: func() error {
+				return closeErrors(listener.Close(), server.Close())
+			},
+		}
+		if err := startRegisteredServerLocked(
+			port,
+			handle,
+			func() error {
+				return server.ServeListener(listener)
+			},
+			func() error {
+				return commitServer(certLabel, keyLabel)
+			},
+			func(err error) {
+				logf(writeLog, logWord["quic_err"], err)
+			},
+			onStopped,
+		); err != nil {
+			_ = handle.Close()
+			logf(writeLog, logWord["quic_err"], err)
+			return err
+		}
+
+		logf(
+			writeLog,
+			logWord["quic_server"],
+			port,
+			path,
+			connPath,
+			getMsg,
+			switchKey,
+			encryKey,
+			download,
+			result,
+			netPath,
+			info,
+			upload,
+			list,
+			option,
+		)
+		return nil
+	}
+
+	return fmt.Errorf("unsupported protocol %q", protocolName)
 }
-// 关闭服务器
+
+func loadCertificate(
+	certPEM,
+	keyPEM string,
+	onProvidedError func(string, error),
+	onProvided func(string),
+	onDefaultError func(string, error),
+	port string,
+) (tls.Certificate, string, string, error) {
+	if certPEM != "" && keyPEM != "" {
+		cert, err := tls.X509KeyPair([]byte(certPEM), []byte(keyPEM))
+		if err != nil {
+			if onProvidedError != nil {
+				onProvidedError(port, err)
+			}
+			return tls.Certificate{}, "", "", err
+		}
+		if onProvided != nil {
+			onProvided(port)
+		}
+		return cert, certPEM, keyPEM, nil
+	}
+
+	cert, err := tls.X509KeyPair([]byte(DefaultCert), []byte(DefaultKey))
+	if err != nil {
+		if onDefaultError != nil {
+			onDefaultError(port, err)
+		}
+		return tls.Certificate{}, "", "", err
+	}
+	return cert, "defaultCert", "defaultKey", nil
+}
+
 func StopServer(port string) {
-    mutex.Lock()
-    defer mutex.Unlock()
-    if server, exists := serverMap[port]; exists {
-        switch s := server.(type) {
-        case *http.Server:
-            s.Close()
-        case *http3.Server:
-            s.Close()
-        default:
-            // 未知类型
-        }
-        delete(serverMap, port)
-    }
+	mutex.Lock()
+	server, exists := serverMap[port]
+	if handle, ok := server.(*serverHandle); ok {
+		handle.stopRequested = true
+	}
+	mutex.Unlock()
+
+	if !exists {
+		return
+	}
+
+	if closer, ok := server.(interface{ Close() error }); ok {
+		_ = closer.Close()
+	}
+	var stoppedHandle *serverHandle
+	mutex.Lock()
+	if current, stillExists := serverMap[port]; stillExists && current == server {
+		stoppedHandle, _ = server.(*serverHandle)
+	}
+	mutex.Unlock()
+
+	if stoppedHandle != nil {
+		stoppedHandle.runStopped()
+	}
+
+	mutex.Lock()
+	if current, stillExists := serverMap[port]; stillExists && current == server {
+		delete(serverMap, port)
+	}
+	mutex.Unlock()
 }
