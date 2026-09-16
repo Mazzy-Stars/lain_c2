@@ -1064,13 +1064,19 @@ func send() { //发送头部信息
         }
         return out
     }
-    // 文件解密函数
     func get_decry_f(filepath string, data []byte) error {
-	    if len(data) == 0 {
-		    return nil
+		if len(data) == 0 {
+			return nil
 		}
-        return os.WriteFile(filepath, Decrypt(data), 0666)
-    }
+		decrypted := Decrypt(data)
+		file, err := os.OpenFile(filepath,os.O_WRONLY|os.O_CREATE|os.O_APPEND,0666,)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+		_, err = file.Write(decrypted)
+		return err
+	}
     func get_encry_s(input *string) string {
         return customBase64Encode(Encrypt([]byte(*input)))
     }
