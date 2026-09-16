@@ -4686,8 +4686,10 @@ func DownloadFile(uid, keyDecry string, code_map map[byte]int) ([]byte, error) {
 	}
 	decrydate := existingData[start:end]
 
-	partData := Decrypt(decrydate,[]byte(key))
-
+	partData := Encrypt(decrydate,[]byte(key))
+	if partData == nil {
+		return nil, errors.New("encry fail")
+	}
 	parts_count[filekey] = currentPartsCount + 1
 	log_str := fmt.Sprintf(log_word["download_part"], uid, parts[1], len(partData), currentPartsCount)
 	logger.WriteLog(log_str)
