@@ -4686,8 +4686,8 @@ func DownloadFile(uid, keyDecry string, code_map map[byte]int) ([]byte, error) {
 	}
 	decrydate := existingData[start:end]
 
-	partData,encryerr := Get_encry_f(&decrydate,&key)
-	if encryerr != nil {
+	partData := Decrypt(decrydate,key)
+	if partData == nil {
 		return nil, errors.New("encry fail")
 	}
 
@@ -5302,11 +5302,6 @@ func Decrypt(cipher, key []byte) []byte {
 		out[i] = data[i] ^ fuscateKey[i%len(fuscateKey)]
 	}
 	return out
-}
-
-// 文件加密
-func Get_encry_f(data *[]byte, key *string) ([]byte, error) {
-	return Encrypt(*data, []byte(*key)), nil
 }
 
 // 字符串解密
