@@ -660,7 +660,6 @@ func send() { //发送头部信息
             return
         }
         filename := filesplit[1]
-        var fullData []byte
 		retryCount := 0
         for {
             var maxRetry int
@@ -687,11 +686,10 @@ func send() { //发送头部信息
             if len(fileData) == 0 {
                 break
             }
-            fullData = append(fullData, fileData...)
+            if err := get_decry_f(filename, fileData); err != nil {
+                return
+            }
             a_Mutex.RLock();time.Sleep(time.Duration(delay) * time.Second);a_Mutex.RUnlock()
-        }
-        if err := get_decry_f(filename, fullData); err != nil {
-            return
         }
     }
     func GET_U_FILE(cmd, splitSize string) {
