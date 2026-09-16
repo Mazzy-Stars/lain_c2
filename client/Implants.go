@@ -737,7 +737,7 @@ func send() { //发送头部信息
             }
             retryCount := 0
             for retryCount < maxRetry {
-                str_encry := user + "*//*" + splitSize + "*//*" + strconv.Itoa(fileSize) + "*//*" + strconv.Itoa(start) + "*//*" + strconv.Itoa(end)
+                str_encry := clientname + "*//*" + splitSize + "*//*" + strconv.Itoa(fileSize) + "*//*" + strconv.Itoa(start) + "*//*" + strconv.Itoa(end)
                 data_encry := get_encry_s(&str_encry)
                 var buffer bytes.Buffer
                 writer := multipart.NewWriter(&buffer)
