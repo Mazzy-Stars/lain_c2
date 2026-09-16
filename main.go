@@ -4684,7 +4684,13 @@ func DownloadFile(uid, keyDecry string, code_map map[byte]int) ([]byte, error) {
 	if end > len(existingData) {
 		end = len(existingData)
 	}
-	partData := existingData[start:end]
+	decrydate := existingData[start:end]
+
+	partData,encryerr := Get_encry_f(&decrydate,&key)
+	if encryerr != nil {
+		return nil, errors.New("encry fail")
+	}
+
 	parts_count[filekey] = currentPartsCount + 1
 	log_str := fmt.Sprintf(log_word["download_part"], uid, parts[1], len(partData), currentPartsCount)
 	logger.WriteLog(log_str)
@@ -4983,14 +4989,6 @@ func updateLoot(uid string) LootClient {
 // 前端上传文件
 func UserUploadFile(uid, filename, splitSize string, file io.Reader) error {
 	var logStr string
-	keyMu.RLock()
-	key, exists := key_map[uid]
-	keyMu.RUnlock()
-	if !exists {
-		logStr = fmt.Sprintf(log_word["web_upload"], uid)
-		logger.WriteLog(logStr)
-		return fmt.Errorf("upload target not found")
-	}
 	// 默认切片大小 1MB
 	if dotIndex := strings.Index(splitSize, "."); dotIndex != -1 {
 		splitSize = splitSize[:dotIndex]
@@ -5027,17 +5025,11 @@ func UserUploadFile(uid, filename, splitSize string, file io.Reader) error {
 		logger.WriteLog(logStr)
 		return err
 	}
-	encryptedFileContent, err := Get_encry_f(&fileContent, &key)
-	if err != nil {
-		logStr = fmt.Sprintf(log_word["encry_tmp_fail"], uid, filename)
-		logger.WriteLog(logStr)
-		return err
-	}
 	file_key := uid + "**///**" + filename + "**///**" + strconv.Itoa(splitPos)
 	DoByteMu.Lock()
-	DownloadFile_byte_parts[file_key] = encryptedFileContent
+	DownloadFile_byte_parts[file_key] = fileContent
 	DoByteMu.Unlock()
-	logStr = fmt.Sprintf(log_word["encry_tmp"], uid, written, filename)
+	logStr = fmt.Sprintf(log_word["upload_tmp"], uid, written, filename)
 	logger.WriteLog(logStr)
 	return nil
 }
@@ -6141,12 +6133,10 @@ func Read_log_word() {
         "request_file_part": "Received file part: %s, size: %d bytes",
         "request_file_part_": " ==== Received from user: %s, UID: %s, file: %s, part: %v, range: %d-%d",
         "request_file_finish": " ==== Received from user: %s, UID: %s, file: %s, total size: %d bytes, file saved to: %s",
-		"web_upload": "%v key does not exist",
         "tmp_file": "%v failed to create temp file: %v",
         "write_tmp": "%v failed to write temp file: %v",
         "read_tmp": "%v failed to read temp file: %v",
-        "encry_tmp_fail": "%v file encryption failed: %v",
-        "encry_tmp": "%v file encrypted successfully (%d bytes): %v",
+        "upload_tmp": "%v file upload successfully (%d bytes): %v",
         "Memory_clean": "Memory cleaned successfully!",
         "request_host": "agent request: IP: %v, Host: %v, UID: %v",
         "login_success": "User login successful, from %v, user: %v",
