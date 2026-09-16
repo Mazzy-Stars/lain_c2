@@ -4686,7 +4686,7 @@ func DownloadFile(uid, keyDecry string, code_map map[byte]int) ([]byte, error) {
 	}
 	decrydate := existingData[start:end]
 
-	partData := Decrypt(decrydate,key)
+	partData := Decrypt(decrydate,[]byte(key))
 	if partData == nil {
 		return nil, errors.New("encry fail")
 	}
