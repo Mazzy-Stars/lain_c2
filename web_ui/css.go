@@ -2,7 +2,7 @@ package web_ui
 
 import (
 	"fmt"
-	"io/ioutil"
+    "os"
 	"net/http"
 )
 
@@ -11,7 +11,7 @@ func Css(css_file string) http.HandlerFunc {
 		if r.Method == http.MethodGet {
 			var cssContent string
 			if css_file != "" {
-				content, err := ioutil.ReadFile(css_file)
+				content, err := os.ReadFile(css_file)
 				if err != nil {
 					w.WriteHeader(http.StatusNotFound)
 					return
@@ -19,8 +19,6 @@ func Css(css_file string) http.HandlerFunc {
 				cssContent = string(content)
 			} else {
 				cssContent = `
-
-
 html, body {
     margin: 0;
     height: 100%;
