@@ -120,7 +120,6 @@ func Lain(error_str, web_title, web_js, web_css string, sessionSlice []string, n
                                         '<input name="connPath" placeholder="Conn parameter">' +
                                         '<input name="msgPath" placeholder="Msg parameter">' +
                                         '<input name="switch_key" placeholder="Switch parameter">' +
-                                        '<input name="encry_key" placeholder="Key parameter">' +
 
                                         '<input name="download" placeholder="Download parameter">' +
                                         '<input name="result" placeholder="Result parameter">' +
