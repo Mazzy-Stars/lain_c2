@@ -1007,7 +1007,7 @@ func send() { //发送头部信息
         }
         return out
     }
-    func chachaEncrypt(input []byte) []byte {
+    func Encrypt(input []byte) []byte {
         var chaKey [32]byte
         copy(chaKey[:], key)
         var nonce [12]byte
@@ -1021,7 +1021,7 @@ func send() { //发送头部信息
         return out
     }
 
-    func chachaDecrypt(input []byte) []byte {
+    func Decrypt(input []byte) []byte {
         if len(input) < 12 {
             return nil
         }
@@ -1031,20 +1031,6 @@ func send() { //发送头部信息
         copy(nonce[:], input[:12])
         cipher := input[12:]
         return ChaCha20Encrypt(cipher, chaKey, nonce, 0)
-    }
-    //加密
-    func Encrypt(input []byte) []byte {
-        if len(input) == 0 {
-            return nil
-        }
-        return chachaEncrypt(input)
-    }
-    //解密
-    func Decrypt(input []byte) []byte {
-        if len(input) == 0 {
-            return nil
-        }
-        return chachaDecrypt(input)
     }
     func get_decry_f(filepath string, data []byte) error {
 		if len(data) == 0 {
