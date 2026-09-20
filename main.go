@@ -5102,7 +5102,7 @@ func ChaCha20Encrypt(data []byte, key [32]byte, nonce [12]byte, counter uint32) 
 	return out
 }
 
-func chachaEncrypt(input []byte, key []byte) []byte {
+func Encrypt(input []byte, key []byte) []byte {
 	if len(key) != 32 {
 		return nil
 	}
@@ -5124,7 +5124,7 @@ func chachaEncrypt(input []byte, key []byte) []byte {
 	return out
 }
 
-func chachaDecrypt(input []byte, key []byte) []byte {
+func Decrypt(input []byte, key []byte) []byte {
 	if len(key) != 32 || len(input) < 12 {
 		return nil
 	}
@@ -5137,21 +5137,6 @@ func chachaDecrypt(input []byte, key []byte) []byte {
 
 	cipher := input[12:]
 	return ChaCha20Encrypt(cipher, chaKey, nonce, 0)
-}
-
-//加密
-func Encrypt(input []byte, key []byte) []byte {
-	if len(input) == 0 || len(key) == 0 {
-		return nil
-	}
-	return chachaEncrypt(input, key)
-}
-//解密
-func Decrypt(input []byte, key []byte) []byte {
-	if len(input) == 0 || len(key) == 0 {
-		return nil
-	}
-	return chachaDecrypt(input, key)
 }
 
 // 字符串解密
