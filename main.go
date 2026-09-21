@@ -2428,15 +2428,32 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 						continue
 					}
 
-					if requestData.ResponseHead != "" {
-						var temp map[string]string
-						if err := json.Unmarshal([]byte(requestData.ResponseHead), &temp); err != nil {
-							clientWs.WriteJSON(map[string]interface{}{
+					if strings.TrimSpace(requestData.ResponseHead) != "" {
+						headers, err := normalizeResponseHeaders(
+							requestData.ResponseHead,
+						)
+						if err != nil {
+							_ = clientWs.WriteJSON(map[string]interface{}{
 								"code":    400,
 								"path":    "startServer",
-								"message": "ResponseHead must be valid JSON",
+								"message": err.Error(),
 							})
 							continue
+						}
+						if len(headers) == 0 {
+							requestData.ResponseHead = ""
+						} else {
+							data, err := json.Marshal(headers)
+							if err != nil {
+								_ = clientWs.WriteJSON(map[string]interface{}{
+									"code":    400,
+									"path":    "startServer",
+									"message": "failed to encode ResponseHead",
+								})
+								continue
+							}
+					
+							requestData.ResponseHead = string(data)
 						}
 					}
 
