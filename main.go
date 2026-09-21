@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"encoding/binary"
+	"reflect"
 	"errors"
 	"flag"
 	"fmt"
@@ -2079,73 +2080,85 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 					)
 
 				case "changeResponseHead":
-					port, _ := body["port"].(string)
-					responseHead, _ := body["response_head"].(string)
-					if port == "" {
-						clientWs.WriteJSON(map[string]interface{}{
-							"code": 400,
-							"path": "changeResponseHead",
-
-							"message": "parameter does not exist",
+					writeError := func(code int, message string) {
+						_ = clientWs.WriteJSON(map[string]interface{}{
+							"code":    code,
+							"path":    "changeResponseHead",
+							"message": message,
 						})
+					}
+				
+					rawPort, exists := body["port"]
+					if !exists {
+						writeError(400, "port does not exist")
 						continue
 					}
-					if responseHead != "" {
-						// 检查是不是合法 JSON
-						var temp map[string]string
-						if err := json.Unmarshal(
-							[]byte(responseHead),
-							&temp,
-						); err != nil {
-							clientWs.WriteJSON(map[string]interface{}{
-								"code":    400,
-								"path":    "changeResponseHead",
-								"message": "ResponseHead must be a valid JSON string",
-							})
+				
+					port, err := normalizePort(rawPort)
+					if err != nil {
+						writeError(400, err.Error())
+						continue
+					}
+				
+					rawResponseHead, exists := body["response_head"]
+					if !exists {
+						writeError(400, "response_head does not exist")
+						continue
+					}
+				
+					headers, err := normalizeResponseHeaders(rawResponseHead)
+					if err != nil {
+						writeError(400, err.Error())
+						continue
+					}
+				
+					responseHead := ""
+				
+					if len(headers) > 0 {
+						data, err := json.Marshal(headers)
+						if err != nil {
+							writeError(400, "failed to encode response headers")
 							continue
 						}
-						serverDataMu.Lock()
-						for i := range server_data.Servers {
-							server := &server_data.Servers[i]
-							if port == server.Port {
-								server.ResponseHead = responseHead
-								break
-							}
-						}
-						serverDataMu.Unlock()
-						protocol.UpdateRespHead(
-							port,
-							responseHead,
-						)
-						clientWs.WriteJSON(map[string]interface{}{
-							"code": 200,
-							"path": "changeResponseHead",
-
-							"message": "Response header updated successfully",
-							"port":    port,
-						})
-					} else {
-						serverDataMu.Lock()
-						for i := range server_data.Servers {
-							server := &server_data.Servers[i]
-							if port == server.Port {
-								server.ResponseHead = ""
-								break
-							}
-						}
-						serverDataMu.Unlock()
-						protocol.UpdateRespHead(
-							port,
-							"",
-						)
-						clientWs.WriteJSON(map[string]interface{}{
-							"code": 200,
-							"path": "changeResponseHead",
-
-							"message": "Response header cleared successfully",
-							"port":    port,
-						})
+				
+						responseHead = string(data)
 					}
+				
+					found := false
+				
+					serverDataMu.Lock()
+				
+					for i := range server_data.Servers {
+						server := &server_data.Servers[i]
+				
+						if server.Port == port {
+							server.ResponseHead = responseHead
+							found = true
+							break
+						}
+					}
+				
+					serverDataMu.Unlock()
+				
+					if !found {
+						writeError(404, "server for this port was not found")
+						continue
+					}
+				
+					protocol.UpdateRespHead(port, responseHead)
+				
+					message := "Response header updated successfully"
+				
+					if responseHead == "" {
+						message = "Response header cleared successfully"
+					}
+				
+					_ = clientWs.WriteJSON(map[string]interface{}{
+						"code":    200,
+						"path":    "changeResponseHead",
+						"message": message,
+						"port":    port,
+					})
 				case "onlineteamment":
 					// 获取所有在线用户
 					wsUsersMu.RLock()
@@ -2789,6 +2802,124 @@ func writeBinaryRange(clientWs binaryMessageWriter, file *os.File, offset int64,
 		}
 	}
 	return sent, nil
+}
+
+func valueToText(v any) (string, error) {
+	if v == nil {
+		return "null", nil
+	}
+	switch x := v.(type) {
+	case string:
+		return x, nil
+	case json.Number:
+		return x.String(), nil
+	case bool:
+		return strconv.FormatBool(x), nil
+	}
+	rv := reflect.ValueOf(v)
+	switch rv.Kind() {
+	case reflect.String:
+		return rv.String(), nil
+	case reflect.Bool:
+		return strconv.FormatBool(rv.Bool()), nil
+	case reflect.Int, reflect.Int8, reflect.Int16,
+		reflect.Int32, reflect.Int64:
+		return strconv.FormatInt(rv.Int(), 10), nil
+	case reflect.Uint, reflect.Uint8, reflect.Uint16,
+		reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return strconv.FormatUint(rv.Uint(), 10), nil
+	case reflect.Float32, reflect.Float64:
+		f := rv.Float()
+		if math.IsNaN(f) || math.IsInf(f, 0) {
+			return "", fmt.Errorf("invalid number")
+		}
+		return strconv.FormatFloat(
+			f,
+			'f',
+			-1,
+			rv.Type().Bits(),
+		), nil
+	}
+	data, err := json.Marshal(v)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+func normalizePort(v any) (string, error) {
+	text, err := valueToText(v)
+	if err != nil {
+		return "", err
+	}
+	text = strings.TrimSpace(text)
+	if port, err := strconv.ParseInt(text, 10, 64); err == nil {
+		if port < 1 || port > 65535 {
+			return "", fmt.Errorf("port must be between 1 and 65535")
+		}
+
+		return strconv.FormatInt(port, 10), nil
+	}
+	number, err := strconv.ParseFloat(text, 64)
+	if err != nil ||
+		math.IsNaN(number) ||
+		math.IsInf(number, 0) ||
+		math.Trunc(number) != number ||
+		number < 1 ||
+		number > 65535 {
+		return "", fmt.Errorf("port must be an integer between 1 and 65535")
+	}
+	return strconv.FormatInt(int64(number), 10), nil
+}
+
+func normalizeResponseHeaders(v any) (map[string]string, error) {
+	var raw map[string]any
+	switch value := v.(type) {
+	case nil:
+		return map[string]string{}, nil
+	case string:
+		text := strings.TrimSpace(value)
+		if text == "" || text == "null" {
+			return map[string]string{}, nil
+		}
+		if err := json.Unmarshal([]byte(text), &raw); err != nil {
+			return nil, fmt.Errorf("response_head must be a valid JSON object")
+		}
+	case map[string]any:
+		raw = value
+	case map[string]string:
+		raw = make(map[string]any, len(value))
+		for key, item := range value {
+			raw[key] = item
+		}
+	default:
+		return nil, fmt.Errorf(
+			"response_head must be a JSON object or JSON string",
+		)
+	}
+	result := make(map[string]string, len(raw))
+	for key, value := range raw {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			return nil, fmt.Errorf("response header name cannot be empty")
+		}
+		text, err := valueToText(value)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"invalid value for response header %q",
+				key,
+			)
+		}
+		if strings.ContainsAny(key, "\r\n") ||
+			strings.ContainsAny(text, "\r\n") {
+			return nil, fmt.Errorf(
+				"response header %q contains invalid characters",
+				key,
+			)
+		}
+		result[key] = text
+	}
+	return result, nil
 }
 
 // 接收
