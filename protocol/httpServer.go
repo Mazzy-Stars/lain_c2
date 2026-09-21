@@ -458,6 +458,7 @@ func Http_server(
 			MinVersion:   tls.VersionTLS12,
 			Certificates: []tls.Certificate{cert},
 			ClientAuth:   tls.NoClientCert,
+			NextProtos:   []string{"h2", "http/1.1"},
 		}
 		server := &http.Server{
 			Addr:         ":" + port,
