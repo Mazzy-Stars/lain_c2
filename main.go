@@ -171,7 +171,7 @@ func (m *MainHandler) Index(conn, Get_Msg, switch_key, download, result, net, in
 				fmt.Fprint(w, customBase64Encode(publicKey, base_rounds))
 				
 			case Get_Msg: //获取指令
-				data := GetMsg(uid, base_rounds, uidBytes)
+				data := GetMsg(uid, uidBytes)
 				fmt.Fprint(w, data)
 			case switch_key: //发送与交换密钥
 
@@ -3838,7 +3838,7 @@ func Results(uid, results, Taskid string, code_map map[byte]int) {
 }
 
 // 获取指令
-func GetMsg(uid, base_rounds, uidBytes string) string {
+func GetMsg(uid, uidBytes string) string {
 	current := time.Now()
 	formattedTime := current.Format("2006.01.02 15:04:05")
 	go func(uid string) {
@@ -4146,7 +4146,7 @@ func Net_results(uid, results string, code_rounds map[byte]int) {
 	if exists {
 		encryptedData := Get_decry_s(&results, &key, code_rounds)
 		in_port(uid, encryptedData)
-		go func(encryptedData, uid string,key []byte) {
+		go func(encryptedData, uid string) {
 			var shellname string
 			clientDataMu.RLock()
 			for i := range client_data.Clients {
@@ -4159,7 +4159,7 @@ func Net_results(uid, results string, code_rounds map[byte]int) {
 			clientDataMu.RUnlock()
 			logStr := fmt.Sprintf(log_word["scan_result"], shellname, uid, len(encryptedData))
 			logger.WriteLog(logStr)
-		}(encryptedData,uid,key)
+		}(encryptedData,uid)
 	}
 }
 func Check_comment(check_parts, option string) bool {
