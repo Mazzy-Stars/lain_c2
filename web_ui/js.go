@@ -6057,7 +6057,7 @@ class lain_server {
                 this.redirectToAgentCode(
                     server.protocol,
                     os,
-                    main_server+":"+server.port,
+                    window.location.hostname+":"+server.port,
                     path,
                     server.conn_path,
                     server.msg_path,
