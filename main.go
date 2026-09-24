@@ -1297,18 +1297,17 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 					code_, _ := body["code"].(string)
 					windows_pro, _ := body["group_pro"].(string)
 
-					arr := strings.Split(server, ":")
-					if len(arr) < 2 {
-						clientWs.WriteJSON(map[string]interface{}{
-							"code":    400,
-							"path":    "agentcode",
-							"message": "invalid server",
-						})
-						continue
+					host, port, err := net.SplitHostPort(server)
+					if err != nil || host == "" || port == "" {
+					    clientWs.WriteJSON(map[string]interface{}{
+					        "code":    400,
+					        "path":    "agentcode",
+					        "message": "invalid server",
+					    })
+					    continue
 					}
-					port := arr[len(arr)-1]
-					arr[1] = port
-					server = strings.Join(arr[:2], ":")
+					
+					server = net.JoinHostPort(host, port)
 
 					serverRouteMu.RLock()
 					base_rounds, exist := base_map[port]
