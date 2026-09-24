@@ -2759,7 +2759,7 @@ class index{
                 return false;
             }
         }
-        async del(index, info = "") {
+        async del(index) {
 		    const confirmed = await customConfirm("confirm?");
 		    if (!confirmed) {
 		        return false;
