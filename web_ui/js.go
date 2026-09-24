@@ -6655,7 +6655,7 @@ class lain_chat{
             let currentChatId = data.chatid;
             let currentMessage = data.message;
             delBtn.onclick = () => {
-                this.deleteChat(currentChatId, currentMessage, div);
+                this.deleteChat(currentChatId, currentMessage);
             };
             header.appendChild(delBtn);
         }
@@ -6720,7 +6720,7 @@ class lain_chat{
             );
         }
     }
-    async deleteChat(chatid, message, chatDiv) {
+    async deleteChat(chatid, message) {
         try {
             const responsePromise = webSocketClient.waitForMessage(
                 (msg) =>
