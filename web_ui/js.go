@@ -1700,6 +1700,9 @@ class WebSocketClient {
             case "updateLoot":
                 this.handleLootAppend(msg);
                 break;
+            case "send_delloot":
+                this.handleLootDeletePush(msg);
+                break;
             case "server":
                 this.handleServerInitial(msg);
                 break;
@@ -2512,31 +2515,77 @@ class WebSocketClient {
     }
 
     handleLootAppend(msg) {
-        const list = normalizeIncomingList(unwrapMessageData(msg));
-        if (!list.length) {
+        const list = normalizeIncomingList(
+            unwrapMessageData(msg)
+        );
+        if (!Array.isArray(list) || list.length === 0) {
             return;
         }
-        const entry = list[0];
-        const uid = String(entry && entry.uid !== undefined ? entry.uid : "");
-        if (!uid) {
-            return;
+        if (!Array.isArray(loot_data)) {
+            loot_data = [];
         }
-
-        const currentIndex = Array.isArray(loot_data) ?
-            loot_data.findIndex(function(item) {
-                return String(item && item.uid !== undefined ? item.uid : "") === uid;
-            }) :
-            -1;
-        if (currentIndex >= 0) {
-            loot_data[currentIndex] = Object.assign({}, loot_data[currentIndex], entry);
-        } else {
-            loot_data.push(entry);
-        }
-
         const lootIndex = new lain_index();
-        lootIndex.updateLootItem(loot_data[currentIndex >= 0 ? currentIndex : loot_data.length - 1]);
+        list.forEach((rawEntry) => {
+            if (!rawEntry || typeof rawEntry !== "object") {
+                return;
+            }
+            const uid = rawEntry.uid === undefined ||
+                rawEntry.uid === null ? "" : String(rawEntry.uid).trim();
+            if (!uid) {
+                return;
+            }
+            const entry = Object.assign({}, rawEntry, {
+                uid: uid
+            });
+            let index = loot_data.findIndex(function(item) {
+                const itemUid = item && item.uid !== undefined && item.uid !== null ? String(item.uid).trim() : "";
+                return itemUid === uid;
+            });
+            if (index >= 0) {
+                loot_data[index] = Object.assign(
+                    {},
+                    loot_data[index],
+                    entry
+                );
+            } else {
+                loot_data.push(entry);
+                index = loot_data.length - 1;
+            }
+            lootIndex.updateLootItem(loot_data[index]);
+        });
     }
-
+    handleLootDeletePush(msg) {
+        const payload = unwrapMessageData(msg);
+        const uid = String(
+            payload && payload.uid !== undefined ? payload.uid : ""
+        ).trim();
+        const fileName = String(
+            payload && payload.file !== undefined ? payload.file : ""
+        ).trim();
+        if (!uid || !fileName || !Array.isArray(loot_data)) {
+            return;
+        }
+        const index = loot_data.findIndex(function(item) {
+            return String(
+                item && item.uid !== undefined ? item.uid: ""
+            ).trim() === uid;
+        });
+        if (index < 0) {
+            return;
+        }
+        const entry = loot_data[index];
+        const files = Array.isArray(entry.files) ? entry.files: [];
+        const newFiles = files.filter(function(file) {
+            const name = file && file.name !== undefined? file.name: "";
+            return String(name).trim() !== fileName;
+        });
+        if (newFiles.length === files.length) {
+            return;
+        }
+        loot_data[index] = Object.assign({}, entry, {files: newFiles});
+        const lootIndex = new lain_index();
+        lootIndex.updateLootItem(loot_data[index]);
+    }
     handleCheck(msg) {
         if (!msg || !msg.data || !msg.data.uid) return;
         pendingCheckTimes[msg.data.uid] = msg.data;
