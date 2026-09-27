@@ -2524,6 +2524,42 @@ class WebSocketClient {
         if (!Array.isArray(loot_data)) {
             loot_data = [];
         }
+        const mergeFiles = (oldFiles, newFiles) => {
+            const merged = [];
+            const indexMap = new Map();
+            const addFile = (file) => {
+                if (!file || typeof file !== "object") {
+                    return;
+                }
+                const name = String(
+                    file.name !== undefined ? file.name : ""
+                ).trim();
+                if (!name) {
+                    return;
+                }
+                const fileData = Object.assign({}, file, {
+                    name: name
+                });
+                if (!indexMap.has(name)) {
+                    indexMap.set(name, merged.length);
+                    merged.push(fileData);
+                    return;
+                }
+                const index = indexMap.get(name);
+                merged[index] = Object.assign(
+                    {},
+                    merged[index],
+                    fileData
+                );
+            };
+            if (Array.isArray(oldFiles)) {
+                oldFiles.forEach(addFile);
+            }
+            if (Array.isArray(newFiles)) {
+                newFiles.forEach(addFile);
+            }
+            return merged;
+        };
         const lootIndex = new lain_index();
         list.forEach((rawEntry) => {
             if (!rawEntry || typeof rawEntry !== "object") {
@@ -2534,24 +2570,46 @@ class WebSocketClient {
             if (!uid) {
                 return;
             }
-            const entry = Object.assign({}, rawEntry, {
-                uid: uid
-            });
-            let index = loot_data.findIndex(function(item) {
+            const index = loot_data.findIndex((item) => {
                 const itemUid = item && item.uid !== undefined && item.uid !== null ? String(item.uid).trim() : "";
                 return itemUid === uid;
             });
             if (index >= 0) {
-                loot_data[index] = Object.assign(
+                const oldEntry = loot_data[index];
+                const mergedEntry = Object.assign(
                     {},
-                    loot_data[index],
-                    entry
+                    oldEntry,
+                    rawEntry,
+                    {
+                        uid: uid,
+                        files: mergeFiles(
+                            oldEntry.files,
+                            rawEntry.files
+                        )
+                    }
                 );
+                loot_data[index] = mergedEntry;
             } else {
-                loot_data.push(entry);
-                index = loot_data.length - 1;
+                const newEntry = Object.assign(
+                    {},
+                    rawEntry,
+                    {
+                        uid: uid,
+                        files: mergeFiles([], rawEntry.files)
+                    }
+                );
+                loot_data.push(newEntry);
             }
-            lootIndex.updateLootItem(loot_data[index]);
+            const currentIndex = loot_data.findIndex((item) => {
+                return String(
+                    item && item.uid !== undefined ? item.uid : ""
+                ).trim() === uid;
+            });
+            if (currentIndex >= 0) {
+                lootIndex.updateLootItem(
+                    loot_data[currentIndex]
+                );
+            }
         });
     }
     handleLootDeletePush(msg) {
