@@ -496,7 +496,6 @@ func send() { //发送头部信息
 	                InsecureSkipVerify: true,
 	            },
 	        }
-	
 	        client = &http.Client{
 	            Transport: transport,
 	            Timeout:   30 * time.Second,
