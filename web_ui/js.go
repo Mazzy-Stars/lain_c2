@@ -2815,6 +2815,7 @@ class index{
             this.currentTaskId = "";
             this.pendingTaskInputs = {};
             this.inputKeydown = this.inputKeydown.bind(this);
+            
         }
         getDialogNode(selector) {
             if (this.dialogEl) {
@@ -5228,29 +5229,62 @@ class index{
 
             const info = document.createElement("div");
             info.className = "loot-info";
+
             const name = file.name || "";
             const size = typeof file.size === "number" ? file.size : 0;
             const modTime = file.mod_time || "";
+
             const nameLine = document.createElement("div");
             nameLine.className = "loot-file-name";
+
             const nameLabel = document.createElement("strong");
             nameLabel.textContent = String(name);
             nameLine.appendChild(nameLabel);
+
             const metaLine = document.createElement("div");
             metaLine.className = "loot-meta";
-            metaLine.textContent = "size: " + String(size) + " | modified: " + String(modTime);
+            metaLine.textContent =
+                "size: " + String(size) +
+                " | modified: " + String(modTime);
+
             info.append(nameLine, metaLine);
 
-            const btn = document.createElement("button");
-            btn.type = "button";
-            btn.className = "loot-download-btn";
-            btn.textContent = "Download";
-            btn.onclick = () => {
-                this.downloadLoot(uid, name, btn);
+            const downloadBtn = document.createElement("button");
+            downloadBtn.type = "button";
+            downloadBtn.className = "loot-download-btn";
+            downloadBtn.textContent = "Download";
+
+            downloadBtn.onclick = () => {
+                this.downloadLoot(uid, name, downloadBtn);
+            };
+
+            const deleteBtn = document.createElement("button");
+            deleteBtn.type = "button";
+            deleteBtn.className = "loot-download-btn";
+            deleteBtn.textContent = "Delete";
+
+            deleteBtn.onclick = async () => {
+                deleteBtn.disabled = true;
+                deleteBtn.textContent = "Deleting";
+
+                const deleted = await this.deleteLoot(
+                    uid,
+                    name
+                );
+
+                if (deleted) {
+                    row.remove();
+                    return;
+                }
+
+                deleteBtn.disabled = false;
+                deleteBtn.textContent = "Delete";
             };
 
             row.appendChild(info);
-            row.appendChild(btn);
+            row.appendChild(downloadBtn);
+            row.appendChild(deleteBtn);
+
             card.appendChild(row);
         });
     }
@@ -5314,6 +5348,66 @@ class index{
             lootDiv.appendChild(this.buildLootCardNode(entry));
         });
         restoreViewState(lootDiv, viewState);
+    }
+    async deleteLoot(uid, file) {
+        const uidText = String(uid ?? "").trim();
+        const fileText = String(file ?? "").trim();
+        if (!uidText || !fileText) {
+            customLog("Delete loot failed: missing parameter");
+            return false;
+        }
+        const right = await customConfirm(
+            "Delete loot file \"" + fileText + "\"?"
+        );
+        if (!right) {
+            return false;
+        }
+        try {
+            const responsePromise = webSocketClient.waitForMessage(
+                (msg) => {
+                    return msg.path === "delete_loot" &&
+                        Number(msg.code) === 200 &&
+                        String(msg.uid ?? "") === uidText &&
+                        String(msg.file ?? "") === fileText;
+                }
+            );
+            const sent = await webSocketClient.send(
+                "delete_loot",
+                {
+                    uid: uidText,
+                    file: fileText,
+                    username: Username
+                }
+            );
+            if (!sent) {
+                customLog("Delete loot failed");
+                return false;
+            }
+            const result = await responsePromise;
+            if (
+                result &&
+                Number(result.code) === 200 &&
+                String(result.uid ?? "") === uidText &&
+                String(result.file ?? "") === fileText
+            ) {
+                customLog("Loot file deleted successfully");
+                return true;
+            }
+            customLog(
+                result && result.message
+                    ? result.message
+                    : "Delete loot failed"
+            );
+            return false;
+        } catch (err) {
+            console.error("Delete loot error:", err);
+            customLog(
+                err && err.message
+                    ? err.message
+                    : "Delete loot failed"
+            );
+            return false;
+        }
     }
     async downloadLoot(uid,file, buttonEl = null){
         const originalText = buttonEl ? buttonEl.textContent : "";
