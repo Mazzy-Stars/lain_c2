@@ -423,12 +423,14 @@ func send() { //发送头部信息
         }
         func scan_port(ip, port string, sleep_time int, resultBuilder *strings.Builder, mutex *sync.Mutex) {
 		    timeout := time.Duration(sleep_time) * time.Second
-		    conn, err := net.DialTimeout("tcp", ip+":"+port, timeout)
-		    if err != nil {
-		        return // 无法连接，端口未开放
-		    }
+			host := strings.TrimSpace(ip)
+		    host = strings.TrimPrefix(host, "[")
+		    host = strings.TrimSuffix(host, "]")
+			addr := net.JoinHostPort(host, port)
+		    conn, err := net.DialTimeout("tcp", addr, timeout)
+		    if err != nil {return}
 		    defer conn.Close()
-		    target := ip + ":[" + port + "]"
+		    target := host + ":[" + port + "]"
 		    mutex.Lock()
 		    resultBuilder.WriteString(target + "\n")
 		    mutex.Unlock()
@@ -479,23 +481,27 @@ func send() { //发送头部信息
         protocol_var1 = "transport *http.Transport"
     }else if protocol == "https"{
         inithttp = `
-        func initHttpClient() {
-            transport = &http.Transport{
-                MaxConnsPerHost:     1,
-                MaxIdleConns:        1,
-                MaxIdleConnsPerHost: 1,
-                DisableKeepAlives:   false,
-                DialContext: (&net.Dialer{
-                    Timeout:   30 * time.Second,
-                    KeepAlive: 30 * time.Second,
-                }).DialContext,
-                TLSClientConfig: &tls.Config{InsecureSkipVerify: true,},
-            }
-            client = &http.Client{
-                Transport: transport,
-                Timeout:   30 * time.Second,
-            }
-        }
+	    func initHttpClient() {
+	        transport = &http.Transport{
+	            MaxConnsPerHost:     1,
+	            MaxIdleConns:        1,
+	            MaxIdleConnsPerHost: 1,
+	            DisableKeepAlives:   false,
+	            ForceAttemptHTTP2:   true,
+	            DialContext: (&net.Dialer{
+	                Timeout:   30 * time.Second,
+	                KeepAlive: 30 * time.Second,
+	            }).DialContext,
+	            TLSClientConfig: &tls.Config{
+	                InsecureSkipVerify: true,
+	            },
+	        }
+	
+	        client = &http.Client{
+	            Transport: transport,
+	            Timeout:   30 * time.Second,
+	        }
+	    }
         `
         protocol_var1 = "transport *http.Transport"
     }
