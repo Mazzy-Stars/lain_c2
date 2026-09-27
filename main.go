@@ -557,9 +557,6 @@ func PushAgentData(uid, path string) {
 	// 推送指定聊天
 	case "updateChat":
 		data = updateChatSlice(uid)
-	// 推送指定战利品
-	case "updateLoot":
-		data = updateLoot(uid)
 	// 推送指定代理
 	case "updateIndex":
 		data = updateIndex(uid)
@@ -1090,7 +1087,7 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 
 				case "downloadChatFile":
 					filename, ok := body["filename"].(string)
-					if !ok || filename == "" {
+					if !ok || !isSafeLootPathPart(filename) {
 						clientWs.WriteJSON(map[string]interface{}{
 							"code":    400,
 							"path":    "downloadChatFile",
@@ -1169,17 +1166,8 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 					}
 
 				case "delete_loot":
-					isSafePathPart := func(value string) bool {
-						value = strings.TrimSpace(value)
-						return value != "" &&
-							value != "." &&
-							value != ".." &&
-							filepath.VolumeName(value) == "" &&
-							filepath.Base(value) == value &&
-							!strings.ContainsAny(value, `/\`)
-					}
 					uid, ok := body["uid"].(string)
-					if !ok || !isSafePathPart(uid) {
+					if !ok || !isSafeLootPathPart(uid) {
 						_ = clientWs.WriteJSON(map[string]interface{}{
 							"code":    400,
 							"path":    "delete_loot",
@@ -1197,7 +1185,7 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 						continue
 					}
 					fileName, ok := body["file"].(string)
-					if !ok || !isSafePathPart(fileName) {
+					if !ok || !isSafeLootPathPart(fileName) {
 						_ = clientWs.WriteJSON(map[string]interface{}{
 							"code":    400,
 							"path":    "delete_loot",
@@ -1250,11 +1238,15 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 					})
 					logStr := fmt.Sprintf(log_word["del_loot"], username,fileName)
 					logger.WriteLog(logStr)
-					go PushAgentData(uid, "updateLoot")
+
+					go PushWS("", "send_delloot", map[string]interface{}{
+						"uid":    uid,
+						"file":   fileName,
+					})
 
 				case "download_loot":
 					uid, ok := body["uid"].(string)
-					if !ok || uid == "" {
+					if !ok || !isSafeLootPathPart(uid) {
 						clientWs.WriteJSON(map[string]interface{}{
 							"code":    400,
 							"path":    "download_loot",
@@ -1264,7 +1256,7 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 					}
 
 					fileName, ok := body["file"].(string)
-					if !ok || fileName == "" {
+					if !ok || !isSafeLootPathPart(fileName) {
 						clientWs.WriteJSON(map[string]interface{}{
 							"code":    400,
 							"path":    "download_loot",
@@ -2141,9 +2133,12 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 						continue
 					}
 
-					if deletedType == "file" {
-						filePath := filepath.Join("./chat_uploads/", message)
-						os.Remove(filePath)
+					if deletedType == "file" && isSafeLootPathPart(message) {
+						filePath := filepath.Join(
+							"chat_uploads",
+							message,
+						)
+						_ = os.Remove(filePath)
 					}
 					clientWs.WriteJSON(map[string]interface{}{
 						"code":   200,
@@ -2633,7 +2628,7 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 					})
 				case "uploadFile":
 					uid, ok := body["uid"].(string)
-					if !ok {
+					if !ok{
 						clientWs.WriteJSON(map[string]interface{}{
 							"code":    400,
 							"path":    "uploadFile",
@@ -2642,7 +2637,7 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 						continue
 					}
 					filename, ok := body["filename"].(string)
-					if !ok {
+					if !ok{
 						clientWs.WriteJSON(map[string]interface{}{
 							"code":    400,
 							"path":    "uploadFile",
@@ -2669,7 +2664,7 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 				case "chatFile":
 					filename, _ := body["filename"].(string)
 					username, _ := body["username"].(string)
-					if filename == "" {
+					if filename == "" || !isSafeLootPathPart(filename) {
 						clientWs.WriteJSON(map[string]interface{}{
 							"code":    400,
 							"path":    "chatFile",
@@ -2731,6 +2726,15 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 								"code":    500,
 								"path":    "chatFile",
 								"message": "mkdir failed",
+							})
+							uploadTask = nil
+							continue
+						}
+						if !isSafeLootPathPart(uploadTask.Filename) {
+							clientWs.WriteJSON(map[string]interface{}{
+								"code":    400,
+								"path":    "chatFile",
+								"message": "invalid filename",
 							})
 							uploadTask = nil
 							continue
@@ -4791,6 +4795,10 @@ func DownloadFile(uid, keyDecry string, code_map map[byte]int) ([]byte, error) {
 // 上传文件处理
 func UploadFileHandler(uid, data, filename string,
 	fileData []byte, code_map map[byte]int) {
+	uid = strings.TrimSpace(uid)
+	if !isSafeLootPathPart(uid) {
+		return
+	}
 	keyMu.RLock()
 	key, exists := key_map[uid]
 	keyMu.RUnlock()
@@ -4799,8 +4807,11 @@ func UploadFileHandler(uid, data, filename string,
 	}
 	key_part := []byte(key)
 	decry_data := Get_decry_s(&data, &key, code_map)
-	tempFilename := Get_decry_s(&filename, &key, code_map)
-	realFilename := getFilenameFromPath(tempFilename)
+	tempFilename := strings.TrimSpace(Get_decry_s(&filename, &key, code_map),)
+	realFilename := strings.TrimSpace(getFilenameFromPath(tempFilename),)
+	if !isSafeLootPathPart(realFilename) {
+		return
+	}
 	data_list := strings.Split(decry_data, "*//*")
 	if len(data_list) < 5 {
 		return
@@ -4848,7 +4859,15 @@ func UploadFileHandler(uid, data, filename string,
 
 	// 最后一块完成
 	if endPos == filePos {
-		go PushAgentData(uid, "updateLoot")
+		loot := updateLoot(uid,realFilename)
+		if loot != nil{
+			PushWS("", "updateLoot",
+				map[string]interface{}{
+					"uid":  uid,
+					"data": loot,
+				},
+			)
+		}
 		time.Sleep(3 * time.Second)
 		filelog3 := fmt.Sprintf(log_word["request_file_finish"], username, uid, realFilename, filePos, receivedFilePath)
 		logger.WriteLog(filelog3)
@@ -4991,87 +5010,102 @@ func Get_loots_pro() []LootClient {
 		return result
 	}
 	for uid, host := range clientMap {
+		if !isSafeLootPathPart(uid) {
+			continue
+		}
 		dirPath := filepath.Join("uploads", uid)
 		files, err := os.ReadDir(dirPath)
 		if err != nil {
 			continue
 		}
 		loot := LootClient{
-			UID:  uid,
-			Host: host,
+			UID:   uid,
+			Host:  host,
+			Files: make([]LootFile, 0),
 		}
 		for _, file := range files {
 			if file.IsDir() {
 				continue
 			}
-			fullPath := filepath.Join(dirPath, file.Name())
-			info, err := os.Stat(fullPath)
-			if err != nil {
+			fileName := file.Name()
+			if !isSafeLootPathPart(fileName) {
 				continue
 			}
-			loot.Files = append(
-				loot.Files,
-				LootFile{
-					Name:    file.Name(),
-					SizeKB:  info.Size() / 1024,
-					ModTime: info.ModTime().Format("2006-01-02 15:04:05"),
-				},
-			)
+			fullPath := filepath.Join(dirPath, fileName)
+			info, err := os.Stat(fullPath)
+			if err != nil || info.IsDir() {
+				continue
+			}
+			loot.Files = append(loot.Files, LootFile{
+				Name:    fileName,
+				SizeKB:  info.Size() / 1024,
+				ModTime: info.ModTime().Format("2006-01-02 15:04:05"),
+			})
 		}
 		result = append(result, loot)
 	}
 	return result
 }
 
-func updateLoot(uid string) LootClient {
-	loot := LootClient{
+func isSafeLootPathPart(value string) bool {
+	value = strings.TrimSpace(value)
+	return value != "" &&
+		value != "." &&
+		value != ".." &&
+		filepath.VolumeName(value) == "" &&
+		filepath.Base(value) == value &&
+		!strings.ContainsAny(value, `/\`)
+}
+
+func updateLoot(uid, filename string) *LootClient {
+	uid = strings.TrimSpace(uid)
+	filename = strings.TrimSpace(filename)
+
+	if !isSafeLootPathPart(uid) || !isSafeLootPathPart(filename) {
+		return nil
+	}
+
+	loot := &LootClient{
 		UID:   uid,
 		Host:  "",
-		Files: []LootFile{},
+		Files: make([]LootFile, 0, 1),
 	}
+
 	clientDataMu.RLock()
 	for i := range client_data.Clients {
-		c := &client_data.Clients[i]
-		if c.Uid == uid {
-			loot.Host = c.Host
+		client := &client_data.Clients[i]
+		if client.Uid == uid {
+			loot.Host = client.Host
 			break
 		}
 	}
 	clientDataMu.RUnlock()
 
-	windows_clientMu.RLock()
-	for i := range windows_client_data.Clients {
-		c := &windows_client_data.Clients[i]
-		if c.Uid == uid {
-			loot.Host = c.Host
-			break
+	if loot.Host == "" {
+		windows_clientMu.RLock()
+		for i := range windows_client_data.Clients {
+			client := &windows_client_data.Clients[i]
+			if client.Uid == uid {
+				loot.Host = client.Host
+				break
+			}
 		}
+		windows_clientMu.RUnlock()
 	}
-	windows_clientMu.RUnlock()
 
-	dirPath := filepath.Join("uploads", uid)
-	files, err := os.ReadDir(dirPath)
-	if err != nil {
-		return loot
+	filePath := filepath.Join("uploads", uid, filename)
+
+	info, err := os.Stat(filePath)
+	if err != nil || info.IsDir() {
+		return nil
 	}
-	for _, file := range files {
-		if file.IsDir() {
-			continue
-		}
-		fullPath := filepath.Join(dirPath, file.Name())
-		info, err := os.Stat(fullPath)
-		if err != nil {
-			continue
-		}
-		loot.Files = append(
-			loot.Files,
-			LootFile{
-				Name:    file.Name(),
-				SizeKB:  info.Size() / 1024,
-				ModTime: info.ModTime().Format("2006-01-02 15:04:05"),
-			},
-		)
-	}
+
+	loot.Files = append(loot.Files, LootFile{
+		Name:    filename,
+		SizeKB:  info.Size() / 1024,
+		ModTime: info.ModTime().Format("2006-01-02 15:04:05"),
+	})
+
 	return loot
 }
 
@@ -6216,7 +6250,7 @@ func Read_log_word() {
 		"user_join":"[*] User Join: from %s joined %s",
 		"add_user":"[*] User: %s added user: %s md5 password: %s",
 		"del_loot":"[*] User: %s delete loot %s"
-    }    
+    }
     `
 	// 检查文件是否存在
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
