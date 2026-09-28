@@ -1723,15 +1723,8 @@ class WebSocketClient {
                     this.handleOnlineTeammates(msg);
                 }
                 break;
-            case "insertKey":
-                if(msg.code === 200){
-                    console.log("Key inserted successfully");
-                } else {
-                    console.log("Failed to insert key: " + msg.message);
-                }
-                break;
             case "insertPlugin":
-                if(msg.code === 200){
+                if(msg.code === 200 && msg.taskid == AgentTaskId){
                     customLog(msg.message || "Plugin inserted successfully");
                 } else {
                     customAlert(msg.message || "Insert plugin failed");
@@ -1740,7 +1733,7 @@ class WebSocketClient {
             case "delPlugin":
                 break;
             case "agentcode":
-                if(msg.code===200){
+                if(msg.code===200 && msg.taskid == AgentTaskId){
                     let blob = new Blob(
                         [msg.data],
                         {
@@ -1768,14 +1761,6 @@ class WebSocketClient {
                         [];
                 }
                 break;
-            case "GetMsgPost":
-                if (msg.data) {
-                    let uid = msg.data.uid;
-                    resultQueues[uid] = Array.isArray(msg.data.data) ?
-                        msg.data.data :
-                        [];
-                }
-                break;
             case "getFileCache":
                 if (msg) {
                     const uid = msg.uid;
@@ -1786,13 +1771,6 @@ class WebSocketClient {
                     } else if (window.activeFileManager && window.activeFileManager.uid === uid) {
                         window.activeFileManager.history_file(uid);
                     }
-                }
-                break;
-            case "GetMsgNet":
-                if (msg.data) {
-                    const uid = msg.data.uid;
-                    const list = Array.isArray(msg.data.data) ? msg.data.data : [];
-                    applyNetData(uid, list);
                 }
                 break;
             case "updateGetMsgList":
@@ -6822,7 +6800,8 @@ class lain_server {
                     keyPart:keyPart,
                     filekey:filekey,
                     code:code,
-                    group_pro:windows_pro || ""
+                    group_pro:windows_pro || "",
+                    taskid: AgentTaskId
                 }
             );
         }catch(e){
@@ -7648,7 +7627,8 @@ async function submitPlugin(remark) {
                 codeWords: codeWords,
                 os: osName,
                 parameter: parameter,
-                parameterDesc: normalizedParameterDesc
+                parameterDesc: normalizedParameterDesc,
+                taskid:AgentTaskId
             }
         );
         if (!sent) {
@@ -7661,7 +7641,8 @@ async function submitPlugin(remark) {
             codeWords: codeWords,
             parameter: parameter,
             parameterDesc: normalizedParameterDesc,
-            code: finalCode
+            code: finalCode,
+            taskid:AgentTaskId
         });
         return true;
     } catch (err) {
