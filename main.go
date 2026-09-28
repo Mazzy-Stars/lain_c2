@@ -1372,6 +1372,7 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 					option, _ := body["option"].(string)
 					code_, _ := body["code"].(string)
 					windows_pro, _ := body["group_pro"].(string)
+					taskid, _ := body["taskid"].(string)
 
 					host, port, err := net.SplitHostPort(server)
 					if err != nil || host == "" || port == "" {
@@ -1379,6 +1380,7 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 					        "code":    400,
 					        "path":    "agentcode",
 					        "message": "invalid server",
+							"taskid":  taskid,
 					    })
 					    continue
 					}
@@ -1393,6 +1395,7 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 							"code":    404,
 							"path":    "agentcode",
 							"message": "base not found",
+							"taskid":  taskid,
 						})
 						continue
 					}
@@ -1402,7 +1405,7 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 					clientWs.WriteJSON(map[string]interface{}{
 						"code": 200,
 						"path": "agentcode",
-
+						"taskid":  taskid,
 						"data": code,
 					})
 				case "delserver":
@@ -1963,11 +1966,12 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 					osName, _ := body["os"].(string)
 					parameter, _ := body["parameter"].(string)
 					parameterDesc, _ := body["parameterDesc"].(string)
+					taskid, _ := body["taskid"].(string)
 					if remark == "" || code == "" || osName == "" || codeWords == "" {
 						clientWs.WriteJSON(map[string]interface{}{
 							"code": 400,
 							"path": "insertPlugin",
-
+							"taskid":  taskid,
 							"message": "parameter does not exist",
 						})
 						continue
@@ -1986,6 +1990,7 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 						clientWs.WriteJSON(map[string]interface{}{
 							"code":    400,
 							"path":    "insertPlugin",
+							"taskid":  taskid,
 							"message": "CodeWords already exists: " + codeWords,
 						})
 						continue
@@ -2002,6 +2007,7 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 						clientWs.WriteJSON(map[string]interface{}{
 							"code":    400,
 							"path":    "insertPlugin",
+							"taskid":  taskid,
 							"message": "Parameter fields must not be empty",
 						})
 						continue
@@ -2026,6 +2032,7 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 						clientWs.WriteJSON(map[string]interface{}{
 							"code":    400,
 							"path":    "insertPlugin",
+							"taskid":  taskid,
 							"message": "Parameter fields must not duplicate: " + dupParam,
 						})
 						continue
@@ -2057,6 +2064,7 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 					clientWs.WriteJSON(map[string]interface{}{
 						"code":    200,
 						"path":    "insertPlugin",
+						"taskid":  taskid,
 						"message": "Plugin inserted successfully for " + remark,
 					})
 				case "getNetdata":
