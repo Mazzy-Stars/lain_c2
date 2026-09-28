@@ -492,49 +492,51 @@ func PushWS(username string, path string, data interface{}) {
 	}
 	wsUsersMu.Unlock()
 }
-func PushData(username string, pushType string) {
+
+func PushData(clientWs *WSClient, pushType string) {
 	var data interface{}
+
 	switch pushType {
-	// 客户端列表
 	case "agentList":
 		data = UserIndex()
-	// Windows客户端列表
 	case "winAgentList":
 		data = windows_pro_UserIndex()
-	// 监听信息
 	case "listen":
 		data = Listen()
-	// 服务器信息
 	case "server":
 		data = ServerIndex()
-	// 实时聊天
 	case "chat":
 		data = GetChatSlice()
-	// 日志
 	case "log":
 		data = Log_read(1000)
-	// 插件
 	case "PluginList":
 		data = GetAllPluginCode()
-	// 战利品
 	case "loot":
 		data = Get_loots_pro()
-	// 更新日志
 	case "updatelog":
 		data = Log_read(1)
 	default:
 		return
 	}
-	if data != nil {
-		PushWS(
-			username,
-			pushType,
-			map[string]interface{}{
-				"code": "200",
-				"data": data,
-			},
-		)
+
+	if data == nil {
+		return
 	}
+
+	payload := map[string]interface{}{
+		"code": "200",
+		"data": data,
+	}
+
+	if clientWs != nil {
+		_ = clientWs.WriteJSON(map[string]interface{}{
+			"path": pushType,
+			"data": payload,
+		})
+		return
+	}
+
+	PushWS("", pushType, payload)
 }
 
 func PushAgentData(uid, path string) {
@@ -664,14 +666,14 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 
 		logger.WriteLog(fmt.Sprintf(log_word["user_join"], user_ip, username))
 
-		PushData(usernameCookie.Value, "agentList")
-		PushData(usernameCookie.Value, "winAgentList")
-		PushData(usernameCookie.Value, "listen")
-		PushData(usernameCookie.Value, "server")
-		PushData(usernameCookie.Value, "chat")
-		PushData(usernameCookie.Value, "log")
-		PushData(usernameCookie.Value, "PluginList")
-		PushData(usernameCookie.Value, "loot")
+		PushData(clientWs, "agentList")
+		PushData(clientWs, "winAgentList")
+		PushData(clientWs, "listen")
+		PushData(clientWs, "server")
+		PushData(clientWs, "chat")
+		PushData(clientWs, "log")
+		PushData(clientWs, "PluginList")
+		PushData(clientWs, "loot")
 
 		defer func() {
 			func() {
@@ -4974,7 +4976,7 @@ func (w *MyLog) WriteLog(logStr string) {
 	if err != nil {
 		fmt.Println("write log error:", err)
 	}
-	go PushData("", "updatelog")
+	go PushData(nil, "updatelog")
 }
 
 type LootFile struct {
