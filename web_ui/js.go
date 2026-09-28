@@ -1882,66 +1882,83 @@ class WebSocketClient {
     }
 
     handleLog(msg) {
-        const logItems = normalizeIncomingList(unwrapMessageData(msg));
-        if(!logItems.length){
+        const incoming = normalizeIncomingList(
+            unwrapMessageData(msg)
+        ).filter(function(item) {
+            return item && typeof item === "object";
+        });
+        if (incoming.length === 0) {
             return;
         }
+        const getLogKey = function(item) {
+            if (!item || typeof item !== "object") {
+                return "";
+            }
+            const id = item.id ?? item.logid ?? item.idx;
+            if (id !== undefined && id !== null && String(id) !== "") {
+                return "id:" + String(id);
+            }
+            const time = String(item.time ?? "").trim();
+            const message = String(item.message ?? "");
+            if (!time && !message) {
+                return "";
+            }
+            return "text:" + time + "|" + message;
+        };
         let logDiv = document.getElementById("log-content");
-        if(!logDiv){
-            const seen = new Set(log_pending_slice.map(function(item) {
-                return String(
-                    (item && (item.id || item.logid || item.idx || item.time || "")) +
-                    "|" +
-                    (item && item.message ? item.message : "")
-                );
-            }));
-            logItems.forEach(function(item) {
-                const key = String(
-                    (item && (item.id || item.logid || item.idx || item.time || "")) +
-                    "|" +
-                    (item && item.message ? item.message : "")
-                );
-                if (!seen.has(key)) {
+        if (!logDiv) {
+            const seen = new Set();
+            log_slice.forEach(function(item) {
+                const key = getLogKey(item);
+                if (key) {
                     seen.add(key);
-                    log_pending_slice.push(item);
                 }
             });
-            return;
-        }
-        if (log_pending_slice.length > 0) {
-            const pending = log_pending_slice.slice();
-            log_pending_slice.length = 0;
-            pending.forEach(function(item) {
-                logItems.unshift(item);
+            log_pending_slice.forEach(function(item) {
+                const key = getLogKey(item);
+                if (key) {
+                    seen.add(key);
+                }
             });
+            incoming.forEach(function(item) {
+                const key = getLogKey(item);
+                if (!key || seen.has(key)) {
+                    return;
+                }
+                seen.add(key);
+                log_pending_slice.push(item);
+            });
+            return;
         }
         const viewState = snapshotViewState(logDiv, {
             stickToBottom: true,
             threshold: 80
         });
-        const seen = new Set(log_slice.map(function(item) {
-            return String(
-                (item && (item.id || item.logid || item.idx || item.time || "")) +
-                "|" +
-                (item && item.message ? item.message : "")
-            );
-        }));
-        for(let i = 0; i < logItems.length; i++) {
-            const item = logItems[i];
-            const key = String(
-                (item && (item.id || item.logid || item.idx || item.time || "")) +
-                "|" +
-                (item && item.message ? item.message : "")
-            );
-            if (seen.has(key)) {
-                continue;
+        const pending = log_pending_slice.slice();
+        log_pending_slice.length = 0;
+        const orderedItems = msg && msg.path === "log" ? incoming.concat(pending) : pending.concat(incoming);
+        const seen = new Set();
+        log_slice.forEach(function(item) {
+            const key = getLogKey(item);
+            if (key) {
+                seen.add(key);
+            }
+        });
+        const fragment = document.createDocumentFragment();
+        orderedItems.forEach(function(item) {
+            const key = getLogKey(item);
+            if (!key || seen.has(key)) {
+                return;
             }
             seen.add(key);
             log_slice.push(item);
-            let line = document.createElement("div");
-            line.textContent = "[" + String(item.time || "") + "] : " + String(item.message || "");
-            logDiv.appendChild(line);
-        }
+            const line = document.createElement("div");
+            line.textContent =
+                "[" + String(item.time ?? "") + "] : " +
+                String(item.message ?? "");
+            fragment.appendChild(line);
+        });
+        logDiv.appendChild(fragment);
         restoreViewState(logDiv, viewState);
     }
 
