@@ -513,8 +513,6 @@ func PushData(clientWs *WSClient, pushType string) {
 		data = GetAllPluginCode()
 	case "loot":
 		data = Get_loots_pro()
-	case "updatelog":
-		data = Log_read(1)
 	default:
 		return
 	}
@@ -4952,11 +4950,11 @@ func Log_read(maxLines int) []LogEntry {
 type MyLog struct{}
 
 func (w *MyLog) WriteLog(logStr string) {
-	logPath := "server.log"
 	entry := LogEntry{
 		Time:    time.Now().Format("2006-01-02 15:04:05"),
 		Message: logStr,
 	}
+
 	data, err := json.Marshal(entry)
 	if err != nil {
 		fmt.Println("marshal log error:", err)
@@ -4966,17 +4964,33 @@ func (w *MyLog) WriteLog(logStr string) {
 	loggerMu.Lock()
 	defer loggerMu.Unlock()
 
-	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	file, err := os.OpenFile(
+		"server.log",
+		os.O_CREATE|os.O_WRONLY|os.O_APPEND,
+		0666,
+	)
 	if err != nil {
 		fmt.Println("can not log:", err)
 		return
 	}
-	defer file.Close()
-	_, err = file.Write(append(data, '\n'))
-	if err != nil {
-		fmt.Println("write log error:", err)
+
+	_, writeErr := file.Write(append(data, '\n'))
+	closeErr := file.Close()
+
+	if writeErr != nil {
+		fmt.Println("write log error:", writeErr)
+		return
 	}
-	go PushData(nil, "updatelog")
+
+	if closeErr != nil {
+		fmt.Println("close log error:", closeErr)
+		return
+	}
+
+	PushWS("", "updatelog", map[string]interface{}{
+		"code": "200",
+		"data": []LogEntry{entry},
+	})
 }
 
 type LootFile struct {
