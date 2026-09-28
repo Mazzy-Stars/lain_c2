@@ -3099,7 +3099,6 @@ button:hover {
         max-width: calc(100vw - 24px);
     }
 }
-
 `
 			}
 			w.Header().Set("Content-Type", "text/css")
