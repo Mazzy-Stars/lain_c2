@@ -6948,7 +6948,6 @@ class lain_chat{
             return;
         }
         let file = fileInput.files[0];
-        let chatid = chat_slice.length > 0 ? chat_slice[chat_slice.length - 1].chatid + 1 : 1;
         let chat_div = document.getElementById("chat_div");
         let pendingDiv = document.createElement("div");
         pendingDiv.className = "chat_message me pending_file";
