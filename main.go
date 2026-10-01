@@ -610,6 +610,7 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
 		var uploadTask *UploadTask
+		var username string
 
 		// 打印请求头
 		usernameCookie, err := r.Cookie("cookie")
@@ -642,7 +643,7 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 			return
 		}
 
-		username := usernameCookie.Value[strings.LastIndex(usernameCookie.Value, "=")+1:]
+		username = usernameCookie.Value[strings.LastIndex(usernameCookie.Value, "=")+1:]
 		user_ip := getClientIP(r)
 
 		// 升级为 websocket
@@ -677,8 +678,8 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 			func() {
 				wsUsersMu.Lock()
 				defer wsUsersMu.Unlock()
-				username := usernameCookie.Value
-				clients := wsUsers[username]
+				usernameCookie := usernameCookie.Value
+				clients := wsUsers[usernameCookie]
 				for i, c := range clients {
 					if c != clientWs {
 						continue
@@ -689,9 +690,9 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 					break
 				}
 				if len(clients) == 0 {
-					delete(wsUsers, username)
+					delete(wsUsers, usernameCookie)
 				} else {
-					wsUsers[username] = clients
+					wsUsers[usernameCookie] = clients
 				}
 			}()
 			if clientWs != nil {
@@ -1175,15 +1176,6 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 						})
 						continue
 					}
-					username, ok := body["username"].(string)
-					if !ok || strings.TrimSpace(username) == "" {
-						_ = clientWs.WriteJSON(map[string]interface{}{
-							"code":    400,
-							"path":    "delete_loot",
-							"message": "invalid username",
-						})
-						continue
-					}
 					fileName, ok := body["file"].(string)
 					if !ok || !isSafeLootPathPart(fileName) {
 						_ = clientWs.WriteJSON(map[string]interface{}{
@@ -1333,7 +1325,6 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 					}
 
 				case "getAll":
-					username, _ := body["username"].(string)
 					shell_list, err := Get_Clients(username)
 					if err != nil {
 						clientWs.WriteJSON(map[string]interface{}{
@@ -1352,7 +1343,7 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 					})
 				case "agentcode":
 					uid, _ := body["uid"].(string)
-					username, _ := body["username"].(string)
+					username_, _ := body["username"].(string)
 					hostname, _ := body["hostname"].(string)
 					keyPart, _ := body["keyPart"].(string)
 					filekey, _ := body["filekey"].(string)
@@ -1400,7 +1391,7 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 						continue
 					}
 					code := client_.Generate_agent(ptc, _os, server, Path, ConnPath, MsgPath, switch_key,
-						download, result, _net, info, upload, list, option, username, uid,
+						download, result, _net, info, upload, list, option, username_, uid,
 						hostname, keyPart, filekey, code_, base_rounds, windows_pro)
 					clientWs.WriteJSON(map[string]interface{}{
 						"code": 200,
@@ -1879,14 +1870,14 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 
 				case "change_pro":
 					uid, _ := body["uid"].(string)
-					username, _ := body["username"].(string)
+					username_, _ := body["username"].(string)
 					remarks, _ := body["remarks"].(string)
 					delay, _ := body["delay"].(string)
 					jitter, _ := body["jitter"].(string)
 					taskid, _ := body["taskid"].(string)
 					result := Change_pro(
 						uid,
-						username,
+						username_,
 						remarks,
 						delay,
 						jitter,
@@ -1920,14 +1911,14 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 					}
 				case "change":
 					uid, _ := body["uid"].(string)
-					username, _ := body["username"].(string)
+					username_, _ := body["username"].(string)
 					remarks, _ := body["remarks"].(string)
 					delay, _ := body["delay"].(string)
 					jitter, _ := body["jitter"].(string)
 					taskid, _ := body["taskid"].(string)
 					result := Change(
 						uid,
-						username,
+						username_,
 						remarks,
 						delay,
 						jitter,
@@ -2076,7 +2067,6 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 						"data": data,
 					})
 				case "sendChat":
-					username, _ := body["username"].(string)
 					message, _ := body["message"].(string)
 					chatid := chatUID()
 					chat := Chat{
@@ -2109,7 +2099,6 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 					})
 				case "deleteChat":
 					chatid, _ := body["chatid"].(string)
-					username, _ := body["username"].(string)
 					message, _ := body["message"].(string)
 
 					deletedType := ""
@@ -2260,10 +2249,10 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 					})
 				case "addteamment":
 					func() {
-						username, _ := body["username"].(string)
+						username_, _ := body["username"].(string)
 						password, _ := body["password"].(string)
 
-						if username == "" || password == "" {
+						if username_ == "" || password == "" {
 							clientWs.WriteJSON(map[string]interface{}{
 								"code":    400,
 								"path":    "addteamment",
@@ -2275,7 +2264,7 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 						mutex.Lock()
 						defer mutex.Unlock()
 
-						userHash := md5.Sum([]byte(username))
+						userHash := md5.Sum([]byte(username_))
 						hashedUsername := fmt.Sprintf("%x", userHash)
 
 						passHash := md5.Sum([]byte(password))
@@ -2353,7 +2342,7 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 						if userAdded {
 							logger.WriteLog(fmt.Sprintf(
 								log_word["add_user"],
-								username,
+								username_,
 								hashedUsername,
 								hashedPassword,
 							))
@@ -2429,7 +2418,6 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 						KeyPart      string `json:"keyPart"`
 						Filekey      string `json:"filekey"`
 						Protocol     string `json:"protocol"`
-						Username     string `json:"username"`
 						Remark       string `json:"remark"`
 						CertContent  string `json:"cert"`
 						KeyContent   string `json:"key"`
@@ -2608,7 +2596,7 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 						requestData.WindowsPro,
 						requestData.BaseRounds,
 						requestData.ResponseHead,
-						requestData.Username,
+						username,
 						log_word,
 						func() {
 							serverRouteMu.Lock()
@@ -2671,7 +2659,6 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 
 				case "chatFile":
 					filename, _ := body["filename"].(string)
-					username, _ := body["username"].(string)
 					if filename == "" || !isSafeLootPathPart(filename) {
 						clientWs.WriteJSON(map[string]interface{}{
 							"code":    400,
