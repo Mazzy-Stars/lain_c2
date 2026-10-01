@@ -644,6 +644,9 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 		}
 
 		username = strings.Split(usernameCookie.Value, "=")[1]
+		if username == "" {
+			username = "null"
+		}
 		user_ip := getClientIP(r)
 
 		// 升级为 websocket
