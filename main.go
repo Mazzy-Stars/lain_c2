@@ -643,7 +643,7 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 			return
 		}
 
-		username = usernameCookie.Value[strings.LastIndex(usernameCookie.Value, "=")+1:]
+		username = strings.Split(usernameCookie.Value, "=")[1]
 		user_ip := getClientIP(r)
 
 		// 升级为 websocket
