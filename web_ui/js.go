@@ -5477,8 +5477,7 @@ class index{
                 "delete_loot",
                 {
                     uid: uidText,
-                    file: fileText,
-                    username: Username
+                    file: fileText
                 }
             );
             if (!sent) {
@@ -6061,8 +6060,6 @@ class lain_server {
         });
         jsonData.cert = certContent;
         jsonData.key = keyContent;
-        // 娣诲姞鐢ㄦ埛鍚�
-        jsonData.username = Username;
         try{
             const responsePromise = webSocketClient.waitForMessage(
                 (msg) => {
@@ -6906,8 +6903,7 @@ class lain_chat{
             webSocketClient.send(
                 "sendChat",
                 {
-                    username:Username,
-                    message:chat_input,
+                    message:chat_input
                 }
             );
         }catch(error){
@@ -6926,7 +6922,6 @@ class lain_chat{
             );
             const sent = await webSocketClient.send("deleteChat", {
                 chatid: String(chatid),
-                username: Username,
                 message: message
             });
             if (!sent) {
@@ -6971,9 +6966,7 @@ class lain_chat{
             await webSocketClient.sendFile(
                 "chatFile",
                 {
-                    filename:file.name,
-                    chatid:String(chatid),
-                    username:Username
+                    filename:file.name
                 },
                 file,
                 1024 * 1024,
