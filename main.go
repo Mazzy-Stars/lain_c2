@@ -1327,23 +1327,6 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 						return
 					}
 
-				case "getAll":
-					shell_list, err := Get_Clients(username)
-					if err != nil {
-						clientWs.WriteJSON(map[string]interface{}{
-							"code": 500,
-							"path": "getAll",
-
-							"message": "invalid err",
-						})
-						continue
-					}
-					clientWs.WriteJSON(map[string]interface{}{
-						"code": 200,
-						"path": "getAll",
-
-						"data": shell_list,
-					})
 				case "agentcode":
 					uid, _ := body["uid"].(string)
 					username_, _ := body["username"].(string)
@@ -5169,22 +5152,6 @@ func UserUploadFile(uid, filename, splitSize string, file io.Reader) error {
 	logStr = fmt.Sprintf(log_word["upload_tmp"], uid, written, filename)
 	logger.WriteLog(logStr)
 	return nil
-}
-
-func Get_Clients(username string) (map[string]string, error) {
-	shell_list := make(map[string]string)
-	clientDataMu.RLock()
-	defer clientDataMu.RUnlock()
-	for i := range client_data.Clients {
-		client := &client_data.Clients[i]
-		if username == client.Username {
-			shell_list[client.Uid] = client.Host
-		}
-	}
-	if len(shell_list) == 0 {
-		return nil, fmt.Errorf("no clients found for username: %s", username)
-	}
-	return shell_list, nil
 }
 
 func ClearUnmarkedGlobalVars() {
