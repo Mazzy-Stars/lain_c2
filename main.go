@@ -615,12 +615,7 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 		// 打印请求头
 		usernameCookie, err := r.Cookie("cookie")
 		if err != nil {
-			for k, v := range notFoundHeaders {
-				w.Header().Set(k, v)
-			}
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.WriteHeader(http.StatusNotFound)
-			_, _ = w.Write([]byte(error_str))
+			web_ui.WriteCustomError(w, http.StatusNotFound,error_str, notFoundHeaders)
 			return
 		}
 		var foundUser bool
@@ -634,12 +629,7 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 		}
 		mutex.RUnlock()
 		if !foundUser {
-			for k, v := range notFoundHeaders {
-				w.Header().Set(k, v)
-			}
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.WriteHeader(http.StatusNotFound)
-			_, _ = w.Write([]byte(error_str))
+			web_ui.WriteCustomError(w, http.StatusNotFound, error_str, notFoundHeaders)
 			return
 		}
 
@@ -6045,7 +6035,7 @@ func main() {
 		}
 		fmt.Println("[*] directory ./html Created successfully")
 	}
-	http.Handle("/", staticWithCustom404("./html", error_str, cfg.NotFoundHeaders))
+	http.Handle("/", staticWithCustom404("./html", cfg.NotFoundHeaders))
 	fmt.Println(asciiArt)
 
 	//历史聊天文件
@@ -6055,7 +6045,7 @@ func main() {
 	}
 
 	//登录
-	http.Handle("/"+login_route, withWhitelist(login(login_route, ui_route, web_css, web_title, login_file), cfg.NotFoundHeaders))
+	http.Handle("/"+login_route, withWhitelist(login(login_route, ui_route, web_css, web_title, login_file,cfg.NotFoundHeaders), cfg.NotFoundHeaders))
 
 	// --- 页面路由 ---
 	http.Handle("/"+ui_route, withWhitelist(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -6126,16 +6116,7 @@ func main() {
 	}
 }
 
-func writeCustomError(w http.ResponseWriter, status int, body string, extra map[string]string) {
-	for k, v := range extra {
-		w.Header().Set(k, v)
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(status)
-	_, _ = w.Write([]byte(body))
-}
-
-func staticWithCustom404(root string, notFoundText string, notFoundHeaders map[string]string) http.Handler {
+func staticWithCustom404(root string, notFoundHeaders map[string]string) http.Handler {
 	fileServer := http.FileServer(http.Dir(root))
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -6143,7 +6124,7 @@ func staticWithCustom404(root string, notFoundText string, notFoundHeaders map[s
 		fileServer.ServeHTTP(rec, r)
 
 		if rec.Code == http.StatusNotFound {
-			writeCustomError(w, http.StatusNotFound, notFoundText, notFoundHeaders)
+			web_ui.WriteCustomError(w, http.StatusNotFound,error_str, notFoundHeaders)
 			return
 		}
 
@@ -6175,7 +6156,7 @@ func withWhitelist(next http.Handler, notFoundHeaders map[string]string) http.Ha
 		}
 
 		if !allowed {
-			writeCustomError(w, http.StatusNotFound, error_str, notFoundHeaders)
+			web_ui.WriteCustomError(w, http.StatusNotFound, error_str, notFoundHeaders)
 			return
 		}
 
@@ -6320,7 +6301,7 @@ func writeWhitelist(whitelist []string) error {
 }
 
 // 登录
-func login(login_route, ui_route, web_css, web_title, login_file string) http.HandlerFunc {
+func login(login_route, ui_route, web_css, web_title, login_file string,notFoundHeaders map[string]string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 			var html string
@@ -6379,8 +6360,7 @@ func login(login_route, ui_route, web_css, web_title, login_file string) http.Ha
 			// 解析表单数据
 			err := r.ParseForm()
 			if err != nil {
-				w.WriteHeader(http.StatusNotFound)
-				fmt.Fprint(w, error_str)
+				web_ui.WriteCustomError(w, http.StatusNotFound, error_str, notFoundHeaders)
 				return
 			}
 			username := r.FormValue("username")
@@ -6396,8 +6376,7 @@ func login(login_route, ui_route, web_css, web_title, login_file string) http.Ha
 
 			user_err := readJSONFile("user.json", &data_user)
 			if user_err != nil {
-				w.WriteHeader(http.StatusNotFound)
-				fmt.Fprint(w, error_str)
+				web_ui.WriteCustomError(w, http.StatusNotFound, error_str, notFoundHeaders)
 				return
 			}
 			var validUser bool
@@ -6450,8 +6429,7 @@ func login(login_route, ui_route, web_css, web_title, login_file string) http.Ha
 				})
 			}
 		} else {
-			w.WriteHeader(http.StatusNotFound)
-			fmt.Fprint(w, error_str)
+			web_ui.WriteCustomError(w, http.StatusNotFound, error_str, notFoundHeaders)
 		}
 	}
 }
