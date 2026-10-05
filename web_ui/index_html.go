@@ -374,6 +374,9 @@ func Lain(error_str, web_title, web_js, web_css string, sessionSlice []string, n
 			w.Header().Set("Content-Type", "text/html")
 			fmt.Fprint(w, html)
 			return
+		}else{
+			WriteCustomError(w, http.StatusNotFound,error_str, notFoundHeaders)
+            return
 		}
 	}
 }
