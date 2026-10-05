@@ -10,12 +10,7 @@ func Lain(error_str, web_title, web_js, web_css string, sessionSlice []string, n
         //必须先登录
         _, ok := CheckUserSession(r, sessionSlice, error_str)
         if !ok {
-            for k, v := range notFoundHeaders {
-                w.Header().Set(k, v)
-            }
-            w.Header().Set("Content-Type", "text/html; charset=utf-8")
-            w.WriteHeader(http.StatusNotFound)
-            _, _ = w.Write([]byte(error_str))
+            WriteCustomError(w, http.StatusNotFound,error_str, notFoundHeaders)
             return
         }
 
