@@ -6430,6 +6430,7 @@ func login(login_route, ui_route, web_css, web_title, login_file string,notFound
 			}
 		} else {
 			web_ui.WriteCustomError(w, http.StatusNotFound, error_str, notFoundHeaders)
+			return
 		}
 	}
 }
