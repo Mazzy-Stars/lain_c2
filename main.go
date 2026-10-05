@@ -22,6 +22,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -3236,23 +3237,12 @@ func Change(uid, username, remarks, delay, jitter, Taskid string) string {
 }
 
 func getClientIP(r *http.Request) string {
-	forwarded := r.Header.Get("X-Forwarded-For")
-	if forwarded != "" {
-		ip := forwarded
-		if comma := strings.Index(forwarded, ","); comma > 0 {
-			ip = forwarded[:comma]
-		}
-		return ip
-	}
-	realIP := r.Header.Get("X-Real-IP")
-	if realIP != "" {
-		return realIP
-	}
-	ip, _, err := net.SplitHostPort(r.RemoteAddr)
+	addrPort, err := netip.ParseAddrPort(strings.TrimSpace(r.RemoteAddr))
 	if err != nil {
-		return r.RemoteAddr
+		return ""
 	}
-	return ip
+
+	return addrPort.Addr().Unmap().String()
 }
 
 // 返回给前端的 JSON 结构
@@ -6115,7 +6105,31 @@ func main() {
 		fmt.Printf("FAIL TO START HTTPS SERVER %v\n", certerr)
 	}
 }
+func ipAllowed(clientIP string, whitelist []string) bool {
+	client, err := netip.ParseAddr(clientIP)
+	if err != nil {
+		return false
+	}
+	client = client.Unmap()
+	for _, item := range whitelist {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		if prefix, err := netip.ParsePrefix(item); err == nil {
+			if prefix.Contains(client) {
+				return true
+			}
+			continue
+		}
+		allowed, err := netip.ParseAddr(item)
+		if err == nil && allowed.Unmap() == client {
+			return true
+		}
+	}
 
+	return false
+}
 func staticWithCustom404(root string, notFoundHeaders map[string]string) http.Handler {
 	fileServer := http.FileServer(http.Dir(root))
 
@@ -6147,13 +6161,7 @@ func withWhitelist(next http.Handler, notFoundHeaders map[string]string) http.Ha
 		}
 
 		clientIP := getClientIP(r)
-		allowed := false
-		for i := range whitelistIPs {
-			if clientIP == whitelistIPs[i] || strings.HasPrefix(clientIP, whitelistIPs[i]) {
-				allowed = true
-				break
-			}
-		}
+		allowed := ipAllowed(clientIP, whitelistIPs)
 
 		if !allowed {
 			web_ui.WriteCustomError(w, http.StatusNotFound, error_str, notFoundHeaders)
