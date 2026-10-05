@@ -8216,6 +8216,9 @@ if (!window.fileDialogButtonBound) {
 			w.Header().Set("Content-Type", "text/javascript")
 			fmt.Fprint(w, html)
 			return
+		}else {
+			WriteCustomError(w, http.StatusNotFound,error_str, notFoundHeaders)
+            return
 		}
 	}
 }
