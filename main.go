@@ -6423,10 +6423,8 @@ func login(login_route, ui_route, web_css, web_title, login_file string,notFound
 				// 没有用户则
 				log_str := fmt.Sprintf(log_word["login_fail"], userip, username, password)
 				logger.WriteLog(log_str)
-				json.NewEncoder(w).Encode(map[string]interface{}{
-					"code":    "401",
-					"message": "Unauthorized",
-				})
+				web_ui.WriteCustomError(w, http.StatusNotFound, error_str, notFoundHeaders)
+				return
 			}
 		} else {
 			web_ui.WriteCustomError(w, http.StatusNotFound, error_str, notFoundHeaders)
