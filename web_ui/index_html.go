@@ -3,6 +3,7 @@ package web_ui
 import (
 	"fmt"
 	"net/http"
+    "io"
 )
 
 func Lain(error_str, web_title, web_js, web_css string, sessionSlice []string, notFoundHeaders map[string]string) http.HandlerFunc {
@@ -372,7 +373,7 @@ func Lain(error_str, web_title, web_js, web_css string, sessionSlice []string, n
 
             `,web_title)
 			w.Header().Set("Content-Type", "text/html")
-			fmt.Fprint(w, html)
+			_, _ = io.WriteString(w,html)
 			return
 		}else{
 			WriteCustomError(w, http.StatusNotFound,error_str, notFoundHeaders)
