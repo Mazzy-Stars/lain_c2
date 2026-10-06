@@ -6060,7 +6060,11 @@ func main() {
 
 	//调用css
 	http.Handle("/"+web_css, withWhitelist(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		web_ui.Css(css_file).ServeHTTP(w, r)
+		mutex.RLock()
+		tempSessions := append([]string(nil), sessionSlice...)
+		mutex.RUnlock()
+
+		web_ui.Css(error_str,css_file,tempSessions,cfg.NotFoundHeaders).ServeHTTP(w, r)
 	}), cfg.NotFoundHeaders))
 
 	// 创建 HTTP Server
@@ -6313,52 +6317,129 @@ func login(login_route, ui_route, web_css, web_title, login_file string,notFound
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 			var html string
+			html_ := fmt.Sprintf(`
+			<!DOCTYPE html>
+				<html lang="en">
+				<head>
+					<meta charset="UTF-8">
+					<meta name="viewport" content="width=device-width, initial-scale=1.0">
+					<title>%s</title>
+					<style>
+						* {
+							box-sizing: border-box;
+						}
+
+						body {
+							margin: 0;
+							min-height: 100vh;
+							display: flex;
+							align-items: center;
+							justify-content: center;
+							padding: 20px;
+							background: linear-gradient(135deg, #eef5fb, #f8f5fb);
+							font-family: Arial, "Microsoft YaHei", sans-serif;
+						}
+
+						.form-in {
+							width: min(380px, calc(100vw - 40px));
+							max-width: none;
+							display: flex;
+							flex-direction: column;
+							align-items: stretch;
+							gap: 16px;
+							padding: 38px 34px;
+							background: #ffffff;
+							border: 1px solid #e4eaf1;
+							border-radius: 18px;
+							box-shadow: 0 18px 45px rgba(148, 163, 184, 0.18);
+						}
+
+						.form-in h1 {
+							margin: 0 0 12px;
+							text-align: center;
+							color: #334155;
+							font-size: 28px;
+							font-weight: 600;
+						}
+
+						.form-in input,
+						.form-in button {
+							display: block;
+							width: auto;
+							min-width: 0;
+							height: 48px;
+							align-self: stretch;
+						}
+
+						.form-in input {
+							padding: 0 15px;
+							border: 1px solid #d9e2ec;
+							border-radius: 10px;
+							outline: none;
+							background: #f8fafc;
+							color: #334155;
+							font-size: 14px;
+						}
+
+						.form-in input:focus {
+							border-color: #91b9df;
+							background: #ffffff;
+							box-shadow: 0 0 0 4px rgba(145, 185, 223, 0.18);
+						}
+
+						.form-in button {
+							margin-top: 4px;
+							border: none;
+							border-radius: 10px;
+							background: linear-gradient(135deg, #9fc4e5, #8eacd4);
+							color: #ffffff;
+							font-size: 15px;
+							font-weight: 600;
+							cursor: pointer;
+						}
+
+						.form-in button:hover {
+							background: #86add5;
+						}
+					</style>
+				</head>
+
+				<body>
+					<form
+						class="form-in"
+						action="/`+login_route+`"
+						method="post"
+						enctype="application/x-www-form-urlencoded"
+					>
+						<h1>Login</h1>
+						<input
+							type="text"
+							name="username"
+							id="username"
+							placeholder="Username"
+							required
+						>
+						<input
+							type="password"
+							name="password"
+							placeholder="Password"
+							required
+						>
+						<button type="submit">Login</button>
+					</form>
+				</body>
+				</html>
+			`,
+				web_title)
 			if login_file != "" {
 				fileContent, err := os.ReadFile(login_file)
 				if err != nil {
-					fmt.Printf("Failed to read login_file: %v\n", err)
-					html = fmt.Sprintf(`
-					<!DOCTYPE html>
-						<html lang="en">
-						<head>
-							<meta charset="UTF-8">
-							<meta name="viewport" content="width=device-width, initial-scale=1.0">
-							<title>%s</title>
-							<link rel="stylesheet" href="/`+web_css+`">
-						</head>
-						<body>
-							<form class="form-in" action="/%s" method="post" enctype="application/x-www-form-urlencoded">  
-								<h1>Login</h1>
-								<input type="text" name="username" id="username" placeholder="Username" required>
-								<input type="password" name="password" placeholder="password" required>
-								<button type="submit">Login</button>
-							</form>
-						</body>
-					</html>`,
-						web_title, login_route)
+					html = html_
 				} else {
 					html = string(fileContent)
 				}
 			} else {
-				html = fmt.Sprintf(`
-				<!DOCTYPE html>
-					<html lang="en">
-					<head>
-						<meta charset="UTF-8">
-						<meta name="viewport" content="width=device-width, initial-scale=1.0">
-						<title>%s</title>
-						<link rel="stylesheet" href="/`+web_css+`">
-					</head>
-					<body>
-						<form class="form-in" action="/%s" method="post" enctype="application/x-www-form-urlencoded">  
-							<h1>Login</h1>
-							<input type="text" name="username" id="username" placeholder="Username" required>
-							<input type="password" name="password" placeholder="password" required>
-							<button type="submit">Login</button>
-						</form>
-					</body>
-				</html>`,
-					web_title, login_route)
+				html = html_
 			}
 			w.Header().Set("Content-Type", "text/html")
 			fmt.Fprint(w, html)
