@@ -6442,7 +6442,7 @@ func login(login_route, ui_route, web_css, web_title, login_file string,notFound
 				html = html_
 			}
 			w.Header().Set("Content-Type", "text/html")
-			fmt.Fprint(w, html)
+			_, _ = io.WriteString(w, html)
 			return
 		}
 		if r.Method == http.MethodPost {
