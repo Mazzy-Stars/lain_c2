@@ -1,7 +1,7 @@
 package web_ui
 import (
 	"net/http"
-	"fmt"
+	"io"
 )
 func Js(error_str,web_route,web_css string, sessionSlice []string, notFoundHeaders map[string]string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -8214,7 +8214,7 @@ if (!window.fileDialogButtonBound) {
 `
 
 			w.Header().Set("Content-Type", "text/javascript")
-			fmt.Fprint(w, html)
+			_, _ = io.WriteString(w,html)
 			return
 		}else {
 			WriteCustomError(w, http.StatusNotFound,error_str, notFoundHeaders)
