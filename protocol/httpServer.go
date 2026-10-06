@@ -233,6 +233,42 @@ func UpdateRespHead(port, resphead string) {
 	cfg.RespHead.Store(resphead)
 }
 
+func normalizeServerPath(raw string) (string, error) {
+	path := strings.TrimSpace(raw)
+	if path == "" {
+		return "", errors.New("empty server path")
+	}
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	if strings.ContainsAny(path, "?#{}\\") {
+		return "", fmt.Errorf("invalid server path %q", raw)
+	}
+	for _, r := range path {
+		if r < 0x20 || r == 0x7f || r == ' ' {
+			return "", fmt.Errorf("invalid server path %q", raw)
+		}
+	}
+	return path, nil
+}
+func registerMuxHandler(
+	mux *http.ServeMux,
+	pattern string,
+	handler http.HandlerFunc,
+) (err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf(
+				"invalid server path %q: %v",
+				pattern,
+				recovered,
+			)
+		}
+	}()
+	mux.HandleFunc(pattern, handler)
+	return nil
+}
+
 func Http_server(
 	handler Handler,
 	ServerManager Putserver,
@@ -274,8 +310,10 @@ func Http_server(
 	if port == "" {
 		return errors.New("empty server port")
 	}
-	if path == "" {
-		return errors.New("empty server path")
+	var err error
+	path, err = normalizeServerPath(path)
+	if err != nil {
+		return err
 	}
 
 	switch protocolName {
@@ -284,14 +322,10 @@ func Http_server(
 		return fmt.Errorf("unsupported protocol %q", protocolName)
 	}
 
-	if !strings.HasPrefix(path, "/") {
-		path = "/" + path
-	}
-
 	cfg := GetOrCreateConfig(port)
 
 	mux := http.NewServeMux()
-	mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
+	if err := registerMuxHandler(mux, path, func(w http.ResponseWriter, r *http.Request) {
 		currentRespHead, _ := cfg.RespHead.Load().(string)
 
 		var headers map[string]string
@@ -310,6 +344,10 @@ func Http_server(
 			}
 		}
 		if statusCode != 0 {
+			if statusCode < 100 || statusCode > 999 {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
 			w.WriteHeader(statusCode)
 		}
 
@@ -331,7 +369,9 @@ func Http_server(
 			windowsPro,
 			port,
 		).ServeHTTP(w, r)
-	})
+	}); err != nil {
+		return err
+	}
 
 	commitServer := func(certPath, keyPath string) error {
 		if ok := ServerManager.PutServer(
