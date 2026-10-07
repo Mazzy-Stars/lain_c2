@@ -728,7 +728,7 @@ function buildClientCardNode(client, index) {
     btnRemove.className = 'btn remove';
     btnRemove.dataset.role = 'remove';
     btnRemove.onclick = async () => {
-        const ok = await del_conn(String(index));
+        await del_conn(String(index));
     };
 
     const btnBox = document.createElement('div');
@@ -5200,7 +5200,7 @@ class index{
             const safePortJs = escapeInlineJsArg(port);
 
             try{
-                let result = await webSocketClient.send(
+                await webSocketClient.send(
                     "change",
                     {
                         remarks: remarks,
@@ -5745,10 +5745,11 @@ class lain_net{
             sleepTimeValue = 1; // 榛樿鏈€灏忓€间负1
         }
 
+		let cmd;
         if(optionValue === "scan"){
-            var cmd="GET_PORTS*//*"+targetValue+"*//*"+targetListValue+"*//*"+sleepTimeValue;
+            cmd="GET_PORTS*//*"+targetValue+"*//*"+targetListValue+"*//*"+sleepTimeValue;
         }else if(optionValue === "sniff"){
-            var cmd="GET_U_FRIENDS*//*"+targetValue+"*//*"+targetListValue+"*//*"+sleepTimeValue;
+            cmd="GET_U_FRIENDS*//*"+targetValue+"*//*"+targetListValue+"*//*"+sleepTimeValue;
         } else {
             customLog("Please select scan type");
             return false;
@@ -7216,11 +7217,12 @@ function net_init() {
 }
 function toggleInfo(uid,op) {
     console.log(uid,op)
-    if(op == "info"){
-        var infoContent = document.getElementById(uid+"-info-content");
-    }else if(op == "choose"){
-        var infoContent = document.getElementById(uid+"-choose-content");
-    }
+    let infoContent;
+	if (op === "info") {
+	    infoContent = document.getElementById(uid + "-info-content");
+	} else if (op === "choose") {
+	    infoContent = document.getElementById(uid + "-choose-content");
+	}
     infoContent.classList.toggle("show");
 }
 // 鍏抽棴 iframe
@@ -7257,14 +7259,13 @@ document.addEventListener("DOMContentLoaded", function () {
     const serverIndexDiv = document.querySelector(".server_index");
     const contentDiv = serverIndexDiv.querySelector(".content");
     const touchEventOptions = { passive: false };
-    let isResizingLog = false, startY, startContentHeight, startLogHeight, totalHeight;
+    let isResizingLog = false, startY, startContentHeight, totalHeight;
 
     function startResize(e) {
         if (e.cancelable) e.preventDefault();
         isResizingLog = true;
         startY = e.touches ? e.touches[0].clientY : e.clientY;
         startContentHeight = contentDiv.offsetHeight;
-        startLogHeight = logDiv.offsetHeight;
         totalHeight = serverIndexDiv.offsetHeight;
         document.addEventListener("mousemove", resizeLog);
         document.addEventListener("mouseup", stopResize);
