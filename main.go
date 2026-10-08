@@ -2415,12 +2415,12 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 						continue
 					}
 					
-					_,err := normalizePort(requestData.Port)
-					if err != nil {
+					_,port_err := normalizePort(requestData.Port)
+					if port_err != nil {
 						clientWs.WriteJSON(map[string]interface{}{
 							"code":    400,
 							"path":    "startServer",
-							"message": "invalid port: " + err.Error(),
+							"message": "invalid port: " + port_err.Error(),
 						})
 						continue
 					}
