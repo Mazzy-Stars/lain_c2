@@ -6755,12 +6755,13 @@ class lain_server {
                     }
                 }
                 try {
-                    const responsePromise = webSocketClient.waitForMessage(
-                        (msg) => {
-                            return msg.path === "changeResponseHead" &&
-                                String(msg.port || "") === String(port)
-                        },
-                    );
+                    const responsePromise = webSocketClient.waitForMessage((msg) => {
+                        return msg.path === "changeResponseHead" &&
+                            (
+                                msg.code !== 200 ||
+                                String(msg.port) === String(port)
+                            );
+                    });
                     const sent = await webSocketClient.send(
                         "changeResponseHead",
                         {
@@ -6773,7 +6774,7 @@ class lain_server {
                         return;
                     }
                     const result = await responsePromise;
-                    if (!result || result.code !== 200) {
+                    if (!result || result.code !== 200 || String(result.port) !== String(port)) {
                         customLog(
                             result && result.message ?
                                 result.message :
@@ -8074,33 +8075,26 @@ function customTransferToast(id, options = {}) {
 }
 
 function customAlert(message) {
-    // 閬僵
-    let overlay = document.createElement("div");
-    overlay.style.position = "fixed";
-    overlay.style.inset = "0";
-    overlay.style.background = "rgba(0,0,0,0.35)";
-    overlay.style.zIndex = "9999";
+    const dialog = document.createElement("dialog");
+    dialog.className = "custom-alert-dialog";
 
-    // 寮圭獥
-    let alertBox = document.createElement("div");
-    alertBox.style.position = "fixed";
-    alertBox.style.top = "50%";
-    alertBox.style.left = "50%";
-    alertBox.style.transform = "translate(-50%, -50%)";
-    alertBox.style.background = "#fff";
-    alertBox.style.width = "500px";
-    alertBox.style.maxWidth = "85%";
-    alertBox.style.maxHeight = "70vh";
-    alertBox.style.borderRadius = "12px";
-    alertBox.style.boxShadow = "0 10px 30px rgba(0,0,0,0.25)";
-    alertBox.style.padding = "20px";
-    alertBox.style.zIndex = "10000";
-    alertBox.style.fontFamily = "Arial, sans-serif";
-    alertBox.style.overflow = "auto";
+    dialog.style.width = "500px";
+    dialog.style.maxWidth = "85%";
+    dialog.style.maxHeight = "70vh";
+    dialog.style.margin = "auto";
+    dialog.style.padding = "20px";
+    dialog.style.border = "none";
+    dialog.style.borderRadius = "12px";
+    dialog.style.background = "#fff";
+    dialog.style.boxShadow = "0 10px 30px rgba(0,0,0,0.25)";
+    dialog.style.fontFamily = "Arial, sans-serif";
+    dialog.style.overflow = "auto";
+    dialog.style.color = "#333";
 
-    // 鍏抽棴鎸夐挳
-    let closeButton = document.createElement("button");
-    closeButton.innerHTML = "x";
+    const closeButton = document.createElement("button");
+    closeButton.type = "button";
+    closeButton.textContent = "x";
+    closeButton.setAttribute("aria-label", "Close");
     closeButton.style.position = "absolute";
     closeButton.style.right = "12px";
     closeButton.style.top = "8px";
@@ -8111,36 +8105,54 @@ function customAlert(message) {
     closeButton.style.fontSize = "26px";
     closeButton.style.cursor = "pointer";
     closeButton.style.color = "#666";
+
     closeButton.onmouseenter = () => {
         closeButton.style.color = "#000";
     };
+
     closeButton.onmouseleave = () => {
         closeButton.style.color = "#666";
     };
-    closeButton.onclick = function () {
-        document.body.removeChild(overlay);
+
+    closeButton.onclick = () => {
+        dialog.close();
     };
-    alertBox.appendChild(closeButton);
-    // 鍐呭
-    let messageText = document.createElement("pre");
-    messageText.textContent = message;
+
+    const messageText = document.createElement("pre");
+    messageText.textContent = String(message ?? "");
     messageText.style.textAlign = "left";
     messageText.style.whiteSpace = "pre-wrap";
     messageText.style.wordBreak = "break-word";
     messageText.style.fontSize = "14px";
     messageText.style.lineHeight = "1.5";
-    messageText.style.marginTop = "25px";
+    messageText.style.margin = "25px 0 0";
     messageText.style.color = "#333";
-    alertBox.appendChild(messageText);
-    overlay.appendChild(alertBox);
-    document.body.appendChild(overlay);
-    // 鐐瑰嚮閬僵鍏抽棴
-    overlay.onclick = function(e) {
-        if (e.target === overlay) {
-            document.body.removeChild(overlay);
+
+    dialog.appendChild(closeButton);
+    dialog.appendChild(messageText);
+    document.body.appendChild(dialog);
+
+    // 点击弹窗外部关闭
+    dialog.addEventListener("click", (event) => {
+        const rect = dialog.getBoundingClientRect();
+        const inside =
+            event.clientX >= rect.left &&
+            event.clientX <= rect.right &&
+            event.clientY >= rect.top &&
+            event.clientY <= rect.bottom;
+
+        if (!inside) {
+            dialog.close();
         }
-    };
+    });
+
+    dialog.addEventListener("close", () => {
+        dialog.remove();
+    }, { once: true });
+
+    dialog.showModal();
 }
+    
 function customConfirm(message) {
     return new Promise((resolve) => {
         // 閬僵
