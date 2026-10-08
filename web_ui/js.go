@@ -214,7 +214,7 @@ function normalizeIncomingList(data) {
     if (typeof data === "string") {
         try {
             data = JSON.parse(data);
-        } catch (err) {
+        } catch {
             return [];
         }
     }
@@ -1004,7 +1004,7 @@ class WebSocketClient {
     _rejectWaitersForSocket(targetWs, err){
         for (const waiter of Array.from(this.pendingWaiters)) {
             if (waiter.ws === targetWs) {
-                try { waiter.reject(err); } catch (_) {}
+                try { waiter.reject(err); } catch {}
             }
         }
         if (this.currentDownload && this.currentDownload.ws === targetWs) {
@@ -1014,7 +1014,7 @@ class WebSocketClient {
 
     _rejectAllWaiters(err){
         for (const waiter of Array.from(this.pendingWaiters)) {
-            try { waiter.reject(err); } catch (_) {}
+            try { waiter.reject(err); } catch {}
         }
         this.pendingWaiters.clear();
         if (this.currentDownload) {
@@ -1050,7 +1050,7 @@ class WebSocketClient {
             if (this.ws && this.ws.readyState === WebSocket.OPEN) {
                 try {
                     this.ws.close();
-                } catch (_) {}
+                } catch {}
             } else {
                 this.scheduleReconnect();
             }
@@ -1124,7 +1124,7 @@ class WebSocketClient {
                 let msg;
                 try {
                     msg = JSON.parse(event.data);
-                } catch (e) {
+                } catch {
                     console.error("json parse error:", event.data);
                     return;
                 }
@@ -1253,7 +1253,7 @@ class WebSocketClient {
                 let msg;
                 try{
                     msg = JSON.parse(event.data);
-                }catch(e){
+                }catch{
                     return;
                 }
                 if(!matcher(msg)){
@@ -5216,12 +5216,6 @@ class index{
                 console.log("change failed:",err.message);
             }
         }
-        updateUserUI(uid, remarks, delay, username, jitter) {
-            document.getElementById('remarks_' + uid).value = remarks;
-            document.getElementById('delay_' + uid).value = delay;
-            document.getElementById('username_' + uid).value = username;
-            document.getElementById('jitter_' + uid).value = jitter;
-        }
 
         async checkTime(item, forceAnimate = false) {
 		    if (!item || !item.uid) return;
@@ -6734,7 +6728,7 @@ class lain_server {
                 try {
                     const parsedHeader = JSON.parse(currentHeader);
                     textarea.value = JSON.stringify(parsedHeader, null, 2);
-                } catch (e) {
+                } catch {
                     textarea.value = currentHeader;
                 }
             }
@@ -7746,7 +7740,7 @@ function formatCustomLogValue(value) {
     }
     try {
         return JSON.stringify(value, null, 2);
-    } catch (err) {
+    } catch {
         return String(value);
     }
 }
