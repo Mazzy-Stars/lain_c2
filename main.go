@@ -2414,6 +2414,16 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 						})
 						continue
 					}
+					
+					_,err := normalizePort(requestData.Port)
+					if err != nil {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "startServer",
+							"message": "invalid port: " + err.Error(),
+						})
+						continue
+					}
 
 					serverDataMu.RLock()
 					dupServer := false
