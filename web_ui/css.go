@@ -849,12 +849,6 @@ button:hover {
     color: #333; /* 瀵缚鐨熼弬鍥х摟妫版粏澹?*/
     margin-right: 5px; /* 娑撳骸鍞寸€瑰湱娈戦梻纾嬬獩 */
 }
-.net_div_son hr {
-    border: 0; /* 缁夊娅庢潏瑙勵攱 */
-    height: 1px; /* 妤傛ê瀹?*/
-    background-color: #eaeaea; /* 妫版粏澹?*/
-    margin: 10px 0; /* 娑撳骸鍞寸€瑰湱娈戦梻纾嬬獩 */
-}
 .net_div_son button {
     margin-left: auto; /* 閹稿鎸抽棃鐘插礁 */
     min-height: 60%;
