@@ -1002,44 +1002,47 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 					})
 
 				case "downloadlog":
-					logFilePath := "server.log"
+					const logFilePath = "server.log"
+				
+					writeError := func(code int, message string) {
+						_ = clientWs.WriteJSON(map[string]interface{}{
+							"code":    code,
+							"path":    "downloadlog",
+							"message": message,
+						})
+					}
+					loggerMu.RLock()
+				
 					file, err := os.Open(logFilePath)
 					if err != nil {
-						clientWs.WriteJSON(map[string]interface{}{
-							"code":    500,
-							"path":    "downloadlog",
-							"message": "failed to open log file",
-						})
+						loggerMu.RUnlock()
+						writeError(500, "failed to open log file")
 						continue
 					}
-
+				
 					stat, err := file.Stat()
+					loggerMu.RUnlock()
+				
 					if err != nil {
 						_ = file.Close()
-						clientWs.WriteJSON(map[string]interface{}{
-							"code":    500,
-							"path":    "downloadlog",
-							"message": "failed to stat log file",
-						})
+						writeError(500, "failed to stat log file")
 						continue
 					}
-
-					offset, sendSize, chunked, err := parseDownloadRange(body, stat.Size())
+					totalSize := stat.Size()
+				
+					offset, sendSize, chunked, err :=
+						parseDownloadRange(body, totalSize)
 					if err != nil {
 						_ = file.Close()
-						clientWs.WriteJSON(map[string]interface{}{
-							"code":    400,
-							"path":    "downloadlog",
-							"message": err.Error(),
-						})
+						writeError(400, err.Error())
 						continue
 					}
-
+				
 					if err := clientWs.WriteJSON(map[string]interface{}{
 						"code":      200,
 						"path":      "downloadlog",
 						"filename":  filepath.Base(logFilePath),
-						"size":      stat.Size(),
+						"size":      totalSize,
 						"offset":    offset,
 						"chunkSize": sendSize,
 						"chunked":   chunked,
@@ -1047,24 +1050,28 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 						_ = file.Close()
 						return
 					}
-
-					sentSize, err := writeBinaryRange(clientWs, file, offset, sendSize)
-					file.Close()
-					if err != nil {
+					sentSize, sendErr :=
+						writeBinaryRange(clientWs, file, offset, sendSize)
+				
+					closeErr := file.Close()
+				
+					if sendErr != nil {
 						return
 					}
-
+					if closeErr != nil {
+						return
+					}
 					nextOffset := offset + sentSize
 					if err := clientWs.WriteJSON(map[string]interface{}{
 						"code":       200,
 						"path":       "downloadlog",
 						"message":    "download finished",
 						"filename":   filepath.Base(logFilePath),
-						"size":       stat.Size(),
+						"size":       totalSize,
 						"offset":     offset,
 						"sentSize":   sentSize,
 						"nextOffset": nextOffset,
-						"eof":        nextOffset >= stat.Size(),
+						"eof":        nextOffset >= totalSize,
 						"chunked":    chunked,
 					}); err != nil {
 						return
@@ -4860,41 +4867,57 @@ type LogEntry struct {
 
 // 读取日志，返回结构体切片
 func Log_read(maxLines int) []LogEntry {
-
-	loggerMu.RLock()
-	defer loggerMu.RUnlock()
-
-	file, err := os.Open("server.log")
-	if err != nil {
+	if maxLines <= 0 {
+		return []LogEntry{}
+	}
+	chunks, ok := func() ([][]byte, bool) {
+		loggerMu.RLock()
+		defer loggerMu.RUnlock()
+		file, err := os.Open("server.log")
+		if err != nil {
+			return nil, false
+		}
+		defer file.Close()
+		info, err := file.Stat()
+		if err != nil {
+			return nil, false
+		}
+		const blockSize int64 = 4096
+		pos := info.Size()
+		newline := 0
+		chunks := make([][]byte, 0)
+		for pos > 0 && newline <= maxLines {
+			size := blockSize
+			if pos < size {
+				size = pos
+			}
+			pos -= size
+			tmp := make([]byte, size)
+			n, err := file.ReadAt(tmp, pos)
+			if err != nil && err != io.EOF {
+				return nil, false
+			}
+			if n == 0 {
+				break
+			}
+			tmp = tmp[:n]
+			chunks = append(chunks, tmp)
+			newline += bytes.Count(tmp, []byte{'\n'})
+		}
+		return chunks, true
+	}()
+	if !ok {
 		return nil
 	}
-	defer file.Close()
-	info, err := file.Stat()
-	if err != nil {
-		return nil
+	totalSize := 0
+	for _, chunk := range chunks {
+		totalSize += len(chunk)
 	}
-	const blockSize int64 = 4096
-	var (
-		pos     = info.Size()
-		buffer  []byte
-		newline = 0
-	)
-	for pos > 0 && newline <= maxLines {
-		size := blockSize
-		if pos < size {
-			size = pos
-		}
-		pos -= size
-		tmp := make([]byte, size)
-		_, err := file.ReadAt(tmp, pos)
-		if err != nil && err != io.EOF {
-			return nil
-		}
-		buffer = append(tmp, buffer...)
-		newline = bytes.Count(buffer, []byte{'\n'})
+	buffer := make([]byte, 0, totalSize)
+	for i := len(chunks) - 1; i >= 0; i-- {
+		buffer = append(buffer, chunks[i]...)
 	}
 	lines := bytes.Split(buffer, []byte{'\n'})
-	// 去掉最后一个空行
 	if len(lines) > 0 && len(lines[len(lines)-1]) == 0 {
 		lines = lines[:len(lines)-1]
 	}
@@ -4922,39 +4945,36 @@ func (w *MyLog) WriteLog(logStr string) {
 		Time:    time.Now().Format("2006-01-02 15:04:05"),
 		Message: logStr,
 	}
-
 	data, err := json.Marshal(entry)
 	if err != nil {
 		fmt.Println("marshal log error:", err)
 		return
 	}
+	err = func() error {
+		loggerMu.Lock()
+		defer loggerMu.Unlock()
+		file, err := os.OpenFile(
+			"server.log",
+			os.O_CREATE|os.O_WRONLY|os.O_APPEND,
+			0666,
+		)
+		if err != nil {
+			return fmt.Errorf("open log file: %w", err)
+		}
+		if _, err := file.Write(append(data, '\n')); err != nil {
+			_ = file.Close()
+			return fmt.Errorf("write log file: %w", err)
+		}
+		if err := file.Close(); err != nil {
+			return fmt.Errorf("close log file: %w", err)
+		}
 
-	loggerMu.Lock()
-	defer loggerMu.Unlock()
-
-	file, err := os.OpenFile(
-		"server.log",
-		os.O_CREATE|os.O_WRONLY|os.O_APPEND,
-		0666,
-	)
+		return nil
+	}()
 	if err != nil {
-		fmt.Println("can not log:", err)
+		fmt.Println("log error:", err)
 		return
 	}
-
-	_, writeErr := file.Write(append(data, '\n'))
-	closeErr := file.Close()
-
-	if writeErr != nil {
-		fmt.Println("write log error:", writeErr)
-		return
-	}
-
-	if closeErr != nil {
-		fmt.Println("close log error:", closeErr)
-		return
-	}
-
 	PushWS("", "updatelog", map[string]interface{}{
 		"code": "200",
 		"data": []LogEntry{entry},
