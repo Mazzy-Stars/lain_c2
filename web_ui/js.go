@@ -3034,12 +3034,13 @@ class index{
                 this.createInput(safePortJs);
             }
         }
-        async get(command,port){
+        async get(command,port) {
             if(!this.uid){
                 return;
             }
             this.sendjob('agent'); // ???????????
             try {
+                const final_cmd = "shell*//*"+command;
                 const taskid = createRuntimeTaskId("terminal");
                 const activeInput = this.currentInput && this.currentInput.isConnected
                     ? this.currentInput
@@ -3049,7 +3050,7 @@ class index{
                     "msg",
                     {
                         uid:this.uid,
-                        msg:command,
+                        msg:final_cmd,
                         taskid:taskid,
                         port :port,
                     }
@@ -4582,8 +4583,10 @@ class index{
                     case "GET_JITTER":
                         result = "change jitter: " + parts[1];
                         break;
+                    default:
+                        result = parts.join(" ");
+                        break;
                 }
-
                 return taskId ? result + "   taskid: " + taskId : result;
             }
 
