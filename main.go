@@ -3126,133 +3126,124 @@ func updateServerClients(port string, serverChan chan<- string) {
 	serverDataMu.RUnlock()
 	serverChan <- serverRemark
 }
-func Change_pro(uid, username, remarks, delay, jitter, Taskid,port string) string {
+func Change_pro(uid, username, remarks, delay, jitter, Taskid, port string) string {
 	windows_clientMu.Lock()
 	defer windows_clientMu.Unlock()
+
 	for i := range windows_client_data.Clients {
 		client := &windows_client_data.Clients[i]
-		if uid == client.Uid {
-			int_delay, err := strconv.Atoi(delay)
-			if err != nil {
-				return "delay is not int"
-			}
-			int_jitter, err := strconv.Atoi(jitter)
-			if err != nil {
-				return "jitter is not int"
-			}
+		if uid != client.Uid {
+			continue
+		}
 
-			usernameModified, remarksModified := false, false
-			delayModified, jitterModified := false, false
+		intDelay, err := strconv.Atoi(delay)
+		if err != nil {
+			return "delay is not int"
+		}
+		intJitter, err := strconv.Atoi(jitter)
+		if err != nil {
+			return "jitter is not int"
+		}
+		if intDelay < 1 {
+			intDelay = 1
+		}
+		if intJitter <= 0 {
+			intJitter = 5
+		}
 
-			if username != client.Username {
-				userExists := false
-				for j := range windows_client_data.Clients {
-					otherClient := &windows_client_data.Clients[j]
-					if otherClient.Username == username {
-						userExists = true
-						break
-					}
-				}
-				if userExists {
+		usernameModified, remarksModified := false, false
+		delayModified, jitterModified := false, false
+
+		if username != client.Username {
+			for j := range windows_client_data.Clients {
+				if windows_client_data.Clients[j].Username == username {
 					return "user already exists"
 				}
-				client.Username = username
-				usernameModified = true
 			}
-			if remarks != client.Remarks {
-				client.Remarks = remarks
-				remarksModified = true
-			}
-			if int_delay != client.Delay {
-				if int_delay < 1 {
-					int_delay = 1
-				}
-				client.Delay = int_delay
-				delayModified = true
-				go Getcmd(uid, "GET_DELAY*//*"+delay, Taskid,port)
-			}
-			if int_jitter != client.Jitter {
-				if int_jitter <= 0 {
-					int_jitter = 5
-				}
-				client.Jitter = int_jitter
-				jitterModified = true
-				go Getcmd(uid, "GET_JITTER*//*"+jitter, Taskid,port)
-			}
-			if !usernameModified && !remarksModified && !delayModified && !jitterModified {
-				return "No changes needed"
-			}
-
-			go PushAgentData(uid, "updateWinIndex")
-
-			return "confirm"
+			client.Username = username
+			usernameModified = true
 		}
+		if remarks != client.Remarks {
+			client.Remarks = remarks
+			remarksModified = true
+		}
+		if intDelay != client.Delay {
+			client.Delay = intDelay
+			delayModified = true
+			go Getcmd(uid, "GET_DELAY*//*"+strconv.Itoa(intDelay), Taskid, port)
+		}
+		if intJitter != client.Jitter {
+			client.Jitter = intJitter
+			jitterModified = true
+			go Getcmd(uid, "GET_JITTER*//*"+strconv.Itoa(intJitter), Taskid, port)
+		}
+		if !usernameModified && !remarksModified && !delayModified && !jitterModified {
+			return "No changes needed"
+		}
+
+		go PushAgentData(uid, "updateWinIndex")
+		return "confirm"
 	}
 	return "nil"
 }
-func Change(uid, username, remarks, delay, jitter, Taskid,port string) string {
+
+func Change(uid, username, remarks, delay, jitter, Taskid, port string) string {
 	clientDataMu.Lock()
 	defer clientDataMu.Unlock()
+
 	for i := range client_data.Clients {
 		client := &client_data.Clients[i]
-		if uid == client.Uid {
-			int_delay, err := strconv.Atoi(delay)
-			if err != nil {
-				return "delay is not int"
-			}
-			int_jitter, err := strconv.Atoi(jitter)
-			if err != nil {
-				return "jitter is not int"
-			}
-			usernameModified := false
-			remarksModified := false
-			delayModified := false
-			jitterModified := false
-			if username != client.Username {
-				userExists := false
-				for j := range client_data.Clients {
-					otherClient := &client_data.Clients[j]
-					if otherClient.Username == username {
-						userExists = true
-						break
-					}
-				}
-				if userExists {
+		if uid != client.Uid {
+			continue
+		}
+
+		intDelay, err := strconv.Atoi(delay)
+		if err != nil {
+			return "delay is not int"
+		}
+		intJitter, err := strconv.Atoi(jitter)
+		if err != nil {
+			return "jitter is not int"
+		}
+		if intDelay < 1 {
+			intDelay = 1
+		}
+		if intJitter <= 0 {
+			intJitter = 5
+		}
+
+		usernameModified, remarksModified := false, false
+		delayModified, jitterModified := false, false
+
+		if username != client.Username {
+			for j := range client_data.Clients {
+				if client_data.Clients[j].Username == username {
 					return "user already exists"
 				}
-				client.Username = username
-				usernameModified = true
 			}
-			if remarks != client.Remarks {
-				client.Remarks = remarks
-				remarksModified = true
-			}
-			if int_delay != client.Delay {
-				if int_delay < 1 {
-					int_delay = 1
-				}
-				client.Delay = int_delay
-				delayModified = true
-				cmd := "GET_DELAY*//*" + delay
-				go Getcmd(uid, cmd, Taskid,port)
-			}
-			if int_jitter != client.Jitter {
-				if int_jitter <= 0 {
-					int_jitter = 5
-				}
-				client.Jitter = int_jitter
-				jitterModified = true
-				cmd := "GET_JITTER*//*" + jitter
-				go Getcmd(uid, cmd, Taskid,port)
-			}
-			if !usernameModified && !remarksModified && !delayModified && !jitterModified {
-				return "No changes needed"
-			}
-
-			go PushAgentData(uid, "updateIndex")
-
-			return "confirm"
+			client.Username = username
+			usernameModified = true
 		}
+		if remarks != client.Remarks {
+			client.Remarks = remarks
+			remarksModified = true
+		}
+		if intDelay != client.Delay {
+			client.Delay = intDelay
+			delayModified = true
+			go Getcmd(uid, "GET_DELAY*//*"+strconv.Itoa(intDelay), Taskid, port)
+		}
+		if intJitter != client.Jitter {
+			client.Jitter = intJitter
+			jitterModified = true
+			go Getcmd(uid, "GET_JITTER*//*"+strconv.Itoa(intJitter), Taskid, port)
+		}
+		if !usernameModified && !remarksModified && !delayModified && !jitterModified {
+			return "No changes needed"
+		}
+
+		go PushAgentData(uid, "updateIndex")
+		return "confirm"
 	}
 	return "nil"
 }
