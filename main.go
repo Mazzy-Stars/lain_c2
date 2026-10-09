@@ -4220,6 +4220,17 @@ func Net_results(uid, results string, code_rounds map[byte]int) {
 				}
 			}
 			clientDataMu.RUnlock()
+
+			windows_clientMu.RLock()
+			for i := range windows_client_data.Clients {
+				client := &windows_client_data.Clients[i]
+				if uid == client.Uid {
+					shellname = client.Host
+					break
+				}
+			}
+			windows_clientMu.RUnlock()
+			
 			logStr := fmt.Sprintf(log_word["scan_result"], shellname, uid, len(encryptedData))
 			logger.WriteLog(logStr)
 		}(encryptedData, uid)
@@ -5648,7 +5659,6 @@ var dataConnMu sync.RWMutex
 // 内网资产结构体
 type Innet struct {
 	Uid        string   `json:"Uid"`
-	IP         string   `json:"ip"`
 	Target     string   `json:"target"`
 	ShellInnet []string `json:"shell_innet"`
 }
@@ -5676,20 +5686,9 @@ var data_chat Data_chat
 var dataChatmu sync.RWMutex
 
 func put_innet(uid, target string, shell_innet []string) {
-	var IP string
-	clientDataMu.RLock()
-	for i := range client_data.Clients {
-		c := &client_data.Clients[i]
-		if uid == c.Uid {
-			IP = c.ExternalIP
-			break
-		}
-	}
-	clientDataMu.RUnlock()
 
 	newInnet := Innet{
 		Uid:        uid,
-		IP:         IP,
 		Target:     target,
 		ShellInnet: append([]string(nil), shell_innet...),
 	}
