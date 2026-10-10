@@ -370,6 +370,7 @@ func send() { //发送头部信息
                 },
                 QUICConfig: &quic.Config{
                     MaxIdleTimeout: 0,
+					KeepAlivePeriod: 0,
                 },
             }
             client = &http.Client{
