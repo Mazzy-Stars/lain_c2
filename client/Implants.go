@@ -965,7 +965,7 @@ func send() { //发送头部信息
         }
         return out
     }
-    func ChaCha20Encrypt(data []byte,key [32]byte, nonce [12]byte, counter uint32) []byte {
+    func ChaCha20Encrypt(data []byte, nonce [12]byte, counter uint32) []byte {
         out := make([]byte, len(data))
         for i := 0; i < len(data); i += 64 {
             block := chacha20Block(counter, nonce)
@@ -981,29 +981,24 @@ func send() { //发送头部信息
         return out
     }
     func Encrypt(input []byte) []byte {
-        var chaKey [32]byte
-        copy(chaKey[:], key)
         var nonce [12]byte
         if _, err := crand.Read(nonce[:]); err != nil {
             return nil
         }
-        cipher := ChaCha20Encrypt(input, chaKey, nonce, 0)
+        cipher := ChaCha20Encrypt(input, nonce, 0)
         out := make([]byte, 12+len(cipher))
         copy(out[:12], nonce[:])
         copy(out[12:], cipher)
         return out
     }
-
     func Decrypt(input []byte) []byte {
         if len(input) < 12 {
             return nil
         }
-        var chaKey [32]byte
-        copy(chaKey[:], key)
         var nonce [12]byte
         copy(nonce[:], input[:12])
         cipher := input[12:]
-        return ChaCha20Encrypt(cipher, chaKey, nonce, 0)
+        return ChaCha20Encrypt(cipher, nonce, 0)
     }
     func get_decry_f(filepath string, data []byte) error {
 		if len(data) == 0 {
