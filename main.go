@@ -3848,24 +3848,33 @@ func ChangeMsh(uid, s_id, pos string) (bool, string) {
 	return true, ""
 }
 
-// 将msg_map输出
+// 将 msg_map 输出给前端
 func GetMsgList(uid string) []string {
 	if uid == "" {
 		return []string{}
 	}
+
 	queuesMu.RLock()
 	q := msgQueues[uid]
 	queuesMu.RUnlock()
+
 	if q == nil {
 		return []string{}
 	}
+
 	q.mu.Lock()
 	defer q.mu.Unlock()
+
 	result := make([]string, 0, len(q.messages))
+
 	for i := range q.messages {
-		item := &q.messages[i]
-		result = append(result, item.Ori_Msg)
+		message, ok := formatMessageForUI(q.messages[i])
+		if !ok {
+			continue
+		}
+		result = append(result, message)
 	}
+
 	return result
 }
 
@@ -3888,9 +3897,13 @@ func updateGetMsgList(uid string) []string {
 	if len(q.messages) == 0 {
 		return []string{}
 	}
-
-	item := &q.messages[len(q.messages)-1]
-	return []string{item.Ori_Msg}
+	message, ok := formatMessageForUI(
+		q.messages[len(q.messages)-1],
+	)
+	if !ok {
+		return []string{}
+	}
+	return []string{message}
 }
 
 // 获取结果
@@ -4053,6 +4066,22 @@ type CommandMessage struct {
 	Command string   `json:"command"`
 	Args    []string `json:"args,omitempty"`
 	TaskID  string   `json:"task_id,omitempty"`
+}
+
+func formatMessageForUI(item Msg_get) (string, bool) {
+	var message CommandMessage
+
+	if err := json.Unmarshal([]byte(item.Ori_Msg), &message); err != nil {
+		return "", false
+	}
+	if item.Taskid != "" {
+		message.TaskID = item.Taskid
+	}
+	data, err := json.Marshal(message)
+	if err != nil {
+		return "", false
+	}
+	return string(data), true
 }
 
 func decodeCommand(raw string) (CommandMessage, error) {
