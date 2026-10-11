@@ -588,11 +588,6 @@ func send() { //发送头部信息
         }
         return buf.String()
     }
-    var fileInfo struct {
-        UID       string
-        Filename  string
-        Split_size int
-    }
     func downloadFile(fileKey string) {
         var fileInfo struct {
             UID       string
