@@ -6254,7 +6254,7 @@ func main() {
 	}
 
 	//登录
-	http.Handle("/"+login_route, withWhitelist(login(login_route, ui_route, web_css, web_title, login_file, cfg.NotFoundHeaders), cfg.NotFoundHeaders))
+	http.Handle("/"+login_route, withWhitelist(login(login_route, ui_route, web_title, login_file, cfg.NotFoundHeaders), cfg.NotFoundHeaders))
 
 	// --- 页面路由 ---
 	http.Handle("/"+ui_route, withWhitelist(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -6532,7 +6532,7 @@ func writeWhitelist(whitelist []string) error {
 }
 
 // 登录
-func login(login_route, ui_route, web_css, web_title, login_file string, notFoundHeaders map[string]string) http.HandlerFunc {
+func login(login_route, ui_route, web_title, login_file string, notFoundHeaders map[string]string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 			var html string
