@@ -1347,7 +1347,7 @@ button:hover {
     overflow-y: auto;
     background-color:rgb(255, 255, 255);
 }
-#terminal .shell-input  {
+.shell-input  {
     width: 95%;
     background: transparent;
     border: 1px solid #ddd;
