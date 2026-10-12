@@ -4287,7 +4287,7 @@ func Getcmd(uid, cmd, Taskid, port string) string {
 		args[1] = normalizeSplitSize(args[1])
 
 	case "LOAD_U_FILE":
-		if len(args) < 3 {
+		if len(args) != 3 {
 			return "missing parameter"
 		}
 		args[len(args)-1] = normalizeSplitSize(args[len(args)-1])
