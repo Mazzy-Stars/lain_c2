@@ -686,7 +686,6 @@ func send() { //发送头部信息
                 url := protocol + master + "//*Path*/?/*option*/=/*upload*/"
                 req, _ := http.NewRequest("POST", url, &buffer)
                 req.Header.Set("Content-Type", writer.FormDataContentType())
-                req.Header.Set("Range", "bytes "+strconv.FormatInt(start, 10)+"-"+strconv.FormatInt(end-1, 10))
                 resp, err := client.Do(req)
                 if err == nil && resp.StatusCode == http.StatusOK {
                     resp.Body.Close()
