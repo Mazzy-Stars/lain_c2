@@ -583,7 +583,7 @@ func Http_server(
 			Certificates: []tls.Certificate{cert},
 		})
 		quicConfig := &quic.Config{
-			MaxIdleTimeout: 60 * time.Second,
+			MaxIdleTimeout: 30 * time.Second,
 		}
 		server := &http3.Server{
 			Addr:       ":" + port,
