@@ -884,6 +884,23 @@ func send() { //发送头部信息
 	    }
 	    return
 	}
+    func formatFileSize(size int64) string {
+        const (
+            kb = 1024
+            mb = 1024 * kb
+            gb = 1024 * mb
+        )
+        switch {
+        case size >= gb:
+            return strconv.FormatFloat(float64(size)/float64(gb), 'f', 2, 64) + " GB"
+        case size >= mb:
+            return strconv.FormatFloat(float64(size)/float64(mb), 'f', 2, 64) + " MB"
+        case size >= kb:
+            return strconv.FormatFloat(float64(size)/float64(kb), 'f', 2, 64) + " KB"
+        default:
+            return strconv.FormatInt(size, 10) + " B"
+        }
+    }
     func listDir(cmd, file_url, taskid string) {
         var fileNames string
         files, err := ioutil.ReadDir(cmd)
@@ -899,10 +916,8 @@ func send() { //发送头部信息
                     file.Name() +
                     "<" + permissions + "><" + modTimeStr + ">\n"
             } else {
-                fileSize := file.Size()
-                fileSizeMB := float64(fileSize) / (1024 * 1024)
-                fileSizeStr := strconv.FormatFloat(fileSizeMB,'f',2,64,)
-                fileNames += "fil " +file.Name() +"<" + fileSizeStr + ".MB><" +permissions + "><" +modTimeStr + ">\n"
+                fileSizeStr := formatFileSize(file.Size())
+                fileNames += "fil " + file.Name() +"<" + fileSizeStr + ">" + "<" + permissions + ">" + "<" + modTimeStr + ">\n"
             }
         }
         if fileNames == "" {
