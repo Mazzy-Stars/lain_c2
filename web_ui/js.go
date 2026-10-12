@@ -5541,17 +5541,35 @@ class index{
         if (!card) {
             return;
         }
-        const uid = String(entry && entry.uid !== undefined ? entry.uid : "");
-        const host = String(entry && entry.host !== undefined ? entry.host : "");
+        const uid = String(
+            entry && entry.uid !== undefined ?
+                entry.uid :
+                ""
+        );
+        const host = String(
+            entry && entry.host !== undefined ? entry.host : ""
+        );
         const files = Array.isArray(entry && entry.files) ? entry.files : [];
-
+        const formatFileSize = (value) => {
+            const sizeKB = Number(value);
+            if (!Number.isFinite(sizeKB) || sizeKB < 0) {
+                return "0 KB";
+            }
+            return (
+                sizeKB
+                    .toFixed(2)
+                    .replace(/\.?0+$/, "") +
+                " KB"
+            );
+        };
         card.className = "loot-card";
         if (uid) {
             card.id = "loot-card-" + uid;
+        } else {
+            card.removeAttribute("id");
         }
         card.dataset.uid = uid;
         card.innerHTML = "";
-
         const title = document.createElement("div");
         title.className = "loot-card-title";
         const hostLabel = document.createElement("strong");
@@ -5560,10 +5578,16 @@ class index{
         uidWrapper.className = "loot-card-uid";
         const uidLabel = document.createElement("strong");
         uidLabel.textContent = "UID:";
-        uidWrapper.append(uidLabel, document.createTextNode(" " + uid));
-        title.append(hostLabel, document.createTextNode(" " + host + " "), uidWrapper);
+        uidWrapper.append(
+            uidLabel,
+            document.createTextNode(" " + uid)
+        );
+        title.append(
+            hostLabel,
+            document.createTextNode(" " + host + " "),
+            uidWrapper
+        );
         card.appendChild(title);
-
         if (files.length === 0) {
             const empty = document.createElement("div");
             empty.className = "loot-empty";
@@ -5571,73 +5595,79 @@ class index{
             card.appendChild(empty);
             return;
         }
-
         files.forEach((file) => {
             const row = document.createElement("div");
             row.className = "loot-row";
-
             const info = document.createElement("div");
             info.className = "loot-info";
-
-            const name = file.name || "";
-            const size = typeof file.size === "number" ? file.size : 0;
-            const modTime = file.mod_time || "";
-
+            const name = String(
+                file && file.name !== undefined ?
+                    file.name :
+                    ""
+            );
+            const modTime = String(
+                file && file.mod_time !== undefined ?
+                    file.mod_time :
+                    ""
+            );
+            // 后端字段是 SizeKB，对应 JSON 字段 size_kb
+            const sizeText = formatFileSize(
+                file && file.size_kb !== undefined ?
+                    file.size_kb :
+                    0
+            );
             const nameLine = document.createElement("div");
             nameLine.className = "loot-file-name";
-
             const nameLabel = document.createElement("strong");
-            nameLabel.textContent = String(name);
+            nameLabel.textContent = name;
             nameLine.appendChild(nameLabel);
-
             const metaLine = document.createElement("div");
             metaLine.className = "loot-meta";
             metaLine.textContent =
-                "size: " + String(size) +
-                " | modified: " + String(modTime);
+                "size: " +
+                sizeText +
+                " | modified: " +
+                modTime;
 
-            info.append(nameLine, metaLine);
-
+            info.append(
+                nameLine,
+                metaLine
+            );
             const downloadBtn = document.createElement("button");
             downloadBtn.type = "button";
             downloadBtn.className = "loot-download-btn";
             downloadBtn.textContent = "Download";
-
             downloadBtn.onclick = () => {
-                this.downloadLoot(uid, name, downloadBtn);
+                this.downloadLoot(
+                    uid,
+                    name,
+                    downloadBtn
+                );
             };
-
             const deleteBtn = document.createElement("button");
             deleteBtn.type = "button";
             deleteBtn.className = "loot-download-btn";
             deleteBtn.textContent = "Delete";
-
             deleteBtn.onclick = async () => {
                 deleteBtn.disabled = true;
                 deleteBtn.textContent = "Deleting";
-
                 const deleted = await this.deleteLoot(
                     uid,
                     name
                 );
-
                 if (deleted) {
                     row.remove();
                     return;
                 }
-
                 deleteBtn.disabled = false;
                 deleteBtn.textContent = "Delete";
             };
-
             row.appendChild(info);
             row.appendChild(downloadBtn);
             row.appendChild(deleteBtn);
-
             card.appendChild(row);
         });
     }
-
     buildLootCardNode(entry) {
         const card = document.createElement("div");
         this.populateLootCard(card, entry);
