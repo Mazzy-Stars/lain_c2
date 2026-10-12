@@ -5190,9 +5190,9 @@ func (w *MyLog) WriteLog(logStr string) {
 }
 
 type LootFile struct {
-	Name    string `json:"name"`
-	SizeKB  int64  `json:"size"`
-	ModTime string `json:"mod_time"`
+	Name    string  `json:"name"`
+	SizeKB  float64 `json:"size_kb"`
+	ModTime string  `json:"mod_time"`
 }
 type LootClient struct {
 	UID   string     `json:"uid"`
@@ -5248,9 +5248,10 @@ func Get_loots_pro() []LootClient {
 			if err != nil || info.IsDir() {
 				continue
 			}
+			sizeKB := math.Round((float64(info.Size())/1024)*100) / 100
 			loot.Files = append(loot.Files, LootFile{
 				Name:    fileName,
-				SizeKB:  info.Size() / 1024,
+				SizeKB:  sizeKB,
 				ModTime: info.ModTime().Format("2006-01-02 15:04:05"),
 			})
 		}
@@ -5311,10 +5312,10 @@ func updateLoot(uid, filename string) *LootClient {
 	if err != nil || info.IsDir() {
 		return nil
 	}
-
+	sizeKB := math.Round((float64(info.Size())/1024)*100) / 100
 	loot.Files = append(loot.Files, LootFile{
 		Name:    filename,
-		SizeKB:  info.Size() / 1024,
+		SizeKB:  sizeKB,
 		ModTime: info.ModTime().Format("2006-01-02 15:04:05"),
 	})
 
