@@ -1356,13 +1356,6 @@ button:hover {
     font-size: 16px;
     margin-left: 10px;
 }
-.prompt {
-    margin-right: 5px;
-    color: #000;
-    display: inline-block;
-    width: 30px;
-    font-size: 12px;
-}
 .input-container {
     margin-top: 10px;
 }
