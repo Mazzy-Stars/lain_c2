@@ -3494,7 +3494,7 @@ func Switch_key(uid string, clientCiphertext []byte) {
 	hashBytes := hash.Sum(nil)
 	hashString := hex.EncodeToString(hashBytes)
 
-	log_str := fmt.Sprintf(log_word["agent_key"], hashString)
+	log_str := fmt.Sprintf(log_word["agent_key"],uid,hashString)
 	logger.WriteLog(log_str)
 
 	keyMu.Lock()
@@ -6439,7 +6439,7 @@ func Read_log_word() {
         "plugin_code": "Plugin code: %s, code: %s",
         "agent_online": "==== New client online ==== | User: %v | UID: %v | Host: %v | OS: %v | Shell Version: %v | Executable: %v | Delay: %v sec | Jitter: %v sec | Server IP: %v | Internal IP: %v | Port: %v | Protocol: %v | Server Remark: %v | Current Path: %v | Key Hash (partial): %v ====",
         "windows_agent_online": "==== New Windows client online | User: %v | UID: %v | Host: %v | OS: %v | Shell Version: %v | Executable: %v | Delay: %v sec | Jitter: %v sec | Server IP: %v | Internal IP: %v | Port: %v | Protocol: %v | Server Remark: %v | Current Path: %v | Key Hash (partial): %v | MAC: %v | CPU: %v | Memory: %v | System: %v | Arch: %v | Antivirus: %v | Browser: %v | Chat Software: %v ====",
-        "agent_key":"agent key hash: %v",
+        "agent_key":"uid:%v agent key hash: %v",
 		"change_file_time": "host %v,%v Changed file time: %v",
         "change_file_name": "host %v,%v Changed file name: %v",
         "result": "Host: %s [%s] received bytes: [*%d...]",
