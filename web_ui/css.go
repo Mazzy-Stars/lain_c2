@@ -853,25 +853,6 @@ button:hover {
     margin-left: auto; /* 閹稿鎸抽棃鐘插礁 */
     min-height: 60%;
 }
-#have_ip {
-    display: flex; /* 鐠佸墽鐤嗘稉绡簂ex鐢啫鐪?*/
-    flex-wrap: wrap; /* 閸忎浇顔忕€涙劕鍘撶槐鐘哄殰閸斻劍宕茬悰锟?*/
-    gap: 10px; /* 鐠佸墽鐤嗙€涙劕鍘撶槐鐘辩闂傚娈戦梻纾嬬獩 */
-    margin-top: 10px; /* 娑撳酣鈧瀚ㄥ鍡欐畱闂傜绐?*/
-    font-family: 'Arial', sans-serif; /* 鐠佸墽鐤嗙€涙ぞ缍?*/
-    margin-left: 0;
-}
-#have_ip div {
-    background-color: #f0f0f0; /* 濞村懐浼嗛懝鑼跺剹閺咃拷 */
-    border: 1px solid #ddd; /* 鏉堣顢嬫０婊嗗 */
-    border-radius: 4px; /* 閸﹀棜顫楁潏瑙勵攱 */
-    padding: 5px 10px; /* 閸愬懓绔熺捄锟?*/
-    display: inline-block; /* 閸愬懓浠堥崸妤冮獓閸忓啰绀?*/
-}
-#have_ip div:hover {
-    background-color: #e0e0e0; /* 姒х姵鐖ｉ幃顒€浠犻弮鍓佹畱閼冲本娅欐０婊嗗 */
-    cursor: pointer; /* 姒х姵鐖ｉ幃顒€浠犻弮鍓佹畱閸忓鐖ｉ弽宄扮础 */
-}
 @media (max-width: 768px) {
     #net {
         padding: 0 12px 16px;
@@ -891,9 +872,6 @@ button:hover {
     .net_div {
         padding: 10px;
         border-radius: 12px;
-    }
-    #have_ip {
-        gap: 8px;
     }
 }
 .file-dialog .file-history{
