@@ -489,7 +489,6 @@ func send() { //发送头部信息
         "encoding/json"
         /*sys_str*/
         /*tls_str*/
-        /*http3*/
     )
     var(
         osname = /*os*/
