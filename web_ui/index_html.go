@@ -277,7 +277,7 @@ func Lain(error_str, web_title, web_js, web_css string, sessionSlice []string, n
                         }
                         const selectElement = document.getElementById('net_shell');
                         selectElement.addEventListener('change', function() {
-                            net.getshellip();
+							console.log("change");
                         });
                     </script>
                 </div>
