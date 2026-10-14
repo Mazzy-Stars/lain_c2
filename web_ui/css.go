@@ -710,17 +710,7 @@ input.s_right_input.custom-remarks {
     background-color: #0062cc; /* 姒х姵鐖ｉ幐澶夌瑓閺冨墎娈戦懗灞炬珯妫版粏澹?*/
     box-shadow: none; /* 缁夊娅庨梼鏉戝 */
 }
-.form {
-    background: #fff;
-    padding: 10px;
-    width: 100%;
-    border-radius: 8px;
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-    display: flex;
-    flex-direction: row; /* 濡亜鎮滈幒鎺戝灙 */
-    gap: 15px; /* 閸忓啰绀屾稊瀣？閻ㄥ嫰妫跨捄锟?*/
-    align-items: center; /* 閸忓啰绀岄崹鍌滄纯鐏炲懍鑵?*/
-}input[type="text"] {
+input[type="text"] {
     width: 45%; /* 鏉堟挸鍙嗗鍡楊啍鎼达箒鐨熼弫锟?*/
     padding: 10px;
     border: 1px solid #ddd;
@@ -2213,14 +2203,14 @@ button:hover {
         padding: 0 2px 8px;
     }
 
-    .msg-dialog .msg-request-list,
-    .msg-dialog .msg-result-list {
+    .msg-dialog #msg-request-list,
+    .msg-dialog #msg-result-list {
         display: flex;
         flex-direction: column;
         gap: 10px;
     }
 
-    .msg-dialog .msg-result-title {
+    .msg-dialog #msg-result-title {
         margin: 16px 6px 10px;
         font-size: 13px;
         font-weight: 700;
