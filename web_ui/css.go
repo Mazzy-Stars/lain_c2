@@ -1118,14 +1118,6 @@ button:hover {
     background-color: #004085;
     transform: translateY(2px);
 }
-.file-dialog #cur_dir {
-    background-color: #f9f9f9;
-    border: 1px solid #e1e4e8;
-    border-radius: 8px;
-    padding: 15px 20px;
-    margin: 20px 0;
-    font-size: 16px;
-}
 .file-dialog #cur_dir_p{
     margin-right: 2%;
 }
