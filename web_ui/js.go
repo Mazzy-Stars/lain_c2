@@ -936,7 +936,6 @@ function applyNetData(uid, list) {
     const shellSelect = document.getElementById("net_shell");
     if (shellSelect && shellSelect.value === uid) {
         let net = new lain_net();
-        net.getshellip(window.shellInnetData[uid], uid);
         net.renderNetList(safeList, uid);
     }
 }
@@ -2771,7 +2770,6 @@ class WebSocketClient {
         const shellSelect = document.getElementById("net_shell");
         if (shellSelect && shellSelect.value === uid) {
             const net = new lain_net();
-            net.getshellip(window.shellInnetData[uid], uid);
             net.renderNetList(window.netListData[uid], uid);
         }
     }
@@ -5861,7 +5859,6 @@ class lain_net{
         uid = uid || (shellSelect ? shellSelect.value : "");
         if (!uid) {
             this.renderNetList([], "");
-            this.getshellip([], "");
             return false;
         }
         const sent = await webSocketClient.send(
@@ -6020,56 +6017,6 @@ class lain_net{
         }
         const result = await responsePromise;
         return result;
-    }
-    getshellip(shell_ip_data = null, uid = null){
-        if (!uid) {
-            const shellSelect = document.getElementById("net_shell");
-            uid = shellSelect ? shellSelect.value : "";
-        }
-        try {
-            if (!uid) {
-                return;
-            }
-    
-            if (shell_ip_data === null || typeof shell_ip_data === "undefined") {
-                shell_ip_data =
-                    (window.shellInnetData && window.shellInnetData[uid]) ||
-                    [];
-            }
-    
-            let shell_ip_list = [];
-            if (Array.isArray(shell_ip_data)) {
-                shell_ip_list = shell_ip_data;
-            } else if (typeof shell_ip_data === "string") {
-                shell_ip_list = shell_ip_data.split(",");
-            } else if (shell_ip_data && typeof shell_ip_data === "object") {
-                shell_ip_list = Object.values(shell_ip_data);
-            } else if (shell_ip_data !== null && shell_ip_data !== undefined) {
-                shell_ip_list = [String(shell_ip_data)];
-            }
-    
-            const have_ip_div = document.getElementById("have_ip");
-            if (!have_ip_div) {
-                return;
-            }
-    
-            have_ip_div.innerHTML = "";
-    
-            let cur_div = document.createElement("div");
-            cur_div.textContent = "Host net:";
-            have_ip_div.appendChild(cur_div);
-    
-            shell_ip_list.forEach(item => {
-                if (!item) {
-                    return;
-                }
-                let div = document.createElement("div");
-                div.textContent = "IP: " + item;
-                have_ip_div.appendChild(div);
-            });
-        } catch(err){
-            console.error("get shell ip error:", err);
-        }
     }
 }
 
