@@ -10,7 +10,7 @@ func Generate_agent(protocol, os, server, Path, ConnPath, MsgPath,
     if protocol == "" || os == "" || server == "" || Path == "" || ConnPath == "" || MsgPath == "" || switch_key == "" || download == "" || result == "" || _net == "" || info == "" || upload == "" || list == "" || option == "" || Username == "" || uid == "" || hostname == "" || keyPart == "" || filekey == "" || code == "" || base_rounds == "" {
         return "parameter null"
     }
-    var protocol_str, os_str, main_str, sys_str, tls_str,package_str,send,inithttp,prototime,protocol_var,protocol_var1,header string
+    var os_str, main_str, sys_str, tls_str,package_str,send,inithttp,prototime,protocol_var,protocol_var1,header string
 	if protocol == "https" {
 		tls_str = `"crypto/tls"`
 	}else if protocol == "quic"{
@@ -1300,7 +1300,6 @@ func send() { //发送头部信息
 		`/\*os\*/`:                o_os,
 		`/\*Username\*/`:          u_username,
 		`/\*server\*/`:            s_server,
-		`/\*protocol_str\*/`:      protocol_str,
 		`/\*main_str\*/`:          main_str,
 		`/\*os_str\*/`:            os_str,
 		`/\*Path\*/`:              Path,
