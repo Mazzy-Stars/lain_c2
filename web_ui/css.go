@@ -8,7 +8,7 @@ import (
 
 func Css(error_str,css_file string,sessionSlice []string, notFoundHeaders map[string]string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-        _, ok := CheckUserSession(r, sessionSlice, error_str)
+        ok := CheckUserSession(r, sessionSlice, error_str)
         if !ok {
             WriteCustomError(w, http.StatusNotFound,error_str, notFoundHeaders)
             return
