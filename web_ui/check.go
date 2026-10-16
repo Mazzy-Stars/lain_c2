@@ -3,10 +3,10 @@ import (
 	"net/http"
 	"strings"
 )
-func CheckUserSession(r *http.Request, sessionSlice []string, error_str string) (string, bool) {
+func CheckUserSession(r *http.Request, sessionSlice []string, error_str string) ( bool) {
     usernameCookie, err := r.Cookie("cookie")
     if err != nil {
-        return error_str, false
+        return false
     }
     var currentUsername string
     foundUser := false
@@ -21,9 +21,9 @@ func CheckUserSession(r *http.Request, sessionSlice []string, error_str string) 
         }
     }
     if !foundUser {
-        return error_str, false
+        return false
     }
-    return currentUsername, true
+    return true
 }
 
 func WriteCustomError(w http.ResponseWriter, status int, body string, extra map[string]string) {
