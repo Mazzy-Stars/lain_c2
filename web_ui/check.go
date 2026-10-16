@@ -1,22 +1,16 @@
 package web_ui
 import (
 	"net/http"
-	"strings"
 )
 func CheckUserSession(r *http.Request, sessionSlice []string, error_str string) ( bool) {
     usernameCookie, err := r.Cookie("cookie")
     if err != nil {
         return false
     }
-    var currentUsername string
     foundUser := false
     for _, session := range sessionSlice {
         if session == usernameCookie.Value {
             foundUser = true
-            parts := strings.Split(session, "=")
-            if len(parts) == 2 {
-                currentUsername = parts[1]
-            }
             break
         }
     }
