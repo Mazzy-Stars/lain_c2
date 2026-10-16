@@ -3343,6 +3343,12 @@ class index{
                     downloadIcon.className = "icon-download";
                     downloadIcon.style.cursor = "pointer";
                     downloadIcon.textContent = "⬇️";
+
+                    downloadIcon.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        this.getFile(new_file.dataset.path);
+                    });
+
                     new_file.replaceChildren(
                         icon,
                         filename,
@@ -3353,14 +3359,6 @@ class index{
                         createFileActionButton("rename-btn", "✏️"),
                         createFileActionButton("time-btn", "⏰")
                     );
-
-                    new_file.addEventListener('click', () => {
-                        this.getFile(new_file.dataset.path);
-                    });
-                    new_file.querySelector('.icon-download')?.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        this.getFile(new_file.dataset.path);
-                    });
                 }
 
                 new_file.querySelector(".rename-btn")?.addEventListener(
