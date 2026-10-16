@@ -9,7 +9,7 @@ import (
 func Lain(error_str, web_title, web_js, web_css string, sessionSlice []string, notFoundHeaders map[string]string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
         //必须先登录
-        ok := CheckUserSession(r, sessionSlice, error_str)
+        ok := CheckUserSession(r, sessionSlice)
         if !ok {
             WriteCustomError(w, http.StatusNotFound,error_str, notFoundHeaders)
             return
