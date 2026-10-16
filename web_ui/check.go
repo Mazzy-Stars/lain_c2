@@ -2,22 +2,18 @@ package web_ui
 import (
 	"net/http"
 )
-func CheckUserSession(r *http.Request, sessionSlice []string) ( bool) {
-    usernameCookie, err := r.Cookie("cookie")
-    if err != nil {
-        return false
-    }
-    foundUser := false
-    for _, session := range sessionSlice {
-        if session == usernameCookie.Value {
-            foundUser = true
-            break
-        }
-    }
-    if !foundUser {
-        return false
-    }
-    return true
+
+func CheckUserSession(r *http.Request, sessionSlice []string) bool {
+	usernameCookie, err := r.Cookie("cookie")
+	if err != nil {
+		return false
+	}
+	for _, session := range sessionSlice {
+		if session == usernameCookie.Value {
+			return true
+		}
+	}
+	return false
 }
 
 func WriteCustomError(w http.ResponseWriter, status int, body string, extra map[string]string) {
