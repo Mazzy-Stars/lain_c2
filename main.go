@@ -584,7 +584,6 @@ type UploadTask struct {
 	// chatFile 字段
 	Username string
 	Chatid   string
-	SavePath string // 添加这个字段
 }
 
 // 有权限交互,必须先登录
@@ -2787,7 +2786,6 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 							continue
 						}
 						savePath := filepath.Join("./chat_uploads/", uploadTask.Filename)
-						uploadTask.SavePath = savePath
 						err := os.WriteFile(savePath, uploadTask.Buffer.Bytes(), 0644)
 						if err != nil {
 							clientWs.WriteJSON(map[string]interface{}{
