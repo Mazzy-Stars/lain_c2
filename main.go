@@ -138,7 +138,7 @@ func (m *MainHandler) Index(conn, Get_Msg, switch_key, download, result, net, in
 			var uid string
 			uidBytes := r.URL.Query().Get(uid_)
 			if uidBytes != "" {
-				uid_decode, _ := customBase64Decode(uidBytes, code_rounds)
+				uid_decode := customBase64Decode(uidBytes, code_rounds)
 				uid = string(uid_decode)
 			}
 			switch op {
@@ -146,7 +146,7 @@ func (m *MainHandler) Index(conn, Get_Msg, switch_key, download, result, net, in
 				clientIP := getClientIP(r)
 
 				shellnameGet := r.URL.Query().Get(hostname)
-				shellnameBytes, _ := customBase64Decode(shellnameGet, code_rounds)
+				shellnameBytes := customBase64Decode(shellnameGet, code_rounds)
 				shellname := string(shellnameBytes)
 
 				formattedTime := time.Now().Format("2006.01.02 15:04")
@@ -170,7 +170,7 @@ func (m *MainHandler) Index(conn, Get_Msg, switch_key, download, result, net, in
 			case switch_key: //发送与交换密钥
 
 				byte_base_key_mid := r.URL.Query().Get(keyPart)
-				key_decode, _ := customBase64Decode(byte_base_key_mid, code_rounds)
+				key_decode := customBase64Decode(byte_base_key_mid, code_rounds)
 
 				Switch_key(uid, key_decode)
 
@@ -201,10 +201,7 @@ func (m *MainHandler) Index(conn, Get_Msg, switch_key, download, result, net, in
 				if baseuid == "" {
 					return
 				}
-				Byteuid, err := customBase64Decode(baseuid, code_rounds)
-				if err != nil {
-					return
-				}
+				Byteuid := customBase64Decode(baseuid, code_rounds)
 				uid := string(Byteuid)
 				results := r.FormValue(result)
 				taskid := r.FormValue(info)
@@ -221,10 +218,7 @@ func (m *MainHandler) Index(conn, Get_Msg, switch_key, download, result, net, in
 				if baseuid == "" {
 					return
 				}
-				Byteuid, err := customBase64Decode(baseuid, code_rounds)
-				if err != nil {
-					return
-				}
+				Byteuid := customBase64Decode(baseuid, code_rounds)
 				uid := string(Byteuid)
 				results := r.FormValue(result)
 				if uid == "" || results == "" {
@@ -241,10 +235,8 @@ func (m *MainHandler) Index(conn, Get_Msg, switch_key, download, result, net, in
 				if baseuid == "" {
 					return
 				}
-				Byteuid, err := customBase64Decode(baseuid, code_rounds)
-				if err != nil {
-					return
-				}
+				Byteuid := customBase64Decode(baseuid, code_rounds)
+		
 				uid := string(Byteuid)
 				encry_str := r.FormValue(result)
 				clientIP := getClientIP(r)
@@ -278,10 +270,8 @@ func (m *MainHandler) Index(conn, Get_Msg, switch_key, download, result, net, in
 					if part.FormName() == uid_ {
 						buf, _ := io.ReadAll(part)
 						baseuid := string(buf)
-						Byteuid, err := customBase64Decode(baseuid, code_rounds)
-						if err != nil {
-							return
-						}
+						Byteuid := customBase64Decode(baseuid, code_rounds)
+						
 						uid = string(Byteuid)
 					}
 					if part.FormName() == result {
@@ -310,10 +300,8 @@ func (m *MainHandler) Index(conn, Get_Msg, switch_key, download, result, net, in
 				if baseuid == "" {
 					return
 				}
-				Byteuid, err := customBase64Decode(baseuid, code_rounds)
-				if err != nil {
-					return
-				}
+				Byteuid := customBase64Decode(baseuid, code_rounds)
+			
 				uid := string(Byteuid)
 				file := r.FormValue(result)
 				taskid := r.FormValue(info)
@@ -5624,10 +5612,7 @@ func Decrypt(input []byte, key []byte) []byte {
 
 // 字符串解密
 func Get_decry_s(input *string, key *[]byte, decodeMap map[byte]int) string {
-	data, err := customBase64Decode(*input, decodeMap)
-	if err != nil {
-		return ""
-	}
+	data := customBase64Decode(*input, decodeMap)
 	return string(Decrypt(data, *key))
 }
 
@@ -5714,7 +5699,7 @@ func customBase64Encode(data []byte, base_rounds string) string {
 }
 
 // 解码函数（无 padding）
-func customBase64Decode(s string, decodeMap map[byte]int) ([]byte, error) {
+func customBase64Decode(s string, decodeMap map[byte]int) ([]byte) {
 	var (
 		val  uint32
 		valb int
@@ -5732,7 +5717,7 @@ func customBase64Decode(s string, decodeMap map[byte]int) ([]byte, error) {
 			out = append(out, byte((val>>valb)&0xFF))
 		}
 	}
-	return out, nil
+	return out
 }
 
 /*结构体数据部分*/
