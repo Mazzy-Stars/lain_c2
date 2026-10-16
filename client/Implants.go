@@ -1342,7 +1342,7 @@ func replacePlaceholders(input string, replacements map[string]string, skipKey s
 			continue
 		}
 		re := regexp.MustCompile(pattern)
-		input = re.ReplaceAllString(input, replacement)
+		input = re.ReplaceAllLiteralString(input, replacement)
 	}
 	return input
 }
@@ -1355,11 +1355,11 @@ func applyTemplate(templateStr, processedCode string, replacements map[string]st
 			continue
 		}
 		re := regexp.MustCompile(pattern)
-		templateStr = re.ReplaceAllString(templateStr, replacement)
+		templateStr = re.ReplaceAllLiteralString(templateStr, replacement)
 	}
 	// 最后替换 code 部分
 	re := regexp.MustCompile(codeKey)
-	templateStr = re.ReplaceAllString(templateStr, processedCode)
+	templateStr = re.ReplaceAllLiteralString(templateStr, processedCode)
 
 	return templateStr
 }
