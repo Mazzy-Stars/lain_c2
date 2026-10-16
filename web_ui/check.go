@@ -2,7 +2,7 @@ package web_ui
 import (
 	"net/http"
 )
-func CheckUserSession(r *http.Request, sessionSlice []string, error_str string) ( bool) {
+func CheckUserSession(r *http.Request, sessionSlice []string) ( bool) {
     usernameCookie, err := r.Cookie("cookie")
     if err != nil {
         return false
