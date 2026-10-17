@@ -2280,7 +2280,11 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 					wsUsersMu.RLock()
 					users := make([]string, 0, len(wsUsers))
 					for user := range wsUsers {
-						users = append(users, user)
+						_, username_, _ := strings.Cut(user, "=")
+						if username_ == "" {
+							username_ = "null"
+						}
+						users = append(users, username_)
 					}
 					wsUsersMu.RUnlock()
 					clientWs.WriteJSON(map[string]interface{}{
