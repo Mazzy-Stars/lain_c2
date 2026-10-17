@@ -2688,9 +2688,20 @@ button:hover {
 }
 
 .online-teammates-list-body {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: 14px;
+    row-gap: 8px;
     list-style: none;
     padding: 0;
     margin: 0;
+}
+
+.online-teammates-list-body > .online-teammate-item {
+    padding: 0;
+    border-bottom: none;
 }
 
 .online-teammate-item {
