@@ -433,22 +433,24 @@ func send() { //发送头部信息
         `
         protocol_var1 = "transport *http.Transport"
     }
-    if protocol == "quic"{
-        prototime= `
-        if transport != nil && transport.QUICConfig != nil {
-            if delay >= 30 {
-                transport.QUICConfig.MaxIdleTimeout = 5 * time.Second
-            } else {
-                transport.QUICConfig.MaxIdleTimeout = 0
-            }
-        }`
-    }else{
-        prototime= `
-        if delay >= 30 {
-            transport.IdleConnTimeout = 5 * time.Second
-        } else {
-            transport.IdleConnTimeout = 0
-        }`
+    if protocol == "quic" {
+        prototime = `
+            if transport != nil && transport.QUICConfig != nil {
+                if delay >= 30 {
+                    transport.QUICConfig.MaxIdleTimeout = 5 * time.Second
+                } else {
+                    transport.QUICConfig.MaxIdleTimeout = 0
+                }
+            }`
+    } else if protocol == "http" || protocol == "https" {
+        prototime = `
+            if transport != nil {
+                if delay >= 30 {
+                    transport.IdleConnTimeout = 5 * time.Second
+                } else {
+                    transport.IdleConnTimeout = 0
+                }
+            }`
     }
     if protocol == "quic" {
         protocol_var = "\"https://\""
