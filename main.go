@@ -6691,6 +6691,10 @@ func login(login_route, ui_route, web_title, login_file string, notFoundHeaders 
 			}
 			username := r.FormValue("username")
 			password := r.FormValue("password")
+			if strings.ContainsRune(username, '=') {
+			    web_ui.WriteCustomError(w, http.StatusNotFound, error_str, notFoundHeaders)
+			    return
+			}
 			userip := getClientIP(r)
 			// 对用户名进行MD5加密
 			usernameHashString := fmt.Sprintf("%x", md5.Sum([]byte(username)))
