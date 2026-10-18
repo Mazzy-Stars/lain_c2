@@ -942,12 +942,15 @@ func send() { //发送头部信息
         post(data, file_url)
     }
     func GET_JITTER(s_jitter string) {
-        parsedJitter, err := strconv.Atoi(s_jitter)
-        if err != nil || parsedJitter <= 0 {
-            return
-        }
-        a_Mutex.Lock();jitter = parsedJitter;a_Mutex.Unlock()
-    }
+	    parsedJitter, err := strconv.Atoi(s_jitter)
+	    if err != nil || parsedJitter <= 0 {
+	        return
+	    }
+	    if parsedJitter >  3600{
+	        parsedJitter =  3600
+	    }
+	    a_Mutex.Lock();jitter = parsedJitter;a_Mutex.Unlock()
+	}
     func GET_DELAY(s_delay string) {
         parsedTime, err := strconv.ParseInt(s_delay, 10, strconv.IntSize)
         if err != nil || parsedTime <= 0 || parsedTime > 86400{
