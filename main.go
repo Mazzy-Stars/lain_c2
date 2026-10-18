@@ -1999,8 +1999,9 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 					parameter, _ := body["parameter"].(string)
 					parameterDesc, _ := body["parameterDesc"].(string)
 					taskid, _ := body["taskid"].(string)
+				
 					if remark == "" || code == "" || osName == "" || codeWords == "" {
-						clientWs.WriteJSON(map[string]interface{}{
+						_ = clientWs.WriteJSON(map[string]interface{}{
 							"code":    400,
 							"path":    "insertPlugin",
 							"taskid":  taskid,
@@ -2008,35 +2009,11 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 						})
 						continue
 					}
-					serverPluginMu.RLock()
-					exists := false
-					for i := range server_plugin.Plugins {
-						plugin := &server_plugin.Plugins[i]
-						if plugin.CodeWord == codeWords && plugin.OS == osName && plugin.Remark == remark {
-							exists = true
-							break
-						}
-					}
-					serverPluginMu.RUnlock()
-					if exists {
-						clientWs.WriteJSON(map[string]interface{}{
-							"code":    400,
-							"path":    "insertPlugin",
-							"taskid":  taskid,
-							"message": "CodeWords already exists: " + codeWords,
-						})
-						continue
-					}
+				
 					// 参数切割
 					parameterParts := strings.Split(parameter, ",")
-					if len(parameterParts) == 1 && parameterParts[0] != "" {
-						parameterParts = []string{
-							parameterParts[0],
-						}
-					}
-					if len(parameterParts) == 0 ||
-						(len(parameterParts) == 1 && parameterParts[0] == "") {
-						clientWs.WriteJSON(map[string]interface{}{
+					if len(parameterParts) == 1 && parameterParts[0] == "" {
+						_ = clientWs.WriteJSON(map[string]interface{}{
 							"code":    400,
 							"path":    "insertPlugin",
 							"taskid":  taskid,
@@ -2044,12 +2021,16 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 						})
 						continue
 					}
+				
 					parameterDescParts := strings.Split(parameterDesc, ",")
 					if len(parameterParts) == 1 && len(parameterDescParts) > 0 {
 						parameterDescParts = []string{parameterDescParts[0]}
 					}
-					paramSet := make(map[string]bool)
+				
+					// 检查参数名重复
+					paramSet := make(map[string]bool, len(parameterParts))
 					dupParam := ""
+				
 					for _, p := range parameterParts {
 						if p == "" {
 							continue
@@ -2060,8 +2041,9 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 						}
 						paramSet[p] = true
 					}
+				
 					if dupParam != "" {
-						clientWs.WriteJSON(map[string]interface{}{
+						_ = clientWs.WriteJSON(map[string]interface{}{
 							"code":    400,
 							"path":    "insertPlugin",
 							"taskid":  taskid,
@@ -2070,22 +2052,41 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 						continue
 					}
 					serverPluginMu.Lock()
-					plugin := Plugin{
-						Remark:        remark,
-						Code:          code,
-						CodeWord:      codeWords,
-						OS:            osName,
-						Parameter:     parameterParts,
-						ParameterDesc: parameterDescParts,
+				
+					duplicate := false
+					for i := range server_plugin.Plugins {
+						plugin := &server_plugin.Plugins[i]
+						if plugin.CodeWord == codeWords &&
+							plugin.OS == osName &&
+							plugin.Remark == remark {
+							duplicate = true
+							break
+						}
+					}
+				
+					if duplicate {
+						serverPluginMu.Unlock()
+						_ = clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "insertPlugin",
+							"taskid":  taskid,
+							"message": "CodeWords already exists: " + codeWords,
+						})
+						continue
 					}
 					server_plugin.Plugins = append(
 						server_plugin.Plugins,
-						plugin,
+						Plugin{
+							Remark:        remark,
+							Code:           code,
+							CodeWord:       codeWords,
+							OS:             osName,
+							Parameter:     parameterParts,
+							ParameterDesc: parameterDescParts,
+						},
 					)
 					serverPluginMu.Unlock()
-
 					go PushAgentData(codeWords, "updatePlugin")
-
 					logger.WriteLog(
 						fmt.Sprintf(
 							log_word["plugin_code"],
@@ -2093,7 +2094,7 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 							code,
 						),
 					)
-					clientWs.WriteJSON(map[string]interface{}{
+					_ = clientWs.WriteJSON(map[string]interface{}{
 						"code":    200,
 						"path":    "insertPlugin",
 						"taskid":  taskid,
