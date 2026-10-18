@@ -1256,15 +1256,30 @@ func send() { //发送头部信息
             seconds -= current
         }
     }
-    func sleepdelay(){
-        a_Mutex.RLock();wait := delay;jitterValue := jitter;a_Mutex.RUnlock()
-        if wait < 0 {wait = 0}
-        if wait > 30 && jitterValue > 0 {
-            n, err := crand.Int(crand.Reader,big.NewInt(int64(jitterValue)),);
-            if err != nil {return}
-            wait += int(n.Int64())
+    func sleepdelay() {
+        a_Mutex.RLock()
+        wait := int64(delay)
+        jitterValue := int64(jitter)
+        a_Mutex.RUnlock()
+        if wait < 0 {
+            wait = 0
         }
-        sleepSeconds(int64(wait))
+        if wait > 30 && jitterValue > 0 {
+            n, err := crand.Int(crand.Reader, big.NewInt(jitterValue))
+            if err != nil {
+                return
+            }
+            add := n.Int64()
+            if add < 0 {
+                add = 0
+            }
+            if add > math.MaxInt64-wait {
+                wait = math.MaxInt64
+            } else {
+                wait += add
+            }
+        }
+        sleepSeconds(wait)
     }
 	func generateAndUpdateKey(url string){
 		base_respBody := getUrl(url)
