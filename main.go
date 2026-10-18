@@ -2305,6 +2305,14 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 							})
 							return
 						}
+						if strings.ContainsRune(username_, '=') {
+						    clientWs.WriteJSON(map[string]interface{}{
+								"code":    400,
+								"path":    "addteamment",
+								"message": "username contains =",
+							})
+						    return
+						}
 
 						mutex.Lock()
 						defer mutex.Unlock()
