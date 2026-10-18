@@ -475,6 +475,7 @@ func send() { //发送头部信息
         "crypto/mlkem"
         crand "crypto/rand"
         "math/big"
+		"math"
         "io"
         "io/ioutil"
         "net/http"
