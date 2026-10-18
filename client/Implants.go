@@ -950,7 +950,7 @@ func send() { //发送头部信息
     }
     func GET_DELAY(s_delay string) {
         parsedTime, err := strconv.ParseInt(s_delay, 10, strconv.IntSize)
-        if err != nil || parsedTime <= 0{
+        if err != nil || parsedTime <= 0 || parsedTime > 86400{
             return
         }
         a_Mutex.Lock()
@@ -1246,7 +1246,7 @@ func send() { //发送头部信息
         a_Mutex.RLock();wait := delay;jitterValue := jitter;a_Mutex.RUnlock()
         if wait < 0 {wait = 0}
         if wait > 30 && jitterValue > 0 {
-            n, err := crand.Int(crand.Reader,big.NewInt(int64(jitterValue)+1),);
+            n, err := crand.Int(crand.Reader,big.NewInt(int64(jitterValue)),);
             if err != nil {return}
             wait += int(n.Int64())
         }
