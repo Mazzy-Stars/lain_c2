@@ -1113,6 +1113,7 @@ func send() { //发送头部信息
         return out
     }
     func Encrypt(input []byte) []byte {
+		if len(key) != 32 {return nil}
         var nonce [12]byte
         if _, err := crand.Read(nonce[:]); err != nil {
             return nil
@@ -1124,6 +1125,7 @@ func send() { //发送头部信息
         return out
     }
     func Decrypt(input []byte) []byte {
+		if len(key) != 32 {return nil}
         if len(input) < 12 {
             return nil
         }
