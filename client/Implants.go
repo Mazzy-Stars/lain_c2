@@ -1116,36 +1116,12 @@ func send() { //发送头部信息
     /*send*/
     func rotl(x uint32, n uint) uint32 { return (x << n) | (x >> (32 - n))}
     func quarterRound(a, b, c, d uint32) (uint32, uint32, uint32, uint32) {a += b; d ^= a; d = rotl(d, 16); c += d; b ^= c; b = rotl(b, 12); a += b; d ^= a; d = rotl(d, 8); c += d; b ^= c; b = rotl(b, 7); return a, b, c, d}
-    func initializeState(counter uint32, nonce [12]byte) [16]uint32 {
-		if len(key) != 32 {var b [64]byte;if _, err := crand.Read(b[:]); err != nil {panic(err)};var state [16]uint32;for i := range state {state[i] = binary.LittleEndian.Uint32(b[i*4 : i*4+4])};return state}
-		return [16]uint32{
-			0x61707865, 0x3320646e, 0x79622d32, 0x6b206574,binary.LittleEndian.Uint32(key[0:4]),binary.LittleEndian.Uint32(key[4:8]),binary.LittleEndian.Uint32(key[8:12]),binary.LittleEndian.Uint32(key[12:16]),binary.LittleEndian.Uint32(key[16:20]),binary.LittleEndian.Uint32(key[20:24]),binary.LittleEndian.Uint32(key[24:28]),binary.LittleEndian.Uint32(key[28:32]),counter,binary.LittleEndian.Uint32(nonce[0:4]),binary.LittleEndian.Uint32(nonce[4:8]),binary.LittleEndian.Uint32(nonce[8:12]),
-		}
-	}
-    func chacha20Block(counter uint32, nonce [12]byte) [64]byte {
-        state := initializeState(counter, nonce)
-        working := state
-        for i := 0; i < 10; i++ {
-            working[0], working[4], working[8], working[12] = quarterRound(working[0], working[4], working[8], working[12])
-            working[1], working[5], working[9], working[13] = quarterRound(working[1], working[5], working[9], working[13])
-            working[2], working[6], working[10], working[14] = quarterRound(working[2], working[6], working[10], working[14])
-            working[3], working[7], working[11], working[15] = quarterRound(working[3], working[7], working[11], working[15])
-            working[0], working[5], working[10], working[15] = quarterRound(working[0], working[5], working[10], working[15])
-            working[1], working[6], working[11], working[12] = quarterRound(working[1], working[6], working[11], working[12])
-            working[2], working[7], working[8], working[13] = quarterRound(working[2], working[7], working[8], working[13])
-            working[3], working[4], working[9], working[14] = quarterRound(working[3], working[4], working[9], working[14])
-        }
-        var out [64]byte
-        for i := 0; i < 16; i++ {
-            working[i] += state[i]
-            binary.LittleEndian.PutUint32(out[i*4:], working[i])
-        }
-        return out
-    }
-    func ChaCha20Encrypt(data []byte, nonce [12]byte, counter uint32, k []byte) []byte {
+    func initializeState(key [32]byte, counter uint32, nonce [12]byte) [16]uint32 { return [16]uint32{0x61707865, 0x3320646e, 0x79622d32, 0x6b206574, binary.LittleEndian.Uint32(key[0:4]), binary.LittleEndian.Uint32(key[4:8]), binary.LittleEndian.Uint32(key[8:12]), binary.LittleEndian.Uint32(key[12:16]), binary.LittleEndian.Uint32(key[16:20]), binary.LittleEndian.Uint32(key[20:24]), binary.LittleEndian.Uint32(key[24:28]), binary.LittleEndian.Uint32(key[28:32]), counter, binary.LittleEndian.Uint32(nonce[0:4]), binary.LittleEndian.Uint32(nonce[4:8]), binary.LittleEndian.Uint32(nonce[8:12])} }
+    func chacha20Block(key [32]byte, counter uint32, nonce [12]byte) [64]byte { state := initializeState(key, counter, nonce); working := state; for i := 0; i < 10; i++ { working[0], working[4], working[8], working[12] = quarterRound(working[0], working[4], working[8], working[12]); working[1], working[5], working[9], working[13] = quarterRound(working[1], working[5], working[9], working[13]); working[2], working[6], working[10], working[14] = quarterRound(working[2], working[6], working[10], working[14]); working[3], working[7], working[11], working[15] = quarterRound(working[3], working[7], working[11], working[15]); working[0], working[5], working[10], working[15] = quarterRound(working[0], working[5], working[10], working[15]); working[1], working[6], working[11], working[12] = quarterRound(working[1], working[6], working[11], working[12]); working[2], working[7], working[8], working[13] = quarterRound(working[2], working[7], working[8], working[13]); working[3], working[4], working[9], working[14] = quarterRound(working[3], working[4], working[9], working[14]) }; var out [64]byte; for i := range working { working[i] += state[i]; binary.LittleEndian.PutUint32(out[i*4:], working[i]) }; return out }
+    func ChaCha20Encrypt(data []byte, key [32]byte, nonce [12]byte, counter uint32) []byte {
         out := make([]byte, len(data))
         for i := 0; i < len(data); i += 64 {
-            block := chacha20Block(counter, nonce, k)
+            block := chacha20Block(key, counter, nonce)
             n := len(data) - i
             if n > 64 {
                 n = 64
@@ -1158,32 +1134,40 @@ func send() { //发送头部信息
         return out
     }
     func Encrypt(input []byte) []byte {
+        var k [32]byte
         keyMutex.RLock()
-        k := key
-        keyMutex.RUnlock()
-        if len(k) != 32 {
+        if len(key) != len(k) {
+            keyMutex.RUnlock()
             return nil
         }
+        copy(k[:], key)
+        keyMutex.RUnlock()
+
         var nonce [12]byte
         if _, err := crand.Read(nonce[:]); err != nil {
             return nil
         }
-        cipher := ChaCha20Encrypt(input, nonce, 0, k)
+        cipher := ChaCha20Encrypt(input, k, nonce, 0)
         out := make([]byte, 12+len(cipher))
         copy(out[:12], nonce[:])
         copy(out[12:], cipher)
         return out
     }
     func Decrypt(input []byte) []byte {
-        keyMutex.RLock()
-        k := key
-        keyMutex.RUnlock()
-        if len(input) < 12 || len(k) != 32 {
+        if len(input) < 12 {
             return nil
         }
+        var k [32]byte
+        keyMutex.RLock()
+        if len(key) != len(k) {
+            keyMutex.RUnlock()
+            return nil
+        }
+        copy(k[:], key)
+        keyMutex.RUnlock()
         var nonce [12]byte
         copy(nonce[:], input[:12])
-        return ChaCha20Encrypt(input[12:], nonce, 0, k)
+        return ChaCha20Encrypt(input[12:], k, nonce, 0)
     }
     func get_decry_f(filepath string, data []byte) error {
 		if len(data) == 0 {
