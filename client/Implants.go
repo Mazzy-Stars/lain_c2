@@ -445,7 +445,7 @@ func send() { //发送头部信息
             transport, client = nt, nc
             clientMutex.Unlock()
             if old != nil {
-                old.Close()
+                old.CloseIdleConnections()
             }`
     } else if protocol == "https" {
         prototime = `
