@@ -1049,15 +1049,13 @@ func send() { //发送头部信息
     func rotl(x uint32, n uint) uint32 { return (x << n) | (x >> (32 - n))}
     func quarterRound(a, b, c, d uint32) (uint32, uint32, uint32, uint32) {a += b; d ^= a; d = rotl(d, 16); c += d; b ^= c; b = rotl(b, 12); a += b; d ^= a; d = rotl(d, 8); c += d; b ^= c; b = rotl(b, 7); return a, b, c, d}
     func initializeState(counter uint32, nonce [12]byte) [16]uint32 {
-        keyMutex.RLock()
-        defer keyMutex.RUnlock()
-        if len(key) != 32 {
-            return [16]uint32{}
-        }
-        return [16]uint32{
-            0x61707865, 0x3320646e, 0x79622d32, 0x6b206574,binary.LittleEndian.Uint32(key[0:4]),binary.LittleEndian.Uint32(key[4:8]),binary.LittleEndian.Uint32(key[8:12]),binary.LittleEndian.Uint32(key[12:16]),binary.LittleEndian.Uint32(key[16:20]),binary.LittleEndian.Uint32(key[20:24]),binary.LittleEndian.Uint32(key[24:28]),binary.LittleEndian.Uint32(key[28:32]),counter,binary.LittleEndian.Uint32(nonce[0:4]),binary.LittleEndian.Uint32(nonce[4:8]),binary.LittleEndian.Uint32(nonce[8:12]),
-        }
-    }
+		keyMutex.RLock()
+		defer keyMutex.RUnlock()
+		if len(key) != 32 {var b [64]byte;if _, err := crand.Read(b[:]); err != nil {panic(err)};var state [16]uint32;for i := range state {state[i] = binary.LittleEndian.Uint32(b[i*4 : i*4+4])};return state}
+		return [16]uint32{
+			0x61707865, 0x3320646e, 0x79622d32, 0x6b206574,binary.LittleEndian.Uint32(key[0:4]),binary.LittleEndian.Uint32(key[4:8]),binary.LittleEndian.Uint32(key[8:12]),binary.LittleEndian.Uint32(key[12:16]),binary.LittleEndian.Uint32(key[16:20]),binary.LittleEndian.Uint32(key[20:24]),binary.LittleEndian.Uint32(key[24:28]),binary.LittleEndian.Uint32(key[28:32]),counter,binary.LittleEndian.Uint32(nonce[0:4]),binary.LittleEndian.Uint32(nonce[4:8]),binary.LittleEndian.Uint32(nonce[8:12]),
+		}
+	}
     func chacha20Block(counter uint32, nonce [12]byte) [64]byte {
         state := initializeState(counter, nonce)
         working := state
