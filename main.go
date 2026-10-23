@@ -906,8 +906,8 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 						break
 					}
 
-					del := deleteConnAtIndex(index)
-					if del != "false"{
+					del,delbool := deleteConnAtIndex(index)
+					if delbool{
 
 						keyMu.Lock()
 						_, exists := key_map[del]
@@ -3538,16 +3538,16 @@ func cleanupDeletedUID(uid string, deletedIndex int) {
 	)
 }
 
-func deleteConnAtIndex(index int) string {
+func deleteConnAtIndex(index int) (string,bool) {
 	if index < 0 {
-		return "false"
+		return "false",false
 	}
 
 	var uid string
 	dataConnMu.Lock()
 	if index >= len(data_conn.Conns) {
 		dataConnMu.Unlock()
-		return "false"
+		return "false",false
 	}
 
 	conn := &data_conn.Conns[index]
@@ -3559,7 +3559,7 @@ func deleteConnAtIndex(index int) string {
 	dataConnMu.Unlock()
 
 	cleanupDeletedUID(uid, index)
-	return uid
+	return uid,true
 }
 
 func DeleteEntry(delshell string) {
