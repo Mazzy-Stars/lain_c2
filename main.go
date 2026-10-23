@@ -3518,6 +3518,13 @@ func deleteMLKEMKey(uid string) {
 
 func cleanupDeletedUID(uid string, deletedIndex int) {
 
+	keyMu.Lock()
+	key, exists := key_map[uid]
+	if exists {
+		delete(key_map, uid)
+	}
+	keyMu.Unlock()
+
 	deleteMLKEMKey(uid)
 
 	go PushWS(
