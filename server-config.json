@@ -1,0 +1,16 @@
+{
+  "port": "443",
+  "cert": "",
+  "key": "",
+  "default_cert": false,
+  "resp_error": "404 page not found",
+  "css": "",
+  "login_file": "",
+  "title": "connect",
+  "ui_route": "server",
+  "web_route": "user_index",
+  "login_route": "login",
+  "js_route": "lain.js",
+  "css_route": "lain.css",
+  "not_found_headers": {}
+}
