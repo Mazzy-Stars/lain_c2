@@ -907,7 +907,15 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 					}
 
 					del := deleteConnAtIndex(index)
-					if del {
+					if del != "false"{
+
+						keyMu.Lock()
+						_, exists := key_map[del]
+						if exists {
+							delete(key_map, del)
+						}
+						keyMu.Unlock()
+
 						clientWs.WriteJSON(map[string]interface{}{
 							"code":    200,
 							"path":    "delIndex",
@@ -3518,13 +3526,6 @@ func deleteMLKEMKey(uid string) {
 
 func cleanupDeletedUID(uid string, deletedIndex int) {
 
-	keyMu.Lock()
-	_, exists := key_map[uid]
-	if exists {
-		delete(key_map, uid)
-	}
-	keyMu.Unlock()
-
 	deleteMLKEMKey(uid)
 
 	go PushWS(
@@ -3537,16 +3538,16 @@ func cleanupDeletedUID(uid string, deletedIndex int) {
 	)
 }
 
-func deleteConnAtIndex(index int) bool {
+func deleteConnAtIndex(index int) string {
 	if index < 0 {
-		return false
+		return "false"
 	}
 
 	var uid string
 	dataConnMu.Lock()
 	if index >= len(data_conn.Conns) {
 		dataConnMu.Unlock()
-		return false
+		return "false"
 	}
 
 	conn := &data_conn.Conns[index]
@@ -3558,7 +3559,7 @@ func deleteConnAtIndex(index int) bool {
 	dataConnMu.Unlock()
 
 	cleanupDeletedUID(uid, index)
-	return true
+	return uid
 }
 
 func DeleteEntry(delshell string) {
