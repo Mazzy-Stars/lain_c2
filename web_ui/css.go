@@ -114,15 +114,9 @@ html, body {
     font-family: 'Arial', sans-serif;
     margin-bottom: 20px !important;
 }
-.sidebar a i {
-    margin-right: 23px; /* 鐠嬪啯鏆ｆ潻娆庨嚋閸婂吋娼垫晶鐐插閹存牕鍣虹亸鎴濇禈閺嶅洤鎷伴弬鍥х摟娑斿妫块惃鍕獩缁傦拷 */
-}
 .sidebar a:hover {
     transform: translateX(5px);
     background-color:rgb(117, 175, 182);
-}
-.sidebar.hidden {
-    width: 0;
 }
 .content {
     display: flex;
@@ -149,7 +143,7 @@ html, body {
     text-align: center;
 }
 
-.server-header h3 {
+.server-header h3, .plugin-dialog-header h3 {
     margin: 0;
     color: #23435a;
     font-size: 22px;
@@ -157,7 +151,7 @@ html, body {
     text-transform: uppercase;
 }
 
-.server-form {
+.server-form, .plugin-form {
     width: 100%;
     display: flex;
     flex-direction: column;
@@ -203,7 +197,6 @@ html, body {
     bottom: 0;
     left: 180px; /* 娓氀嗙珶閺嶅繒娈戠€硅棄瀹?*/
     width: 100%; /* 閸忋劌顔旈崙蹇撳箵娓氀嗙珶閺嶅繐顔旀惔锟?*/
-    overflow-y: auto;
     padding-left: 5px;
     padding-right: 5px;
     border-radius: 10px; /* 濞ｈ濮為崷鍡氼潡 */
@@ -228,17 +221,8 @@ html, body {
 }
 .rename-btn, .time-btn {
     padding: 2px 6px;
-    font-size: 13px;
-    border: none;
-    background: #f3f3f3;
-    border-radius: 4px;
     cursor: pointer;
-    box-shadow: 0 1px 2px #ccc;
-    margin-left: 3px;
     transition: background 0.2s;
-}
-.rename-btn:hover, .time-btn:hover {
-    background: #e0e0e0;
 }
 #log-content::-webkit-scrollbar-thumb:hover {
     background: #555; /* 濠婃垵娼￠幃顒€浠犻弮鎯板剹閺咁垵澹?*/
@@ -249,7 +233,6 @@ html, body {
     top: 0px;
     background-color: transparent;
     position: sticky; /* 閸ュ搫鐣?handle 閸︼拷 log 鐎圭懓娅掗惃鍕俺闁拷 */
-    bottom: 0;
     z-index: 10;
     cursor: ns-resize;
     touch-action: none;
@@ -276,60 +259,6 @@ html, body {
     justify-content: center;
     align-items: center;
 }
-.sidebar, .toggle-button {
-    transition: transform 0.3s ease-in-out;
-}
-.iframe-panel {
-    position: absolute; /* 娴ｈ法鏁ょ紒婵嗩嚠鐎规矮缍?*/
-    top: 100px; /* 閸掓繂顫愭担宥囩枂 */
-    left: 100px; /* 閸掓繂顫愭担宥囩枂 */
-    width: 60%;
-    height: 80%;
-    border: 1px solid #ccc;
-    background: #fff;
-    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-    z-index: 1000;
-    display: none; /* 姒涙顓婚梾鎰 */
-}
-.iframe-panel .close-button {
-    position: absolute;
-    top: 5px;
-    right: 5px;
-}
-.iframe-panel .drag-handle {
-    width: 100%;
-    height: 30px; /* 閸ュ搫鐣炬妯哄 */
-    background-color: #f1f1f1;
-    cursor: move;
-    position: absolute;
-    top: 0;
-    left: 0;
-    z-index: 1005;
-}
-.iframe-panel iframe {
-    position: absolute;
-    top: 30px; /* 闁灝绱?drag-handle */
-    width: 100%;
-    height: calc(100% - 30px); /* 閸戝繐骞?drag-handle 閻ㄥ嫰鐝惔锟?*/
-    border: none;
-}
-.close-button {
-    position: absolute;
-    top: 0px;
-    height: 23px;
-    right: 5px;
-    cursor: pointer;
-    background-color: #f00; /* 娴ｈ法鏁?background-color 娴狅絾娴?background */
-    color: #fff;
-    border: none;
-    padding: 5px 10px;
-    border-radius: 3px; /* 濞ｈ濮為崷鍡氼潡 */
-    font-size: 14px; /* 鐠佸墽鐤嗙€涙ぞ缍嬫径褍鐨?*/
-    z-index: 1010; /* 绾喕绻?z-index 娑撯偓閼凤拷 */
-}
-.close-button:hover {
-    background-color: #d00; /* 濞ｈ濮為幃顒€浠犻弫鍫熺亯 */
-}
 .tle-sidebar {
     display: none; /* 閸掓繂顫愰梾鎰 */
 }
@@ -347,11 +276,6 @@ html, body {
     }
     .sidebar-title{
         font-size: 16px;
-        font-weight: bold;
-        margin-bottom: 10px;
-        color: #000;
-        text-align: center;
-        font-family: 'Arial', sans-serif;
         font-style: italic; /* 閺傛粈缍?*/
         text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.3); /* 濞ｈ濮為梼鏉戝 */
         background-color: #fff; /* 鐠佸墽鐤嗛懗灞炬珯妫版粏澹?*/
@@ -362,10 +286,8 @@ html, body {
     }
     .log{
         left: 0px;
-        width: 100%; /* 鐠嬪啯鏆ｉ弮銉ョ箶闁劌鍨庨惃鍕啍鎼达拷 */
     }
     .tle-sidebar{
-        display:none;
         position:fixed;
         top:50px;
         left:0;
@@ -468,7 +390,7 @@ html, body {
 
 
 /* 閹稿鎸抽崠鍝勭厵 */
-.btn-box {
+.btn-box, .plugin-item-actions {
 
     display:flex;
 
@@ -548,9 +470,11 @@ html, body {
 }
 .ip-address, .shell-address {
     display: inline-block;
+    font-weight: bold;
+}
+.shell-address {
     margin-right: 10px;
     font-size: 1em;
-    font-weight: bold;
 }
 .button-container {
     width: 40%;
@@ -561,11 +485,9 @@ html, body {
     background: #fff;
     padding: 10px;
     width: 90%;
-    margin: 10px;
-    margin-left: 50px;  /* 鐏忓棗鍘撶槐鐘冲腹閸掓澘褰告潏锟?*/
+    margin: 10px 10px 10px 50px;
     border-radius: 8px;
     box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-    align-items: center;
     border: none;
 }
 .info-content {
@@ -634,6 +556,10 @@ input.s_right_input.custom-remarks {
 .choose-content.show {
     display: flex;
 }
+
+.choose-content [data-role="plugin-buttons"] {
+    display: contents;
+}
 @media (max-width: 768px) {
     .s_left {
         font-size: 12px; /* 鐠嬪啯鏆ｅ锔挎櫠鐎涙ぞ缍嬫径褍鐨?*/
@@ -647,7 +573,6 @@ input.s_right_input.custom-remarks {
     }
 
     input.s_right_input.custom-remarks {
-        font-size: 14px; /* 鐠嬪啯鏆ｆ潏鎾冲弳濡楀棙鏋冪€涙銇囩亸锟?*/
         height: 15px; /* 鐠嬪啯鏆ｆ妯哄闁倸绨查幍瀣簚 */
         line-height: 30px; /* 绾喕绻氶弬鍥х摟鐏炲懍鑵?*/
         padding-left: 5px; /* 濞ｈ濮炲锕€鍞存潏纭呯獩 */
@@ -675,22 +600,34 @@ input.s_right_input.custom-remarks {
     }
 }
 .ip-address, .console-link {
-    margin-right: 3.5px; /* 閸忓啰绀屾稊瀣？閻ㄥ嫰妫块梾锟?*/
     white-space: nowrap;  /*闂冨弶顒涢幑銏ｎ攽 */
-    border: none; /* 閸樼粯甯€鏉堣顢?*/
 }
 .ip-address {
     font-size: 12px;
     color: #555;
     margin-right: 8px;
 }
+.status-bar {
+    background-color: #8B4513;
+    width: 106px;
+    height: 1px;
+    vertical-align: middle;
+    position: relative;
+}
+.status-bar-fill {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    box-shadow: inset 0 0 0 106px #8B4513;
+}
 .console-link {
-    justify-content: center;
-    gap: 25px; /* 閹稿鎸虫稊瀣？閻ㄥ嫰妫跨捄锟?*/
     text-decoration: none; /* 閸樼粯甯€娑撳鍨濈痪锟?*/
     color: #007BFF; /* 鐠佸墽鐤嗛柧鐐复妫版粏澹?*/
     font-size: 12px; /* 鐠佸墽鐤嗙€涙ぞ缍嬫径褍鐨?*/
     margin-left: 5px; /* 鐠佸墽鐤嗘稉搴″娑撯偓娑擃亜鍘撶槐鐘垫畱闂傛挳娈?*/
+    margin-right: 3.5px;
     border: none; /* 閸樼粯甯€鏉堣顢?*/
     padding: 8px 15px; /* 鐠佸墽鐤嗛崘鍛扮珶鐠猴拷 */
     border-radius: 4px; /* 鐠佸墽鐤嗘潏瑙勵攱閸﹀棜顫?*/
@@ -710,34 +647,30 @@ input.s_right_input.custom-remarks {
     background-color: #0062cc; /* 姒х姵鐖ｉ幐澶夌瑓閺冨墎娈戦懗灞炬珯妫版粏澹?*/
     box-shadow: none; /* 缁夊娅庨梼鏉戝 */
 }
-input[type="text"] {
-    width: 45%; /* 鏉堟挸鍙嗗鍡楊啍鎼达箒鐨熼弫锟?*/
+/* shared form control base */
+input[type="text"],
+select {
     padding: 10px;
     border: 1px solid #ddd;
     border-radius: 5px;
     font-size: 14px;
     transition: border-color 0.3s;
 }
-input[type="text"]:focus {
+input[type="text"] {
+    width: 45%;
+}
+select {
+    width: 25%;
+    background-color: #fff;
+}
+input[type="text"]:focus,
+select:focus {
     border-color: #007BFF;
     outline: none;
 }
 label {
     font-size: 14px;
     color: #333;
-}
-select {
-    width: 25%; /* 娑撳濯洪懣婊冨礋鐎硅棄瀹崇拫鍐╂殻 */
-    padding: 10px;
-    border: 1px solid #ddd;
-    border-radius: 5px;
-    font-size: 14px;
-    background-color: #fff;
-    transition: border-color 0.3s;
-}
-select:focus {
-    border-color: #007BFF;
-    outline: none;
 }
 button {
     padding: 10px 15px;
@@ -749,7 +682,10 @@ button {
     font-size: 14px;
     transition: background-color 0.3s;
 }
-button:hover {
+button:hover,
+.file-dialog .dir-btn:hover,
+.file-dialog #uploadForm input[type="submit"]:hover,
+.file-dialog #moveDirButton:hover {
     background-color: #0056b3;
 }
 #div_index {
@@ -763,16 +699,10 @@ button:hover {
     }
     .conn-container {
         flex-direction: row; /* 绾喕绻氱€涙劕鍘撶槐鐘叉躬娑撯偓鐞涘苯鍞?*/
-        flex-wrap: wrap; /* 閸忎浇顔忛幑銏ｎ攽 */
         max-width: 100%; /* 闂冨弶顒涚搾鍛毉 */
         overflow: hidden; /* 闁灝鍘ゅ┃銏犲毉 */
-        background-color: #f9f9f9;
     }
     .os-container {
-        display: flex;
-        align-items: center;
-        padding: 10px;
-        background-color: #f9f9f9;
         margin-left: 0; /* 閸欐牗绉烽懛顏勫З閹恒劌鍩岄崣鍏呮櫠 */
     }                    
 }
@@ -814,7 +744,6 @@ button:hover {
 .net_scan button {
     padding: 0 18px;
     border-radius: 10px;
-    border: none;
     background: linear-gradient(135deg, #2f7fb4 0%, #1d5f8d 100%);
     color: #fff;
     font-weight: 600;
@@ -896,10 +825,6 @@ button:hover {
     background: #e0e0e0;
     z-index: 10;
 }
-.file-dialog .file-dialog-toolbar-row {
-    display: flex;
-    align-items: center;
-}
 .file-dialog #file-dialog-hostname {
     margin-right: 25px;
 }
@@ -916,13 +841,6 @@ button:hover {
 }
 .file-dialog .history-item:hover {
     background-color: #f0f0f0;
-}
-.file-dialog .history-item-label {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
 }
 .file-dialog .history-delete-btn {
     flex-shrink: 0;
@@ -986,12 +904,19 @@ button:hover {
 .file-dialog .file > * {
     flex-shrink: 0;
 }
+/* shared ellipsis label */
+.file-dialog .history-item-label,
 .file-dialog .filename {
-    flex: 1 1 auto;
     min-width: 0;
-    white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.file-dialog .history-item-label {
+    flex: 1;
+}
+.file-dialog .filename {
+    flex: 1 1 auto;
 }
 .file-dialog .filesize,
 .file-dialog .fileperm,
@@ -1089,8 +1014,6 @@ button:hover {
 }
 .file-dialog .rename-btn,
 .file-dialog .time-btn {
-    margin-left: 0;
-    padding: 2px 6px;
     font-size: 12px;
     line-height: 1;
     border: 1px solid #d6dbe1;
@@ -1111,10 +1034,9 @@ button:hover {
     letter-spacing: 0.05em;
     margin-bottom: 1%;
 }
-.file-dialog .dir-btn:hover {
-    background-color: #0056b3;
-}
-.file-dialog .dir-btn:active {
+.file-dialog .dir-btn:active,
+.file-dialog #uploadForm input[type="submit"]:active,
+.file-dialog #moveDirButton:active {
     background-color: #004085;
     transform: translateY(2px);
 }
@@ -1135,22 +1057,23 @@ button:hover {
     border-radius: 5px;
     cursor: pointer;
 }
-.file-dialog #uploadForm input[type="submit"] {
+/* shared dialog action buttons */
+.file-dialog #uploadForm input[type="submit"],
+.file-dialog #moveDirButton {
     padding: 10px 20px;
-    font-size: 1em;
     color: #fff;
     background-color: #007bff;
     border: none;
     border-radius: 5px;
     cursor: pointer;
+}
+.file-dialog #uploadForm input[type="submit"] {
+    font-size: 1em;
     transition: background-color 0.3s;
 }
-.file-dialog #uploadForm input[type="submit"]:hover {
-    background-color: #0056b3;
-}
-.file-dialog #uploadForm input[type="submit"]:active {
-    background-color: #004085;
-    transform: translateY(2px);
+.file-dialog #moveDirButton {
+    font-size: 16px;
+    transition: background-color 0.3s, transform 0.3s;
 }
 .file-dialog .dir-controls {
     display: flex;       /* 娴ｈ法鏁lex鐢啫鐪?*/
@@ -1172,24 +1095,6 @@ button:hover {
     box-shadow: 0 0 8px rgba(0, 123, 255, 0.2);
     outline: none; /* 缁夊娅庢妯款吇閻ㄥ嫮鍔嶉悙纭呯枂瀵わ拷 */
 }
-/* 閹稿鎸抽弽宄扮础 */
-.file-dialog #moveDirButton {
-    padding: 10px 20px;
-    font-size: 16px;
-    color: #fff;
-    background-color: #007bff;
-    border: none;
-    border-radius: 5px;
-    cursor: pointer;
-    transition: background-color 0.3s, transform 0.3s;
-}
-.file-dialog #moveDirButton:hover {
-    background-color: #0056b3;
-}
-.file-dialog #moveDirButton:active {
-    background-color: #004085;
-    transform: translateY(2px);
-}
 /* 閸濆秴绨插蹇氼啎鐠侊拷 */
 @media (max-width: 768px) {
     .loot-list {
@@ -1208,18 +1113,15 @@ button:hover {
     .loot-card-uid {
         margin-left: 0;
     }
-    .loot-row {
-        flex-direction: column;
-        align-items: flex-start;
-    }
     .loot-download-btn {
         width: 100%;
     }
 }
+/* shared flex row */
+.file-dialog .file-dialog-toolbar-row,
 .shell-container {
-    display: flex; /* 娴ｈ法鏁?flexbox 鐢啫鐪?*/
-    align-items: center; /* 閸ㄥ倻娲跨仦鍛厬鐎靛綊缍?*/
-    top: 0;
+    display: flex;
+    align-items: center;
 }
 .msg-item {
     background: white;
@@ -1259,14 +1161,9 @@ button:hover {
 .msg-item span {
     user-select: none;
 }
-.msg-item span[title] {
-    color: blue;
-    text-decoration: underline dotted;
-}
 .msg-item-dragging {
     opacity: 0.92;
     box-shadow: 0 14px 32px rgba(0,0,0,0.14);
-    z-index: 10020;
 }
 .msg-drag-handle {
     margin-right: 6px;
@@ -1302,10 +1199,8 @@ button:hover {
 .terminal {
     width: 100%;
     height: 75vh;
-    padding: 10px;
     box-sizing: border-box;
     overflow-y: auto;
-    background-color:rgb(255, 255, 255);
 }
 .shell-input  {
     width: 95%;
@@ -1335,9 +1230,6 @@ button:hover {
     overflow: hidden;
 }
 #chat {
-    height: auto;
-    flex: 1 1 0;
-    min-height: 0;
     box-sizing: border-box;
     overflow: hidden;
 }
@@ -1490,25 +1382,12 @@ button:hover {
 }
 @media (max-width: 768px) {
     .chat {
-        width: 100%;
-        height: auto;
-        min-height: 0;
-        flex: 1 1 auto;
-        display: flex;
-        flex-direction: column;
         gap: 10px;
         padding: 0;
-        box-sizing: border-box;
     }
 
     .chat_container {
-        width: 100%;
-        max-width: none;
         --chat-message-inset: 6%;
-        height: auto;
-        min-height: 0;
-        flex: 1 1 0;
-        margin: 0;
         padding: 8px 36px 8px 8px;
         gap: 8px;
     }
@@ -1517,7 +1396,6 @@ button:hover {
         width: 88%;
         padding: 8px 10px;
         border-radius: 16px;
-        margin: 0 var(--chat-log-gap);
     }
 
     .chat_input {
@@ -1528,7 +1406,6 @@ button:hover {
     .chat_icon_left,
     .chat_icon_right {
         font-size: 14px;
-        padding: 4px 8px;
     }
 
     .chat_message {
@@ -1573,22 +1450,6 @@ button:hover {
     text-align: center;
 }
 
-.plugin-dialog-header h3 {
-    margin: 0;
-    color: #23435a;
-    font-size: 22px;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-}
-
-.plugin-form {
-    width: 100%;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 10px;
-}
-
 .plugin-form select,
 .plugin-form input,
 .plugin-form button {
@@ -1609,7 +1470,6 @@ button:hover {
     padding: 10px 14px;
     background: #eef5f9;
     color: #24455e;
-    cursor: pointer;
     transition: background-color 0.2s ease, border-color 0.2s ease;
 }
 
@@ -1781,12 +1641,6 @@ button:hover {
     line-height: 1.6;
 }
 
-.plugin-item-actions {
-    display: flex;
-    gap: 8px;
-    flex-shrink: 0;
-}
-
 .plugin-item-actions button {
     width: auto;
     min-width: 76px;
@@ -1795,7 +1649,6 @@ button:hover {
     border-radius: 10px;
     background: #f2f7fa;
     color: #27465f;
-    cursor: pointer;
 }
 
 .plugin-item-actions button:hover {
@@ -1830,10 +1683,6 @@ button:hover {
     overflow: hidden;
     max-height: 72px;
     transition: max-height 0.25s ease;
-}
-
-.plugin-code-preview.collapsed {
-    max-height: 72px;
 }
 
 .plugin-code-preview.expanded {
@@ -1882,9 +1731,6 @@ button:hover {
 }
 
 .plugin-dialog {
-    position: fixed;
-    top: 10%;
-    left: 50%;
     width: min(92vw, 760px) !important;
     max-width: min(92vw, 760px) !important;
     overflow-y: auto !important;
@@ -1902,7 +1748,6 @@ button:hover {
     min-height: 38px !important;
     max-height: 38px !important;
     flex: 0 0 38px !important;
-    flex-shrink: 0 !important;
     margin: -16px -16px 12px -16px !important;
     cursor: move;
     background: linear-gradient(90deg, rgba(230, 236, 243, 0.96), rgba(243, 247, 251, 0.9)) !important;
@@ -1919,13 +1764,34 @@ button:hover {
     flex: 0 0 auto;
     margin-top: 0 !important;
     padding: 8px 4px 14px 4px;
+    gap: 12px;
+    flex-wrap: wrap;
 }
 
 .terminal-dialog .terminal {
     flex: 1 1 auto;
-    min-height: 0;
     overflow: auto;
     border-radius: 16px;
+    background: #f8fbff;
+    border: 1px solid rgba(160, 176, 194, 0.32);
+    padding: 16px;
+    color: #000000;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+.terminal-dialog .terminal-shell-select {
+    min-width: 150px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(138, 160, 178, 0.35);
+    background: #fff;
+    color: #314657;
+}
+
+.terminal-dialog .terminal-hostname {
+    margin-left: auto;
+    font-size: 12px;
+    color: #6a7f92;
 }
 
 .msg-dialog .msg-dialog-body {
@@ -1987,6 +1853,7 @@ button:hover {
         width: 100%;
     }
 
+    .loot-row,
     .plugin-os-header,
     .plugin-item-top {
         flex-direction: column;
@@ -2034,7 +1901,6 @@ button:hover {
         min-height: 56vh !important;
         height: 60vh !important;
         padding: 12px !important;
-        border-radius: 16px !important;
     }
 
     .file-dialog {
@@ -2045,7 +1911,6 @@ button:hover {
     .file-dialog .file-dialog-layout {
         flex-direction: column;
         height: calc(92vh - 56px) !important;
-        overflow: hidden;
     }
 
     .file-dialog #file-history-resizer {
@@ -2057,21 +1922,15 @@ button:hover {
         min-width: 0 !important;
         max-width: none !important;
         max-height: 132px;
-        min-height: 0;
-        overflow-y: auto;
-        overflow-x: hidden;
         margin-right: 0;
         margin-bottom: 10px;
         padding-right: 0;
         border-right: none;
         border-bottom: 1px solid #e6edf3;
-        background: linear-gradient(180deg, #fbfdff 0%, #f4f8fb 100%);
     }
 
     .file-dialog .filecontainer {
         width: 91% !important;
-        height: auto;
-        flex: 1 1 auto;
         border-radius: 18px 18px 0 0;
         box-shadow: none;
     }
@@ -2101,15 +1960,11 @@ button:hover {
     }
 
     .file-dialog .file-manager {
-        margin-top: 12px;
         gap: 8px;
-        width: 100%;
     }
 
     .file-dialog .directory,
     .file-dialog .file {
-        width: 100% !important;
-        max-width: 100% !important;
         padding: 5px 8px !important;
         gap: 5px !important;
         align-items: flex-start;
@@ -2127,10 +1982,8 @@ button:hover {
 
     .file-dialog .filename {
         flex: 1 1 calc(100% - 24px);
-        min-width: 0;
         white-space: normal;
         word-break: break-all;
-        overflow: hidden;
         text-overflow: unset;
         font-size: 11px;
     }
@@ -2149,14 +2002,11 @@ button:hover {
     .file-dialog .time-btn {
         padding: 1px 5px !important;
         font-size: 10px !important;
-        line-height: 1 !important;
         min-height: 20px;
         border-radius: 5px;
     }
 
     .msg-dialog {
-        width: 94vw !important;
-        max-width: 680px !important;
         max-height: calc(100dvh - 20px) !important;
         padding: 14px 10px 18px !important;
         background: linear-gradient(180deg, #fbfdff 0%, #f4f7fb 100%) !important;
@@ -2191,9 +2041,6 @@ button:hover {
         word-break: break-all;
     }
 
-    .msg-dialog .msg-dialog-body {
-        padding: 0 2px 8px;
-    }
 
     .msg-dialog #msg-request-list,
     .msg-dialog #msg-result-list {
@@ -2267,8 +2114,6 @@ button:hover {
 
     .floating-dialog,
     .plugin-dialog {
-        width: min(92vw, 420px) !important;
-        max-width: min(92vw, 420px) !important;
         max-height: calc(100dvh - 20px) !important;
         border-radius: 22px !important;
         padding: 12px 10px 14px !important;
@@ -2300,8 +2145,6 @@ button:hover {
     .dialog-close-btn {
         top: 0px;
         right: 8px;
-        width: 34px;
-        height: 34px;
         font-size: 22px;
     }
 }
@@ -2327,8 +2170,6 @@ button:hover {
 
     .floating-dialog,
     .plugin-dialog {
-        width: min(94vw, 380px) !important;
-        max-width: min(94vw, 380px) !important;
         max-height: calc(100dvh - 16px) !important;
         border-radius: 20px !important;
         padding: 10px 8px 12px !important;
@@ -2356,8 +2197,6 @@ button:hover {
     }
 
     .dialog-close-btn {
-        top: 0px;
-        right: 8px;
         width: 32px;
         height: 32px;
         font-size: 20px;
@@ -2797,7 +2636,6 @@ button:hover {
     padding: 10px 18px;
     font-size: 13px;
     font-weight: 600;
-    cursor: pointer;
     transition: transform 0.18s ease, background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
 }
 
@@ -2865,9 +2703,6 @@ button:hover {
     max-height: min(80vh, 760px);
     box-sizing: border-box;
     overflow: auto;
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
     background: linear-gradient(180deg, #ffffff 0%, #f7fbfd 100%) !important;
     border: 1px solid #cfdde7 !important;
     border-radius: 18px !important;
@@ -2876,9 +2711,7 @@ button:hover {
 }
 
 .serverDialog input,
-.serverDialog select,
-.serverDialog textarea,
-.serverDialog button {
+.serverDialog textarea {
     font-size: 14px;
 }
 
@@ -2930,14 +2763,11 @@ button:hover {
 
 #addUserDialog .server-form,
 #whitelistDialog .server-form {
-    width: 100%;
     align-items: stretch;
     gap: 12px;
 }
 
-#addUserDialog .server-form input,
 #addUserDialog .server-form button,
-#whitelistDialog .server-form textarea,
 #whitelistDialog .server-form button {
     width: 100%;
     min-height: 42px;
@@ -2946,10 +2776,9 @@ button:hover {
 
 #addUserDialog .server-form input,
 #whitelistDialog .server-form textarea {
-    border: 1px solid #c7d7e2;
+    width: 100%;
+    min-height: 42px;
     border-radius: 12px;
-    background: #f9fcfe;
-    color: #26455c;
     padding: 11px 13px;
     outline: none;
     transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
@@ -2965,7 +2794,6 @@ button:hover {
 #addUserDialog .server-buttons,
 #whitelistDialog .server-buttons {
     width: 100%;
-    margin-top: 4px;
 }
 
 #addUserDialog .server-buttons button,
@@ -2975,7 +2803,6 @@ button:hover {
     background: linear-gradient(135deg, #3a87b1 0%, #295f7b 100%);
     color: #ffffff;
     font-weight: 700;
-    cursor: pointer;
     transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
 }
 
@@ -2994,16 +2821,12 @@ button:hover {
 
 #whitelistDialog .server-form textarea {
     min-height: 220px;
-    resize: vertical;
     line-height: 1.55;
     font-family: Consolas, Monaco, "Courier New", monospace;
 }
 
 @media (max-width: 768px) {
     .serverDialog {
-        top: 50% !important;
-        left: 50% !important;
-        transform: translate(-50%, -50%) !important;
         width: calc(100vw - 24px);
         max-width: calc(100vw - 24px);
         max-height: 88vh;
@@ -3015,6 +2838,61 @@ button:hover {
         width: calc(100vw - 24px);
         max-width: calc(100vw - 24px);
     }
+}
+
+/* shared toast chrome */
+.lain-toast-stack {
+    position: fixed;
+    right: 20px;
+    top: 20px;
+    width: 360px;
+    max-width: calc(100vw - 24px);
+    max-height: 50vh;
+    overflow-y: auto;
+    z-index: 9998;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.lain-toast-stack--passive {
+    pointer-events: none;
+}
+.lain-toast-card {
+    background: rgba(255, 255, 255, 0.96);
+    color: #2f2f2f;
+    border: 1px solid rgba(120, 150, 180, 0.22);
+    border-radius: 10px;
+    padding: 12px 14px;
+    box-shadow: 0 10px 28px rgba(80, 102, 125, 0.18);
+    font-family: Consolas, Monaco, monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    word-break: break-word;
+    opacity: 0;
+    transform: translateY(-10px);
+    transition: opacity 0.6s ease, transform 0.6s ease;
+}
+.lain-toast-card--transfer {
+    pointer-events: auto;
+    background: rgba(255, 255, 255, 0.97);
+    transition: opacity 0.35s ease, transform 0.35s ease;
+}
+.lain-toast-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+}
+.lain-toast-head--transfer {
+    gap: 12px;
+    margin-bottom: 8px;
+}
+.lain-toast-close {
+    border: none;
+    background: transparent;
+    color: #7e8a96;
+    cursor: pointer;
+    font-size: 14px;
 }
 `
 			}

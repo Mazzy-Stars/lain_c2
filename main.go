@@ -6309,7 +6309,7 @@ func main() {
 		tempSessions := append([]string(nil), sessionSlice...)
 		mutex.RUnlock()
 
-		web_ui.Js(error_str, web_route, web_css, tempSessions, cfg.NotFoundHeaders).ServeHTTP(w, r)
+		web_ui.Js(error_str, web_route, tempSessions, cfg.NotFoundHeaders).ServeHTTP(w, r)
 	}), cfg.NotFoundHeaders))
 
 	//调用css

@@ -91,19 +91,7 @@ func Lain(error_str, web_title, web_js, web_css string, sessionSlice []string, n
                             dialog.dataset.closing = "false";
                             var formHtml = '' +
                                 '<div class="server-dialog">' +
-                                    '<button class="close-x" onclick="closeStartServerDialog()" ' +
-                                        'style="position:absolute;' +
-                                        'right:10px;' +
-                                        'top:8px;' +
-                                        'width:32px;' +
-                                        'height:32px;' +
-                                        'padding:0;' +
-                                        'border:none;' +
-                                        'background:transparent;' +
-                                        'font-size:28px;' +
-                                        'line-height:28px;' +
-                                        'color:#666;' +
-                                        'cursor:pointer;">×</button>' +
+                                    '<button class="close-x" onclick="closeStartServerDialog()">×</button>' +
                                     '<div class="server-header">' +
                                         '<h3>Start Server</h3>' +
                                     '</div>' +
@@ -362,11 +350,6 @@ func Lain(error_str, web_title, web_js, web_css string, sessionSlice []string, n
             <div id="log-content">
             </div>
         </div>
-    </div>
-    <div id="iframePanel" class="iframe-panel">
-        <div class="drag-handle"></div>
-        <button class="close-button" onclick="closeIframe()">x</button>
-        <iframe id="iframe" src=""></iframe>
     </div>
 </body>
 </html>

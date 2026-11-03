@@ -3,7 +3,7 @@ import (
 	"net/http"
 	"io"
 )
-func Js(error_str,web_route,web_css string, sessionSlice []string, notFoundHeaders map[string]string) http.HandlerFunc {
+func Js(error_str,web_route string, sessionSlice []string, notFoundHeaders map[string]string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		//必须先登录
 		ok := CheckUserSession(r, sessionSlice)
@@ -174,40 +174,53 @@ function restoreViewState(root, state) {
     requestAnimationFrame(restoreAcrossFrames);
 }
 
-function applyStickyDialogBar(dragBar, options = {}) {
+function applyDialogBaseStyle(dialog, options = {}) {
+    if (!dialog) {
+        return;
+    }
+    dialog.style.position = "fixed";
+    dialog.style.top = options.top || "5%";
+    dialog.style.left = "50%";
+    dialog.style.transform = "translateX(-50%)";
+    dialog.style.zIndex = String((window.dialogZIndexCounter = (window.dialogZIndexCounter || 9999) + 1));
+    dialog.style.userSelect = "none";
+    if (options.touchAction) {
+        dialog.style.touchAction = options.touchAction;
+    }
+    if (options.height) {
+        dialog.style.height = options.height;
+    }
+    if (options.minWidth) {
+        dialog.style.minWidth = options.minWidth;
+    }
+    if (options.margin) {
+        dialog.style.margin = options.margin;
+    }
+    if (options.backdropFilter) {
+        dialog.style.backdropFilter = options.backdropFilter;
+    }
+}
+
+function applyStickyDialogBar(dragBar) {
     if (!dragBar) {
         return;
     }
-    const padX = Number(options.padX || 0);
-    const padTop = Number(options.padTop || 0);
-    const height = Number(options.height || 36);
-    const radius = Number(options.radius || 8);
-    const marginBottom = Number(options.marginBottom || 0);
-
-    dragBar.style.position = "sticky";
-    dragBar.style.top = (-padTop) + "px";
-    dragBar.style.left = "0";
-    dragBar.style.display = "block";
-    dragBar.style.height = height + "px";
-    dragBar.style.minHeight = height + "px";
-    dragBar.style.maxHeight = height + "px";
-    dragBar.style.width = padX > 0 ? "calc(100% + " + (padX * 2) + "px)" : "100%";
-    dragBar.style.margin = (-padTop) + "px " + (-padX) + "px " + marginBottom + "px " + (-padX) + "px";
-    dragBar.style.flex = "0 0 " + height + "px";
-    dragBar.style.flexShrink = "0";
-    dragBar.style.alignSelf = "stretch";
-    dragBar.style.cursor = "move";
-    dragBar.style.touchAction = "none";
-    dragBar.style.zIndex = String(options.zIndex || 10001);
-    dragBar.style.background = options.background ||
-        "linear-gradient(90deg, rgba(230,236,243,0.95), rgba(243,247,251,0.9))";
-    dragBar.style.borderTopLeftRadius = radius + "px";
-    dragBar.style.borderTopRightRadius = radius + "px";
-    dragBar.style.borderBottom = options.borderBottom ||
-        "1px solid rgba(138,160,178,0.18)";
     dragBar.style.boxSizing = "border-box";
     dragBar.style.overflow = "hidden";
     dragBar.setAttribute("aria-hidden", "true");
+}
+
+function applyDraggedDialogPosition(dialog, left, top) {
+    if (!dialog) {
+        return;
+    }
+    dialog.style.left = left + "px";
+    dialog.style.top = top + "px";
+    dialog.style.transform = "";
+}
+
+function setDragSelectionLocked(locked) {
+    document.body.style.userSelect = locked ? "none" : "";
 }
 
 function normalizeIncomingList(data) {
@@ -584,7 +597,7 @@ function buildUserCardHtml(view) {
             '<span class="ip-address" data-role="protocol">' + view.safeProtocolHtml + '/</span>' +
             '<span class="ip-address" data-role="os">' + view.safeOsHtml + '/' + escapeHtml(view.osEmoji) + '</span>' +
             '<div class="os-container">' +
-                '<div class="ip-address" id="' + view.safeUidHtml + '-img" data-role="status-bar" style="background-color: #8B4513; width: 106px; height: 1px; display: inline-block; vertical-align: middle; position: relative;"><div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; box-shadow: inset 0 0 0 106px #8B4513;"></div></div>' +
+                '<div class="ip-address status-bar" id="' + view.safeUidHtml + '-img" data-role="status-bar"><div class="status-bar-fill"></div></div>' +
             '</div>' +
         '</div>' +
         '<div class="button-container">' +
@@ -821,7 +834,7 @@ function buildServerCardHtml(server) {
     html += "<div class='server-action-row server-action-row-secondary'>";
     html += "<a class='server-action-pill server-action-pill-secondary download-config' href='javascript:void(0)' data-port='" + safePort + "'>Download config</a>";
     html += "<a class='server-action-pill server-action-pill-secondary modifyServerHeader' href='javascript:void(0)' data-port='" + safePort + "'>Headers</a>";
-    html += "<a class='server-action-pill server-action-pill-secondary plugin' href='javascript:void(0)' data-port='" + safePort + "' style='top: 30%;'>Plugins</a>";
+    html += "<a class='server-action-pill server-action-pill-secondary plugin' href='javascript:void(0)' data-port='" + safePort + "'>Plugins</a>";
     html += "<a class='server-action-pill server-action-pill-danger delete-server' href='javascript:void(0)' data-port='" + safePort + "'>Delete</a>";
     html += "</div>";
     html += "</div>";
@@ -3832,99 +3845,8 @@ class index{
 
                 userDiv.className = 'ip-info';
                 userDiv.id = uid + "info";
-                let os = (key.os || "").toLowerCase();
-                let osEmoji = "💻";
-                if (os.includes("linux")) {
-                    osEmoji = "🐧";
-                } else if (os.includes("macos")) {
-                    osEmoji = "🍎";
-                } else if (os.includes("android")) {
-                    osEmoji = "📱";
-                }
-
-                let pluginButtons = "";
-                let pluginParam = key.plugin_parameter;
-                let safeUidHtml = escapeHtml(uid);
-                let safeUidJs = escapeInlineJsArg(uid);
-                let safeHostHtml = escapeHtml(key["host"]);
-                let safeHostJs = escapeInlineJsArg(key["host"]);
-                let safeOsHtml = escapeHtml(key["os"]);
-                let safeOsJs = escapeInlineJsArg(key["os"]);
-                let safeExternalIpHtml = escapeHtml(key["external_ip"]);
-                let safeProtocolHtml = escapeHtml(key["protocol"]);
-                let safeRemarksHtml = escapeHtml(key["remarks"]);
-                let safeCurrentDirHtml = escapeHtml(key["current_dir"] || "-");
-                let safeCurrentDirAttr = escapeHtml(key["current_dir"] || "./");
-                let safeLocalIpHtml = escapeHtml(key["local_ip"]);
-                let safeCheckTimeHtml = escapeHtml(key["check_time"]);
-                let safeExecutableHtml = escapeHtml(key["executable"]);
-                let safeServerHtml = escapeHtml(key["server"]);
-                let safeDelayHtml = escapeHtml(key["delay"]);
-                let safeJitterHtml = escapeHtml(key["jitter"]);
-
-                if (pluginParam && typeof pluginParam === 'object' && pluginParam[os]) {
-                    for (let codeword in pluginParam[os]) {
-                        let paramDescList = pluginParam[os][codeword];
-                        let encodedDesc = encodeURIComponent(
-                            (Array.isArray(paramDescList) ? paramDescList : []).join(',')
-                        );
-                        let safeCodewordHtml = escapeHtml(codeword);
-                        let safeCodewordJs = escapeInlineJsArg(codeword);
-                        let safeEncodedDescJs = escapeInlineJsArg(encodedDesc);
-                        pluginButtons +=
-                            '<button type="button" class="console-link" onclick="showPluginDialog(\'' +
-                            safeUidJs +
-                            '\', \'' +
-                            escapeInlineJsArg(os) +
-                            '\', \'' +
-                            safeEncodedDescJs +
-                            '\', \'' +
-                            safeCodewordJs +
-                            '\')">[' +
-                            safeCodewordHtml +
-                            ']</button>';
-                    }
-                }
-
-                let userHTML = '<div class="conn-container">' +
-                                '<span class="shell-address">' + safeExternalIpHtml + '/</span>' +
-                                '<span class="ip-address">' + safeHostHtml + '/</span>' +
-                                '<span class="ip-address">' + safeUidHtml + '/</span>' +
-                                '<span class="ip-address">' + safeProtocolHtml + '/</span>' +
-                                '<span class="ip-address">' + safeOsHtml + '/' + escapeHtml(osEmoji) + '</span>' +
-                                '<div class="os-container">' +
-                                    '<div class="ip-address" id="' + safeUidHtml + '-img" style="background-color: #8B4513; width: 106px; height: 1px; display: inline-block; vertical-align: middle; position: relative;"><div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; box-shadow: inset 0 0 0 106px #8B4513;"></div></div>' +
-                                '</div>' +
-                            '</div>' +
-                            '<div class="button-container">' +
-                                '<button class="console-link" onclick="toggleInfo(\'' + safeUidJs + '\', \'info\')">[info]</button>' +
-                                '<button class="console-link" onclick="toggleInfo(\'' + safeUidJs + '\', \'choose\')">[☰]</button>' +
-                                '<button class="console-link" onclick="del(\'' + safeUidJs + '\')">🗑️</button>' +
-                            '</div>' +
-                            '<div class="info-content" id="' + safeUidHtml + '-info-content">' +
-                                '<p><strong class="s_left">Remarks:</strong><input type="text" value="' + safeRemarksHtml + '" id="remarks_' + safeUidHtml + '" class="s_right_input custom-remarks"></p>' +
-                                '<p><strong class="s_left">Path:</strong><strong class="s_right">' + safeCurrentDirHtml + '</strong></p>' +
-                                '<p><strong class="s_left">Host:</strong><strong class="s_right">' + safeHostHtml + '</strong></p>' +
-                                '<p><strong class="s_left">IP Addresses:</strong><strong class="s_right">' + safeLocalIpHtml + '</strong></p>' +
-                                '<p><strong class="s_left">Check:</strong><strong id="' + safeUidHtml + '-check" class="s_right">' + safeCheckTimeHtml + '</strong></p>' +
-                                '<p><strong class="s_left">Executable:</strong><strong class="s_right">' + safeExecutableHtml + '</strong></p>' +
-                                '<p><strong class="s_left">OS:</strong><strong class="s_right">' + safeOsHtml + '</strong></p>' +
-                                '<p><strong class="s_left">Delay:</strong><input type="text" value="' + safeDelayHtml + '" id="delay_' + safeUidHtml + '" class="s_right_input custom-remarks"></p>' +
-                                '<p><strong class="s_left">Jitter:</strong><input type="text" value="' + safeJitterHtml + '" id="jitter_' + safeUidHtml + '" class="s_right_input custom-remarks"></p>' +
-                                '<p><strong class="s_left">UID:</strong><strong class="s_right">' + safeUidHtml + '</strong></p>' +
-                                '<p><strong class="s_left">Server:</strong><strong class="s_right">' + safeServerHtml + '</strong></p>' +
-                                '<p><strong class="s_left">Username:</strong><input type="text" value="' + escapeHtml(key['username']) + '" id="username_' + safeUidHtml + '" class="s_right_input custom-remarks"></p>' +
-                                '<button type="button" class="console-link" onclick="event.preventDefault(); window.lainIndex.saveInfo(\'' + safeUidJs + '\')">Save Changes</button>' +
-                            '</div>' +
-                            '<div class="choose-content" id="' + safeUidHtml + '-choose-content">' +
-                                '<button type="button" class="console-link" onclick="showTerminalDialog(\'' + safeUidJs + '\', \'' + safeHostJs + '\', \'' + safeOsJs + '\')">💻</button>' +
-                                '<button type="button" class="console-link file-open-btn" data-uid="' + safeUidHtml + '" data-host="' + safeHostHtml + '" data-dir="' + safeCurrentDirAttr + '">📁</button>' +
-                                '<button type="button" class="console-link" onclick="showMsgDialog(\'' + safeUidJs + '\', \'' + safeHostJs + '\')">📩</button>' +
-                                pluginButtons +
-                            '</div>' +
-                            '<div class="info-content" id="' + safeUidHtml + '-msg-content"></div>';
-
-                userDiv.innerHTML = userHTML;
+                const view = getUserCardViewModel(key);
+                userDiv.innerHTML = buildUserCardHtml(view);
                 restoreUserCardState(userDiv, preservedState);
                 container.insertBefore(userDiv, container.children[position] || null);
             });
@@ -3953,61 +3875,33 @@ class index{
 		    dialog.id = dialogId;
 		    dialog.className = "floating-dialog terminal-dialog";
 		    dialog.dataset.uid = uid;
-		    dialog.style.position = "fixed";
-		    dialog.style.top = "5%";
-		    dialog.style.left = "50%";
-		    dialog.style.transform = "translateX(-50%)";
-		    dialog.style.zIndex = String((window.dialogZIndexCounter = (window.dialogZIndexCounter || 9999) + 1));
-		    dialog.style.maxWidth = "900px";
-		    dialog.style.width = "90vw";
-		    dialog.style.maxHeight = "90vh";
-		    dialog.style.overflow = "hidden";
-		    dialog.style.display = "flex";
-		    dialog.style.flexDirection = "column";
-		    dialog.style.userSelect = "none";
-		    dialog.style.touchAction = "none";
-		    dialog.style.overscrollBehavior = "contain";
-		    dialog.style.backdropFilter = "blur(10px)";
+		    applyDialogBaseStyle(dialog, { backdropFilter: "blur(10px)", touchAction: "none" });
 		    document.body.appendChild(dialog);
 		
 		    dialog._terminalClosed = false;
 		    dialog._terminalFocusHandler = null;
 		
 		    dialog.innerHTML =
-		        '<div class="terminal-drag-bar" style="position:absolute;top:0;left:0;width:100%;height:36px;cursor:move;background:linear-gradient(90deg, rgba(230,236,243,0.95), rgba(243,247,251,0.9));border-top-left-radius:18px;border-top-right-radius:18px;z-index:10001;border-bottom:1px solid rgba(138,160,178,0.18);"></div>' +
+		        '<div class="terminal-drag-bar"></div>' +
 		        '<button class="dialog-close-btn terminal-close-btn" type="button">x</button>' +
-		        '<div class="shell-container terminal-dialog-toolbar" style="margin-top:34px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 4px 14px 4px;">' +
+		        '<div class="shell-container terminal-dialog-toolbar">' +
 		        "<label for='options' style='color:#4f6477;font-size:13px;'>Select Shell:</label>" +
-		        "<select class='terminal-shell-select' name='options' style='min-width:150px;padding:8px 12px;border-radius:999px;border:1px solid rgba(138,160,178,0.35);background:#fff;color:#314657;'></select>" +
-	        "<p class='terminal-hostname' style='margin-left:auto;font-size:12px;color:#6a7f92;'>Host:</p>" +
+		        "<select class='terminal-shell-select' name='options'></select>" +
+	        "<p class='terminal-hostname'>Host:</p>" +
 		        '</div>' +
-		        '<div class="terminal" style="background:#f8fbff;border-radius:16px;border:1px solid rgba(160,176,194,0.32);padding:16px;min-height:420px;color:#000000;box-shadow:inset 0 1px 0 rgba(255,255,255,0.72);">' +
+		        '<div class="terminal">' +
 	        '<div class="input-container"></div>' +
-	        '</div>' +
-	        '<link rel="stylesheet" href="/`+web_css+`">';
+	        '</div>';
 	    const terminalHost = dialog.querySelector(".terminal-hostname");
 	    if (terminalHost) {
 	        terminalHost.textContent = "Host: " + String(host == null ? "" : host);
 	    }
 		
 		    const dragBar = dialog.querySelector(".terminal-drag-bar");
-            const toolbar = dialog.querySelector(".terminal-dialog-toolbar");
             const terminalPanel = dialog.querySelector(".terminal");
-            applyStickyDialogBar(dragBar, {
-                padX: 18,
-                padTop: 18,
-                radius: 18,
-                marginBottom: 12
-            });
-            if (toolbar) {
-                toolbar.style.marginTop = "0";
-                toolbar.style.padding = "8px 4px 14px 4px";
-                toolbar.style.flex = "0 0 auto";
-            }
+            applyStickyDialogBar(dragBar);
             if (terminalPanel) {
-                terminalPanel.style.flex = "1 1 auto";
                 terminalPanel.style.minHeight = "0";
-                terminalPanel.style.overflow = "auto";
             }
 		    let isDragging = false;
 		    let offsetX = 0;
@@ -4034,14 +3928,12 @@ class index{
 		        const maxTop = winH - rect.height;
 		        newLeft = clamp(newLeft, 0, maxLeft > 0 ? maxLeft : 0);
 		        newTop = clamp(newTop, 0, maxTop > 0 ? maxTop : 0);
-		        dialog.style.left = newLeft + "px";
-		        dialog.style.top = newTop + "px";
-		        dialog.style.transform = "";
+		        applyDraggedDialogPosition(dialog, newLeft, newTop);
 		    }
 		
 		    function stopMove() {
 		        isDragging = false;
-		        document.body.style.userSelect = "";
+		        setDragSelectionLocked(false);
 		        document.removeEventListener("mousemove", onMove);
 		        document.removeEventListener("mouseup", stopMove);
 		        document.removeEventListener("touchmove", onMove);
@@ -4054,7 +3946,7 @@ class index{
 		        const rect = getDialogRect();
 		        offsetX = e.clientX - rect.left;
 		        offsetY = e.clientY - rect.top;
-		        document.body.style.userSelect = "none";
+		        setDragSelectionLocked(true);
 		        document.addEventListener("mousemove", onMove);
 		        document.addEventListener("mouseup", stopMove);
 		    });
@@ -4065,7 +3957,7 @@ class index{
 		        const rect = getDialogRect();
 		        offsetX = e.touches[0].clientX - rect.left;
 		        offsetY = e.touches[0].clientY - rect.top;
-		        document.body.style.userSelect = "none";
+		        setDragSelectionLocked(true);
 		        document.addEventListener("touchmove", onMove, { passive: false });
 		        document.addEventListener("touchend", stopMove);
 		    });
@@ -4186,20 +4078,7 @@ class index{
             dialog.id = dialogId;
             dialog.className = "floating-dialog file-dialog";
             dialog.dataset.uid = uid;
-            dialog.style.position = "fixed";
-            dialog.style.top = "5%";
-            dialog.style.left = "50%";
-            dialog.style.transform = "translateX(-50%)";
-            dialog.style.zIndex = String((window.dialogZIndexCounter = (window.dialogZIndexCounter || 9999) + 1));
-            dialog.style.maxWidth = "1100px";
-            dialog.style.width = "95vw";
-            dialog.style.height = "85%";
-            dialog.style.overflow = "hidden";
-            dialog.style.display = "flex";
-            dialog.style.flexDirection = "column";
-            dialog.style.userSelect = "none";
-            dialog.style.touchAction = "none";
-            dialog.style.overscrollBehavior = "contain";
+            applyDialogBaseStyle(dialog, { height: "85%", touchAction: "none" });
             document.body.appendChild(dialog);
 
             dialog._fileClosed = false;
@@ -4232,8 +4111,7 @@ class index{
                             '<button id="moveDirButton" type="button">Goto folder</button>' +
                         '</div>' +
                     '</div>' +
-                '</div>' +
-                '<link rel="stylesheet" href="/`+web_css+`">';
+                '</div>';
 
             const fileHost = dialog.querySelector("#file-dialog-hostname");
             if (fileHost) {
@@ -4241,15 +4119,7 @@ class index{
             }
 
             const dragBar = dialog.querySelector("#file-drag-bar");
-            const fileLayout = dialog.querySelector(".file-dialog-layout");
-            applyStickyDialogBar(dragBar, {
-                radius: 8,
-                marginBottom: 12
-            });
-            if (fileLayout) {
-                fileLayout.style.flex = "1 1 auto";
-                fileLayout.style.minHeight = "0";
-            }
+            applyStickyDialogBar(dragBar);
             let isDragging = false;
             let offsetX = 0;
             let offsetY = 0;
@@ -4279,14 +4149,12 @@ class index{
                 newLeft = clamp(newLeft, 0, maxLeft > 0 ? maxLeft : 0);
                 newTop = clamp(newTop, 0, maxTop > 0 ? maxTop : 0);
 
-                dialog.style.left = newLeft + "px";
-                dialog.style.top = newTop + "px";
-                dialog.style.transform = "";
+                applyDraggedDialogPosition(dialog, newLeft, newTop);
             }
 
             function stopMove() {
                 isDragging = false;
-                document.body.style.userSelect = "";
+                setDragSelectionLocked(false);
                 document.removeEventListener("mousemove", onMove);
                 document.removeEventListener("mouseup", stopMove);
                 document.removeEventListener("touchmove", onMove);
@@ -4299,7 +4167,7 @@ class index{
                 const rect = getDialogRect();
                 offsetX = e.clientX - rect.left;
                 offsetY = e.clientY - rect.top;
-                document.body.style.userSelect = "none";
+                setDragSelectionLocked(true);
                 document.addEventListener("mousemove", onMove);
                 document.addEventListener("mouseup", stopMove);
             });
@@ -4310,7 +4178,7 @@ class index{
                 const rect = getDialogRect();
                 offsetX = e.touches[0].clientX - rect.left;
                 offsetY = e.touches[0].clientY - rect.top;
-                document.body.style.userSelect = "none";
+                setDragSelectionLocked(true);
                 document.addEventListener("touchmove", onMove, { passive: false });
                 document.addEventListener("touchend", stopMove);
             });
@@ -4521,20 +4389,7 @@ class index{
             dialog.id = dialogId;
             dialog.className = "floating-dialog msg-dialog";
             dialog.dataset.uid = uid;
-            dialog.style.position = "fixed";
-            dialog.style.top = "10%";
-            dialog.style.left = "50%";
-            dialog.style.transform = "translateX(-50%)";
-            dialog.style.zIndex = String((window.dialogZIndexCounter = (window.dialogZIndexCounter || 9999) + 1));
-            dialog.style.maxWidth = "700px";
-            dialog.style.width = "90vw";
-            dialog.style.maxHeight = "90vh";
-            dialog.style.overflow = "hidden";
-            dialog.style.display = "flex";
-            dialog.style.flexDirection = "column";
-            dialog.style.userSelect = "none";
-            dialog.style.touchAction = "pan-y";
-            dialog.style.overscrollBehavior = "contain";
+            applyDialogBaseStyle(dialog, { top: "10%", touchAction: "pan-y" });
             document.body.appendChild(dialog);
 
             dialog.innerHTML =
@@ -4553,17 +4408,7 @@ class index{
 
             const dragBar = dialog.querySelector("#msg-drag-bar");
             const msgContainer = dialog.querySelector("#msg-container");
-            applyStickyDialogBar(dragBar, {
-                padX: 16,
-                padTop: 16,
-                radius: 8,
-                marginBottom: 12
-            });
-            if (msgContainer) {
-                msgContainer.style.flex = "1 1 auto";
-                msgContainer.style.minHeight = "0";
-                msgContainer.style.overflowY = "auto";
-            }
+            applyStickyDialogBar(dragBar);
 
             dialog._msgClosed = false;
             dialog._msgWatchTimer = null;
@@ -4585,7 +4430,7 @@ class index{
 
             function stopMove() {
                 isDragging = false;
-                document.body.style.userSelect = "";
+                setDragSelectionLocked(false);
                 document.removeEventListener("mousemove", onMove);
                 document.removeEventListener("mouseup", stopMove);
                 document.removeEventListener("touchmove", onMove);
@@ -4611,7 +4456,7 @@ class index{
                 if (activeMessageDrag) {
                     document.removeEventListener("pointermove", onMessageDragMove);
                     document.removeEventListener("pointerup", stopMessageDrag);
-                    document.body.style.userSelect = "";
+                    setDragSelectionLocked(false);
                     activeMessageDrag = null;
                 }
             }
@@ -4638,9 +4483,7 @@ class index{
                 newLeft = clamp(newLeft, 0, maxLeft > 0 ? maxLeft : 0);
                 newTop = clamp(newTop, 0, maxTop > 0 ? maxTop : 0);
 
-                dialog.style.left = newLeft + "px";
-                dialog.style.top = newTop + "px";
-                dialog.style.transform = "";
+                applyDraggedDialogPosition(dialog, newLeft, newTop);
             }
 
             dragBar.addEventListener("mousedown", function (e) {
@@ -4648,7 +4491,7 @@ class index{
                 const rect = getDialogRect();
                 offsetX = e.clientX - rect.left;
                 offsetY = e.clientY - rect.top;
-                document.body.style.userSelect = "none";
+                setDragSelectionLocked(true);
                 document.addEventListener("mousemove", onMove);
                 document.addEventListener("mouseup", stopMove);
             });
@@ -4658,7 +4501,7 @@ class index{
                 const rect = getDialogRect();
                 offsetX = e.touches[0].clientX - rect.left;
                 offsetY = e.touches[0].clientY - rect.top;
-                document.body.style.userSelect = "none";
+                setDragSelectionLocked(true);
                 document.addEventListener("touchmove", onMove, { passive: false });
                 document.addEventListener("touchend", stopMove);
             });
@@ -5137,7 +4980,7 @@ class index{
 
                 document.addEventListener("pointermove", onMessageDragMove);
                 document.addEventListener("pointerup", stopMessageDrag);
-                document.body.style.userSelect = "none";
+                setDragSelectionLocked(true);
             }
 
             function onMessageDragMove(event) {
@@ -5206,7 +5049,7 @@ class index{
                 activeMessageDrag = null;
                 document.removeEventListener("pointermove", onMessageDragMove);
                 document.removeEventListener("pointerup", stopMessageDrag);
-                document.body.style.userSelect = "";
+                setDragSelectionLocked(false);
 
                 const requestChildren = Array.from(drag.requestList.children);
                 const placeholderIndex = requestChildren.indexOf(drag.placeholder);
@@ -5416,22 +5259,11 @@ class index{
 	        const el = document.getElementById(imgId);
 	        if (!el) return;
 	        const line = document.createElement("div");
-	        line.className = "ip-address";
+	        line.className = "ip-address status-bar";
 	        line.id = imgId;
-	        line.style.backgroundColor = "#8B4513";
-	        line.style.width = "106px";
-	        line.style.height = "1px";
-	        line.style.display = "inline-block";
-	        line.style.verticalAlign = "middle";
-	        line.style.position = "relative";
 
 	        const fill = document.createElement("div");
-	        fill.style.position = "absolute";
-	        fill.style.top = "0";
-	        fill.style.left = "0";
-	        fill.style.right = "0";
-	        fill.style.bottom = "0";
-	        fill.style.boxShadow = "inset 0 0 0 106px #8B4513";
+	        fill.className = "status-bar-fill";
 	        line.appendChild(fill);
         el.replaceWith(line);
 	        state.animating = false;
@@ -6759,9 +6591,7 @@ class lain_server {
                 var codePreview = document.createElement("pre");
                 codePreview.className = "plugin-code-preview";
                 codePreview.textContent = codeStr;
-                if (codeStr.length > 220 || codeStr.indexOf("\n") !== -1) {
-                    codePreview.classList.add("collapsed");
-                } else {
+                if (codeStr.length <= 220 && codeStr.indexOf("\n") === -1) {
                     toggleBtn.style.display = "none";
                 }
 
@@ -6861,13 +6691,6 @@ class lain_server {
             const currentHeader = server ?
                 (server.response_head || server.responseHead || server.ResponseHead || "") :
                 "";
-            // 妫€鏌ユ槸鍚﹀凡鍔犺浇鏍峰紡
-            if (!document.getElementById("modify-server-style")) {
-                const styleLink = document.createElement("link");
-                styleLink.id = "modify-server-style";
-                styleLink.rel = "stylesheet";
-                document.head.appendChild(styleLink);
-            }
             // 鍒涘缓寮瑰嚭妗�
             const dialog = document.createElement("div");
             dialog.id = "modify-server-dialog";
@@ -7383,29 +7206,20 @@ function toggleInfo(uid,op) {
 	}
     infoContent.classList.toggle("show");
 }
-// 鍏抽棴 iframe
-function closeIframe() {
-    var iframePanel = document.getElementById('iframePanel');
-    iframePanel.style.display = 'none';
-}
 // 鍒囨崲渚ц竟鏍�
 function toggleSidebar() {
     const sidebar = document.querySelector('.sidebar');
     const button = document.querySelector('.toggle-button');
     const log = document.getElementById('log');
-    const serverIndexDiv = document.querySelector(".server_index");
-    const contentDiv = serverIndexDiv.querySelector(".content");
     sidebar.classList.toggle('shrink');
     if (sidebar.classList.contains('shrink')) {
         button.textContent = '>';
         log.style.left = '50px';
         log.style.width = 'calc(100% - 50px)';
-        contentDiv.style.width = 'calc(100% - 50px)';
     } else {
         button.textContent = '<';
         log.style.left = '180px';
         log.style.width = 'calc(100% - 180px)';
-        contentDiv.style.width = 'calc(100% - 180px)';
     }
 }
 
@@ -7465,46 +7279,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
     logHandle.addEventListener("mousedown", startResize);
     logHandle.addEventListener("touchstart", startResize, touchEventOptions);
-
-    // **iframe 鎷栧姩**
-    const iframePanel = document.getElementById("iframePanel");
-    const dragHandle = iframePanel.querySelector(".drag-handle");
-    let isDragging = false, offsetX, offsetY;
-
-    function startDrag(e) {
-        isDragging = true;
-        offsetX = (e.touches ? e.touches[0].clientX : e.clientX) - iframePanel.offsetLeft;
-        offsetY = (e.touches ? e.touches[0].clientY : e.clientY) - iframePanel.offsetTop;
-        document.addEventListener("mousemove", dragMove);
-        document.addEventListener("mouseup", stopDrag);
-        document.addEventListener("touchmove", dragMove);
-        document.addEventListener("touchend", stopDrag);
-    }
-
-    function dragMove(e) {
-        if (!isDragging) return;
-        let newX = (e.touches ? e.touches[0].clientX : e.clientX) - offsetX;
-        let newY = (e.touches ? e.touches[0].clientY : e.clientY) - offsetY;
-        const pageWidth = window.innerWidth, pageHeight = window.innerHeight;
-        const panelWidth = iframePanel.offsetWidth, panelHeight = iframePanel.offsetHeight;
-        if (newX < 0) newX = 0;
-        else if (newX + panelWidth > pageWidth) newX = pageWidth - panelWidth;
-        if (newY < 0) newY = 0;
-        else if (newY + panelHeight > pageHeight) newY = pageHeight - panelHeight;
-        iframePanel.style.left = newX + "px";
-        iframePanel.style.top = newY + "px";
-    }
-
-    function stopDrag() {
-        isDragging = false;
-        document.removeEventListener("mousemove", dragMove);
-        document.removeEventListener("mouseup", stopDrag);
-        document.removeEventListener("touchmove", dragMove);
-        document.removeEventListener("touchend", stopDrag);
-    }
-
-    dragHandle.addEventListener("mousedown", startDrag);
-    dragHandle.addEventListener("touchstart", startDrag);
 
     // **渚ц竟鏍忓鑸�**
     const links = document.querySelectorAll(".sidebar a, .tle-sidebar a");
@@ -7581,24 +7355,7 @@ function showPluginDialog(uid, os, paramDescList, codeword) {
         dialog.id = dialogId;
         dialog.className = "floating-dialog plugin-dialog";
         dialog.dataset.uid = uid;
-        dialog.style.position = "fixed";
-        dialog.style.top = "10%";
-        dialog.style.left = "50%";
-        dialog.style.transform = "translateX(-50%)";
-        dialog.style.background = "#f9f9f9";
-        dialog.style.zIndex = String((window.dialogZIndexCounter = (window.dialogZIndexCounter || 9999) + 1));
-        dialog.style.width = "90vw";
-        dialog.style.maxWidth = "760px";
-        dialog.style.minWidth = "320px";
-        dialog.style.maxHeight = "90vh";
-        dialog.style.margin = "40px auto";
-        dialog.style.border = "1px solid #ccc";
-        dialog.style.borderRadius = "8px";
-        dialog.style.boxShadow = "0 2px 8px rgba(0,0,0,0.2)";
-        dialog.style.padding = "16px";
-        dialog.style.overflowY = "auto";
-        dialog.style.overscrollBehavior = "contain";
-        dialog.style.userSelect = "none";
+        applyDialogBaseStyle(dialog, { top: "10%", minWidth: "320px", margin: "40px auto" });
         document.body.appendChild(dialog);
     }
 
@@ -7606,11 +7363,7 @@ function showPluginDialog(uid, os, paramDescList, codeword) {
     dragBar.className = "plugin-drag-bar";
     dragBar.setAttribute("aria-label", "Drag plugin dialog");
     dialog.appendChild(dragBar);
-    applyStickyDialogBar(dragBar, {
-        padX: 16,
-        padTop: 16,
-        radius: 8
-    });
+    applyStickyDialogBar(dragBar);
 
     let closeBtn = document.createElement("button");
     closeBtn.type = "button";
@@ -7680,14 +7433,12 @@ function showPluginDialog(uid, os, paramDescList, codeword) {
         const winH = window.innerHeight;
         const maxLeft = winW - rect.width;
         const maxTop = winH - rect.height;
-        dialog.style.left = clamp(point.clientX - offsetX, 0, maxLeft) + "px";
-        dialog.style.top = clamp(point.clientY - offsetY, 0, maxTop) + "px";
-        dialog.style.transform = "";
+        applyDraggedDialogPosition(dialog, clamp(point.clientX - offsetX, 0, maxLeft), clamp(point.clientY - offsetY, 0, maxTop));
     }
 
     function stopMove() {
         isDragging = false;
-        document.body.style.userSelect = "";
+        setDragSelectionLocked(false);
         document.removeEventListener("mousemove", onMove);
         document.removeEventListener("mouseup", stopMove);
         document.removeEventListener("touchmove", onMove);
@@ -7701,14 +7452,12 @@ function showPluginDialog(uid, os, paramDescList, codeword) {
         }
         const point = event.touches ? event.touches[0] : event;
         const rect = dialog.getBoundingClientRect();
-        dialog.style.left = rect.left + "px";
-        dialog.style.top = rect.top + "px";
-        dialog.style.transform = "";
+        applyDraggedDialogPosition(dialog, rect.left, rect.top);
         isDragging = true;
         offsetX = point.clientX - rect.left;
         offsetY = point.clientY - rect.top;
         dialog.style.zIndex = String((window.dialogZIndexCounter = (window.dialogZIndexCounter || 9999) + 1));
-        document.body.style.userSelect = "none";
+        setDragSelectionLocked(true);
         document.addEventListener("mousemove", onMove);
         document.addEventListener("mouseup", stopMove);
         document.addEventListener("touchmove", onMove, {passive: false});
@@ -7935,41 +7684,16 @@ function customLog() {
     if (!container) {
         container = document.createElement("div");
         container.id = "custom-log-container";
-        container.style.position = "fixed";
-        container.style.right = "20px";
-        container.style.top = "20px";
-        container.style.width = "360px";
-        container.style.maxWidth = "calc(100vw - 24px)";
-        container.style.maxHeight = "50vh";
-        container.style.overflowY = "auto";
-        container.style.zIndex = "9998";
-        container.style.display = "flex";
-        container.style.flexDirection = "column";
-        container.style.gap = "10px";
+        container.className = "lain-toast-stack";
         document.body.appendChild(container);
     }
 
     const args = Array.from(arguments);
     const item = document.createElement("div");
-    item.style.background = "rgba(255, 255, 255, 0.96)";
-    item.style.color = "#2f2f2f";
-    item.style.border = "1px solid rgba(120, 150, 180, 0.22)";
-    item.style.borderRadius = "10px";
-    item.style.padding = "12px 14px";
-    item.style.boxShadow = "0 10px 28px rgba(80, 102, 125, 0.18)";
-    item.style.fontFamily = "Consolas, Monaco, monospace";
-    item.style.fontSize = "12px";
-    item.style.lineHeight = "1.5";
-    item.style.wordBreak = "break-word";
-    item.style.opacity = "0";
-    item.style.transform = "translateY(-10px)";
-    item.style.transition = "opacity 0.6s ease, transform 0.6s ease";
+    item.className = "lain-toast-card";
 
     const header = document.createElement("div");
-    header.style.display = "flex";
-    header.style.justifyContent = "space-between";
-    header.style.alignItems = "center";
-    header.style.marginBottom = "6px";
+    header.className = "lain-toast-head";
 
     const timeLabel = document.createElement("span");
     timeLabel.textContent = new Date().toLocaleTimeString();
@@ -7979,11 +7703,7 @@ function customLog() {
     const closeButton = document.createElement("button");
     closeButton.type = "button";
     closeButton.textContent = "x";
-    closeButton.style.border = "none";
-    closeButton.style.background = "transparent";
-    closeButton.style.color = "#7e8a96";
-    closeButton.style.cursor = "pointer";
-    closeButton.style.fontSize = "14px";
+    closeButton.className = "lain-toast-close";
     closeButton.onclick = function() {
         if (item.parentNode) {
             item.parentNode.removeChild(item);
@@ -8079,18 +7799,7 @@ function ensureTransferToastContainer() {
     if (!container) {
         container = document.createElement("div");
         container.id = "transfer-toast-container";
-        container.style.position = "fixed";
-        container.style.right = "20px";
-        container.style.top = "20px";
-        container.style.width = "360px";
-        container.style.maxWidth = "calc(100vw - 24px)";
-        container.style.maxHeight = "50vh";
-        container.style.overflowY = "auto";
-        container.style.zIndex = "9998";
-        container.style.display = "flex";
-        container.style.flexDirection = "column";
-        container.style.gap = "10px";
-        container.style.pointerEvents = "none";
+        container.className = "lain-toast-stack lain-toast-stack--passive";
         document.body.appendChild(container);
     }
     return container;
@@ -8129,27 +7838,10 @@ function customTransferToast(id, options = {}) {
     if (!record) {
         const item = document.createElement("div");
         item.dataset.transferToast = "true";
-        item.style.pointerEvents = "auto";
-        item.style.background = "rgba(255, 255, 255, 0.97)";
-        item.style.color = "#2f2f2f";
-        item.style.border = "1px solid rgba(120, 150, 180, 0.22)";
-        item.style.borderRadius = "10px";
-        item.style.padding = "12px 14px";
-        item.style.boxShadow = "0 10px 28px rgba(80, 102, 125, 0.18)";
-        item.style.fontFamily = "Consolas, Monaco, monospace";
-        item.style.fontSize = "12px";
-        item.style.lineHeight = "1.5";
-        item.style.wordBreak = "break-word";
-        item.style.opacity = "0";
-        item.style.transform = "translateY(-10px)";
-        item.style.transition = "opacity 0.35s ease, transform 0.35s ease";
+        item.className = "lain-toast-card lain-toast-card--transfer";
 
         const header = document.createElement("div");
-        header.style.display = "flex";
-        header.style.justifyContent = "space-between";
-        header.style.alignItems = "center";
-        header.style.gap = "12px";
-        header.style.marginBottom = "8px";
+        header.className = "lain-toast-head lain-toast-head--transfer";
 
         const title = document.createElement("div");
         title.style.fontWeight = "700";
@@ -8168,11 +7860,7 @@ function customTransferToast(id, options = {}) {
         const closeButton = document.createElement("button");
         closeButton.type = "button";
         closeButton.textContent = "x";
-        closeButton.style.border = "none";
-        closeButton.style.background = "transparent";
-        closeButton.style.color = "#7e8a96";
-        closeButton.style.cursor = "pointer";
-        closeButton.style.fontSize = "14px";
+        closeButton.className = "lain-toast-close";
         closeButton.onclick = function() {
             removeTransferToast(id);
         };
