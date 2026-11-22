@@ -123,15 +123,8 @@ type MainHandler struct{}
 
 // 无权限交互
 func (m *MainHandler) Index(conn, Get_Msg, switch_key, download, result, net, info, upload, list,
-	option, uid_, hostname, keyPart, filekey, windows_pro, port string) http.HandlerFunc {
+	option, uid_, hostname, keyPart, filekey, windows_pro,base_rounds string,code_rounds map[byte]int) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		serverRouteMu.RLock()
-		base_rounds, exist_base := base_map[port]
-		code_rounds, exist_code := code_map[port]
-		serverRouteMu.RUnlock()
-		if !exist_base || !exist_code {
-			return
-		}
 		switch r.Method {
 		case http.MethodGet:
 			// 处理 GET 请求
@@ -2670,6 +2663,7 @@ func User_index(notFoundHeaders map[string]string) http.HandlerFunc {
 						requestData.BaseRounds,
 						requestData.ResponseHead,
 						username,
+						decodeMap,
 						log_word,
 						func() {
 							serverRouteMu.Lock()

@@ -39,7 +39,8 @@ type Handler interface {
 		keyPart,
 		filekey,
 		windows_pro,
-		port string,
+		base_rounds string,
+		code_rounds map[byte]int,
 	) http.HandlerFunc
 }
 
@@ -297,6 +298,7 @@ func Http_server(
 	baseRounds,
 	resphead,
 	username string,
+	code_rounds map[byte]int,
 	logWord map[string]string,
 	onReady func(),
 	onStopped func(),
@@ -367,7 +369,8 @@ func Http_server(
 			keyPart,
 			filekey,
 			windowsPro,
-			port,
+			baseRounds,
+			code_rounds,
 		).ServeHTTP(w, r)
 	}); err != nil {
 		return err
