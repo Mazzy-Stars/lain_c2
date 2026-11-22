@@ -6,6 +6,7 @@ import (
 	"crypto/md5"
 	"crypto/mlkem"
 	crand "crypto/rand"
+	"crypto/subtle"
 	"crypto/tls"
 	"encoding/binary"
 	"encoding/hex"
@@ -5505,30 +5506,28 @@ func updateInnet(uid string) Innet {
 	return Innet{}
 }
 
+const (
+	nonceSize = 12
+	tagSize   = 16
+)
 func rotl(x uint32, n uint) uint32 {
 	return (x << n) | (x >> (32 - n))
 }
-
 func quarterRound(a, b, c, d uint32) (uint32, uint32, uint32, uint32) {
 	a += b
 	d ^= a
 	d = rotl(d, 16)
-
 	c += d
 	b ^= c
 	b = rotl(b, 12)
-
 	a += b
 	d ^= a
 	d = rotl(d, 8)
-
 	c += d
 	b ^= c
 	b = rotl(b, 7)
-
 	return a, b, c, d
 }
-
 func initializeState(key [32]byte, counter uint32, nonce [12]byte) [16]uint32 {
 	return [16]uint32{
 		0x61707865, 0x3320646e, 0x79622d32, 0x6b206574,
@@ -5546,87 +5545,257 @@ func initializeState(key [32]byte, counter uint32, nonce [12]byte) [16]uint32 {
 		binary.LittleEndian.Uint32(nonce[8:12]),
 	}
 }
-
-func chacha20Block(key [32]byte, counter uint32, nonce [12]byte) [64]byte {
+func chacha20Block(
+	key [32]byte,
+	counter uint32,
+	nonce [12]byte,
+) [64]byte {
 	state := initializeState(key, counter, nonce)
 	working := state
-
 	for i := 0; i < 10; i++ {
-		working[0], working[4], working[8], working[12] = quarterRound(working[0], working[4], working[8], working[12])
-		working[1], working[5], working[9], working[13] = quarterRound(working[1], working[5], working[9], working[13])
-		working[2], working[6], working[10], working[14] = quarterRound(working[2], working[6], working[10], working[14])
-		working[3], working[7], working[11], working[15] = quarterRound(working[3], working[7], working[11], working[15])
-
-		working[0], working[5], working[10], working[15] = quarterRound(working[0], working[5], working[10], working[15])
-		working[1], working[6], working[11], working[12] = quarterRound(working[1], working[6], working[11], working[12])
-		working[2], working[7], working[8], working[13] = quarterRound(working[2], working[7], working[8], working[13])
-		working[3], working[4], working[9], working[14] = quarterRound(working[3], working[4], working[9], working[14])
+		// column rounds
+		working[0], working[4], working[8], working[12] = quarterRound(working[0],working[4],working[8],working[12],)
+		working[1], working[5], working[9], working[13] = quarterRound(working[1],working[5],working[9],working[13],)
+		working[2], working[6], working[10], working[14] = quarterRound(working[2],working[6],working[10],working[14],)
+		working[3], working[7], working[11], working[15] = quarterRound(working[3],working[7],working[11],working[15],)
+		// diagonal rounds
+		working[0], working[5], working[10], working[15] = quarterRound(working[0],working[5],working[10],working[15],)
+		working[1], working[6], working[11], working[12] = quarterRound(working[1],working[6],working[11],working[12],)
+		working[2], working[7], working[8], working[13] = quarterRound(working[2],working[7],working[8],working[13],)
+		working[3], working[4], working[9], working[14] = quarterRound(working[3],working[4],working[9],working[14],)
 	}
-
 	var out [64]byte
 	for i := 0; i < 16; i++ {
 		working[i] += state[i]
 		binary.LittleEndian.PutUint32(out[i*4:], working[i])
 	}
-
 	return out
 }
-
-func ChaCha20Encrypt(data []byte, key [32]byte, nonce [12]byte, counter uint32) []byte {
+func ChaCha20Encrypt(data []byte,key [32]byte,nonce [12]byte,counter uint32,) []byte {
 	out := make([]byte, len(data))
-
 	for i := 0; i < len(data); i += 64 {
 		block := chacha20Block(key, counter, nonce)
 		n := len(data) - i
 		if n > 64 {
 			n = 64
 		}
-
 		for j := 0; j < n; j++ {
 			out[i+j] = data[i+j] ^ block[j]
 		}
-
 		counter++
 	}
-
 	return out
 }
-
+func pad16(n int) int {
+	return (16 - n%16) % 16
+}
+// RFC 8439:
+// aad || pad16(aad) || ciphertext || pad16(ciphertext) ||
+// uint64le(len(aad)) || uint64le(len(ciphertext))
+func buildMACData(aad, ciphertext []byte) []byte {
+	total := len(aad) +
+		pad16(len(aad)) +
+		len(ciphertext) +
+		pad16(len(ciphertext)) +
+		16
+	data := make([]byte, total)
+	pos := 0
+	copy(data[pos:], aad)
+	pos += len(aad) + pad16(len(aad))
+	copy(data[pos:], ciphertext)
+	pos += len(ciphertext) + pad16(len(ciphertext))
+	binary.LittleEndian.PutUint64(
+		data[pos:pos+8],
+		uint64(len(aad)),
+	)
+	binary.LittleEndian.PutUint64(
+		data[pos+8:pos+16],
+		uint64(len(ciphertext)),
+	)
+	return data
+}
+func makePoly1305Key(key [32]byte,nonce [12]byte,) [32]byte {
+	block := chacha20Block(key, 0, nonce)
+	var polyKey [32]byte
+	copy(polyKey[:], block[:32])
+	return polyKey
+}
+func poly1305Sum(msg []byte,key [32]byte,) [16]byte {
+	const mask26 = uint64(0x3ffffff)
+	// clamp r
+	r0 := uint64( binary.LittleEndian.Uint32(key[0:4]), ) & 0x3ffffff
+	r1 := ( uint64(binary.LittleEndian.Uint32(key[3:7])) >> 2 ) & 0x3ffff03
+	r2 := ( uint64(binary.LittleEndian.Uint32(key[6:10])) >> 4 ) & 0x3ffc0ff
+	r3 := ( uint64(binary.LittleEndian.Uint32(key[9:13])) >> 6 ) & 0x3f03fff
+	r4 := ( uint64(binary.LittleEndian.Uint32(key[12:16])) >> 8 ) & 0x00fffff
+	r1x5 := r1 * 5
+	r2x5 := r2 * 5
+	r3x5 := r3 * 5
+	r4x5 := r4 * 5
+	var h0, h1, h2, h3, h4 uint64
+	process := func(block []byte, hibit uint64) {
+		t0 := uint64(binary.LittleEndian.Uint32(block[0:4]))
+		t1 := uint64(binary.LittleEndian.Uint32(block[4:8]))
+		t2 := uint64(binary.LittleEndian.Uint32(block[8:12]))
+		t3 := uint64(binary.LittleEndian.Uint32(block[12:16]))
+		h0 += t0 & mask26
+		h1 += ((t0 >> 26) | (t1 << 6)) & mask26
+		h2 += ((t1 >> 20) | (t2 << 12)) & mask26
+		h3 += ((t2 >> 14) | (t3 << 18)) & mask26
+		h4 += (t3 >> 8) | hibit
+		d0 := h0*r0 + h1*r4x5 + h2*r3x5 + h3*r2x5 + h4*r1x5
+		d1 := h0*r1 + h1*r0 + h2*r4x5 + h3*r3x5 + h4*r2x5
+		d2 := h0*r2 + h1*r1 + h2*r0 + h3*r4x5 + h4*r3x5
+		d3 := h0*r3 + h1*r2 + h2*r1 + h3*r0 + h4*r4x5
+		d4 := h0*r4 + h1*r3 + h2*r2 + h3*r1 + h4*r0
+		c := d0 >> 26
+		h0 = d0 & mask26
+		d1 += c
+		c = d1 >> 26
+		h1 = d1 & mask26
+		d2 += c
+		c = d2 >> 26
+		h2 = d2 & mask26
+		d3 += c
+		c = d3 >> 26
+		h3 = d3 & mask26
+		d4 += c
+		h4 = d4 & mask26
+		h0 += (d4 >> 26) * 5
+		c = h0 >> 26
+		h0 &= mask26
+		h1 += c
+	}
+	// 处理完整 16 字节块
+	for len(msg) >= 16 {
+		process(msg[:16], 1<<24)
+		msg = msg[16:]
+	}
+	// 处理最后不足 16 字节的块
+	if len(msg) != 0 {
+		var block [16]byte
+		copy(block[:], msg)
+		block[len(msg)] = 1
+		process(block[:], 0)
+	}
+	// 最终进位
+	c := h1 >> 26
+	h1 &= mask26
+	h2 += c
+	c = h2 >> 26
+	h2 &= mask26
+	h3 += c
+	c = h3 >> 26
+	h3 &= mask26
+	h4 += c
+	c = h4 >> 26
+	h4 &= mask26
+	h0 += c * 5
+	c = h0 >> 26
+	h0 &= mask26
+	h1 += c
+	g0 := h0 + 5
+	c = g0 >> 26
+	g0 &= mask26
+	g1 := h1 + c
+	c = g1 >> 26
+	g1 &= mask26
+	g2 := h2 + c
+	c = g2 >> 26
+	g2 &= mask26
+	g3 := h3 + c
+	c = g3 >> 26
+	g3 &= mask26
+	g4 := h4 + c - (1 << 26)
+	selectH := uint64(0) - (g4 >> 63)
+	h0 = (h0 & selectH) | (g0 &^ selectH)
+	h1 = (h1 & selectH) | (g1 &^ selectH)
+	h2 = (h2 & selectH) | (g2 &^ selectH)
+	h3 = (h3 & selectH) | (g3 &^ selectH)
+	h4 = (h4 & selectH) | (g4 &^ selectH)
+	w0 := uint32(h0 | (h1 << 26))
+	w1 := uint32((h1 >> 6) | (h2 << 20))
+	w2 := uint32((h2 >> 12) | (h3 << 14))
+	w3 := uint32((h3 >> 18) | (h4 << 8))
+	t := uint64(w0) +
+		uint64(binary.LittleEndian.Uint32(key[16:20]))
+	w0 = uint32(t)
+	t = uint64(w1) +
+		uint64(binary.LittleEndian.Uint32(key[20:24])) +
+		(t >> 32)
+	w1 = uint32(t)
+	t = uint64(w2) +
+		uint64(binary.LittleEndian.Uint32(key[24:28])) +
+		(t >> 32)
+	w2 = uint32(t)
+	t = uint64(w3) +
+		uint64(binary.LittleEndian.Uint32(key[28:32])) +
+		(t >> 32)
+	w3 = uint32(t)
+	var out [16]byte
+	binary.LittleEndian.PutUint32(out[0:4], w0)
+	binary.LittleEndian.PutUint32(out[4:8], w1)
+	binary.LittleEndian.PutUint32(out[8:12], w2)
+	binary.LittleEndian.PutUint32(out[12:16], w3)
+	return out
+}
+func poly1305Verify(tag [16]byte,msg []byte,key [32]byte,) bool {
+	computed := poly1305Sum(msg, key)
+	return subtle.ConstantTimeCompare(
+		computed[:],
+		tag[:],
+	) == 1
+}
 func Encrypt(input []byte, key []byte) []byte {
+	return EncryptWithAAD(input, nil, key)
+}
+func EncryptWithAAD(input []byte,aad []byte,key []byte,) []byte {
 	if len(key) != 32 {
 		return nil
 	}
-
 	var chaKey [32]byte
 	copy(chaKey[:], key)
-
-	var nonce [12]byte
+	var nonce [nonceSize]byte
 	if _, err := crand.Read(nonce[:]); err != nil {
 		return nil
 	}
-
-	cipher := ChaCha20Encrypt(input, chaKey, nonce, 0)
-
-	out := make([]byte, 12+len(cipher))
-	copy(out[:12], nonce[:])
-	copy(out[12:], cipher)
-
+	polyKey := makePoly1305Key(chaKey, nonce)
+	ciphertext := ChaCha20Encrypt(input,chaKey,nonce,1,)
+	macData := buildMACData(aad,ciphertext,)
+	tag := poly1305Sum(macData,polyKey,)
+	out := make([]byte,0,nonceSize+len(ciphertext)+tagSize,)
+	out = append(out, nonce[:]...)
+	out = append(out, ciphertext...)
+	out = append(out, tag[:]...)
 	return out
 }
-
 func Decrypt(input []byte, key []byte) []byte {
-	if len(key) != 32 || len(input) < 12 {
+	return DecryptWithAAD(input, nil, key)
+}
+func DecryptWithAAD(input []byte,aad []byte,key []byte,) []byte {
+	if len(key) != 32 {
 		return nil
 	}
-
+	if len(input) < nonceSize+tagSize {
+		return nil
+	}
 	var chaKey [32]byte
 	copy(chaKey[:], key)
-
-	var nonce [12]byte
-	copy(nonce[:], input[:12])
-
-	cipher := input[12:]
-	return ChaCha20Encrypt(cipher, chaKey, nonce, 0)
+	var nonce [nonceSize]byte
+	copy(nonce[:], input[:nonceSize])
+	ciphertextEnd := len(input) - tagSize
+	ciphertext := input[nonceSize:ciphertextEnd]
+	var receivedTag [tagSize]byte
+	copy(receivedTag[:], input[ciphertextEnd:])
+	polyKey := makePoly1305Key(chaKey, nonce)
+	macData := buildMACData(
+		aad,
+		ciphertext,
+	)
+	if !poly1305Verify(receivedTag,macData,polyKey,) {
+		return nil
+	}
+	return ChaCha20Encrypt(ciphertext,chaKey,nonce,1,)
 }
 
 // 字符串解密
